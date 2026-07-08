@@ -1,0 +1,72 @@
+# Пресет для HYPEUSDT — young listing с сильным восходящим трендом.
+# Краткое обоснование per-параметра — см. comments ниже.
+# Использование:
+#   python scripts/calc_volatility.py HYPEUSDT --config config/settings_hype.yaml
+#   python scripts/add_trade.py HYPEUSDT long 2026-01-20 --config config/settings_hype.yaml \
+#       --use-config-defaults ...
+
+exchange: bybit
+market_type: linear
+timeframe: 1h
+history_days: 90            # HYPE листится на Bybit Linear ~ с конца 2024; пока <2160 свечей
+horizons_hours: [24, 72, 168]
+safety_factor: 1.2
+leverage: 1                 # ⚠️ обязательно 1x isolated.
+                             # Backtest 18м: при 2x → 25 ликвидаций (0.78% сделок).
+                             # При 1x → 0 ликвидаций, min_pnl -16..-20%.
+maintenance_margin_rate: 0.005
+
+dca:
+  orders_range: [3, 7]       # шире диапазон — позволяет рекомендатору искать минимум
+  price_scale_range: [1.1, 1.5]
+  base_qty_pct_long: 0.04
+  base_qty_pct_short: 0.03
+  volume_scale_thresholds:
+    conservative: 2.0
+    moderate: 1.5
+
+current_settings:
+  long:
+    # Backtest 6мес (180д) HYPE, maker fee 0.04%/cycle:
+    #   coverage 0.18 + ps 1.11 + TP 1.2%: $29/мес на $100 (vs $24 у старой 0.24/1.15).
+    #   Узкая сетка: avg_hold 21h, win 97.4%, avg_entries 1.05 → DCA реально заполняется.
+    #   Широкая сетка 0.24-0.50 в аптренде НЕ работает: ордера не заполняются,
+    #   hold растёт до 36h, win падает до 89%, monthly -30%.
+    orders: 3
+    price_coverage: 0.18     # было 0.24 → сужаем: частые мелкие откаты, быстрый TP
+    price_scale: 1.11        # было 1.15 → 1.11 оптимально для аптренда
+    volume_scale: 1.10       # было 1.20 → 1.10 достаточно (HYPE мелко-волатилен)
+    base_qty: 0.04
+
+  short:
+    # Hedge-сторона для HYPE (не меняется — уже оптимально).
+    # Backtest 6мес maker: TP 1.2% → $10/мес на $100, win 93.9%, hold 26h.
+    # min_pnl -20.4% → обязателен stop-loss -20% если бот поддерживает.
+    orders: 3
+    price_coverage: 0.18
+    price_scale: 1.11
+    volume_scale: 1.20       # мартин 20%: ордера вверх 1.0 / 1.2 / 1.44
+    base_qty: 0.020          # ~$1.40 1-й ордер при цене HYPE $70; учитывая
+                             # hedge-разделение депозита $100, max_open ≈ $90.
+
+  tp: 0.012                  # 1.2% — лимитный TP (maker 0.02% × 2 = 0.04% за цикл).
+                             # Backtest 6мес: в 3 zuletzt сделок net +0.661..+0.87%/trade.
+                             # TP 1.2% даёт peak monthly PnL в обоих окнах (3д и 6м).
+                             # Альтернативы:
+                             #   TP 0.8%   → $19/мес long, win 96.7%  (консервативнее)
+                             #   TP 2.0%   → $23/мес long, win 92.6%  (дольше hold 35h)
+                             #   TP 0.3%   → maker +13%, taker +0.4% (только при maker!)
+                             # ⚠️ Трейлинг-TP 0.5% в текущей низкой волатильности
+                             # (1.05%/час vs истор. 1.86%) срабатывает на шуме, дал -3%/мес.
+                             # Включайте trailing только при возврате волы к 1.8%+.
+                             # Hedge $200: long $29 + short $10 = $39/мес (maker).
+
+recommendation_horizon: 168
+
+cache:
+  enabled: true
+  dir: data/cache
+
+trades_journal:
+  csv_path: data/trades/journal.csv
+  json_path: data/trades/journal.json

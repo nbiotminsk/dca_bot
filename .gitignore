@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+data/cache/*.parquet
+data/trades/journal.csv
+data/trades/journal.json
+results/*.json
+.idea/
+.vscode/
+.DS_Store

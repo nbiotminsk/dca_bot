@@ -1,0 +1,42 @@
+exchange: bybit
+market_type: linear
+timeframe: 1h
+history_days: 90
+horizons_hours: [24, 72, 168]
+safety_factor: 1.2
+leverage: 2
+maintenance_margin_rate: 0.005
+
+dca:
+  orders_range: [3, 7]
+  price_scale_range: [1.1, 1.5]
+  base_qty_pct_long: 0.04
+  base_qty_pct_short: 0.03
+  volume_scale_thresholds:
+    conservative: 2.0
+    moderate: 1.5
+
+current_settings:
+  long:
+    orders: 5
+    price_coverage: 0.18
+    price_scale: 1.4
+    volume_scale: 1.2
+    base_qty: 0.04
+  short:
+    orders: 3
+    price_coverage: 0.12
+    price_scale: 1.3
+    volume_scale: 1.1
+    base_qty: 0.03
+  tp: 0.008
+
+recommendation_horizon: 168
+
+cache:
+  enabled: true
+  dir: data/cache
+
+trades_journal:
+  csv_path: data/trades/journal.csv
+  json_path: data/trades/journal.json

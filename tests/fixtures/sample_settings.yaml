@@ -1,0 +1,15 @@
+leverage: 2
+current_settings:
+  long:
+    orders: 5
+    price_coverage: 0.18
+    price_scale: 1.4
+    volume_scale: 1.2
+    base_qty: 0.04
+  short:
+    orders: 3
+    price_coverage: 0.12
+    price_scale: 1.3
+    volume_scale: 1.1
+    base_qty: 0.03
+  tp: 0.008

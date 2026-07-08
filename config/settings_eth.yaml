@@ -1,0 +1,84 @@
+# Пресет для ETHUSDT — настройки на основе backtest за 365 дней (8760 свечей).
+#
+# Раньше: считали по 1999 свечам (баг пагинации) → всеTP убыточны.
+# Сейчас: данные за год, 2148 сделок. Все комбинации прибыльны (ETH за год рос).
+# Оптимум Total PnL: TP 3.0% (1493). Но min_pnl -26.5% и 27% сделок hold 83ч —
+# рискованно vs TP 2.0% (1184 PnL, win 81.2%, hold 60ч). Выбрал TP 2.0% как
+# баланс прибыльности и устойчивости к будущему sideways-режиму.
+#
+# ВАЖНО:
+# - min_pnl -26.5% на одну сделку при leverage 2x = -53% от margin.
+# - Без stop-loss ETHUSDT long на 2x опасен в начале downtrend.
+# - Рассмотрите leverage 1x или stop-loss 20% от avg_entry.
+#
+# Использование:
+#   python scripts/calc_volatility.py ETHUSDT --config config/settings_eth.yaml
+#   python scripts/add_trade.py ETHUSDT long 2026-07-04 --config config/settings_eth.yaml \
+#       --use-config-defaults ...
+
+exchange: bybit
+market_type: linear
+timeframe: 1h
+history_days: 365             # используем полный год для стабильной статистики
+horizons_hours: [24, 72, 168]
+safety_factor: 1.2
+leverage: 2                 # для long; buffer SAFE. но см. min_pnl -26.5% →
+                            # рассмотрите 1x или stop-loss.
+maintenance_margin_rate: 0.005
+
+dca:
+  orders_range: [3, 7]
+  price_scale_range: [1.1, 1.5]
+  base_qty_pct_long: 0.04
+  base_qty_pct_short: 0.03
+  volume_scale_thresholds:
+    conservative: 2.0
+    moderate: 1.5
+
+current_settings:
+  long:
+    # Backtest 365д: coverage 0.18 + ps 1.11 стабильно лучше 0.24/0.27 во всём
+    # диапазоне TP. Узкая сетка ловит малые откаты; DCA срабатывает avg 1.22 раз.
+    # actual_coverage = 1 - (1/1.11)^2 = 18.9% — покрывает p95 24h ETH (10%).
+    orders: 3
+    price_coverage: 0.18
+    price_scale: 1.11
+    volume_scale: 1.20
+    base_qty: 0.04
+
+  short:
+    # ETH backtest не покрывал short. По cross-check с волатильностью:
+    # p95 short 168h = 11.6%, safety ×1.2 → target 13.9%.
+    # ps = 1.10 (actual_coverage 17.4% > 13.9%). Узкая сетка.
+    orders: 3
+    price_coverage: 0.139
+    price_scale: 1.10
+    volume_scale: 1.20
+    base_qty: 0.025
+
+  tp: 0.020                  # 2.0% — выбран как баланс:
+                             # - TP 3.0% дал бы +1493 (max) но win 72%, hold 83ч
+                             # - TP 2.0% даёт +1184 (-21%), но win 81%, hold 60ч
+                             # - TP 1.5% даёт +795 (-47%), win 85%, hold 48ч
+                             # Выбор: лучше чуть меньше PnL, но устойчивость к
+                             # возможному переходу ETH в sideways (минимизация hold).
+
+recommendation_horizon: 168
+
+cache:
+  enabled: true
+  dir: data/cache
+
+trades_journal:
+  csv_path: data/trades/journal.csv
+  json_path: data/trades/journal.json
+
+recommendation_horizon: 168
+
+cache:
+  enabled: true
+  dir: data/cache
+
+trades_journal:
+  csv_path: data/trades/journal.csv
+  json_path: data/trades/journal.json
