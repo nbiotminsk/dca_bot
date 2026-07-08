@@ -45,6 +45,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="Тип TP: fixed (limit) или trailing (скользящий)")
     parser.add_argument("--trail", type=float, default=0.3,
                         help="Callback rate для trailing TP в % (по умолчанию 0.3%)")
+    parser.add_argument("--fee", type=float, default=0.04,
+                        help="Комиссия за цикл (вход+выход) в %% (по умолчанию 0.04%% = maker 0.02%% × 2)")
     args = parser.parse_args(argv)
 
     cov_values = [float(x) for x in args.cov.split(",")]
@@ -66,19 +68,21 @@ def main(argv: list[str] | None = None) -> int:
             leverage=args.leverage, horizon_h=args.horizon, step=args.step,
             side=args.side, filter_mode=args.filter,
             tp_type=args.tp_type, trail_pct=args.trail / 100.0,
+            fee_pct=args.fee / 100.0,
         )
         df_part["volume_scale"] = vs
         all_dfs.append(df_part)
     table_df = pd.concat(all_dfs, ignore_index=True)
 
-    console = Console(width=140, force_terminal=True)
+    console = Console(width=160, force_terminal=True)
     filter_label = f" | filter={args.filter}" if args.filter != "none" else ""
     tp_label = f" | TP={args.tp_type}" + (f" trail={args.trail}%" if args.tp_type == "trailing" else "")
-    rich_tbl = Table(title=f"BACKTEST {args.side.upper()}  {args.symbol}  |  {args.days}д  |  lev={args.leverage}x{filter_label}{tp_label}",
+    fee_label = f" | fee={args.fee}%"
+    rich_tbl = Table(title=f"BACKTEST {args.side.upper()}  {args.symbol}  |  {args.days}д  |  lev={args.leverage}x{filter_label}{tp_label}{fee_label}",
                      header_style="bold cyan")
     for col in ("coverage", "price_scale", "tp_pct", "volume_scale", "n_trades",
                 "win_rate", "total_pnl", "avg_pnl", "min_pnl",
-                "liquidations", "avg_hold_h", "avg_entries"):
+                "liquidations", "avg_hold_h", "avg_entries", "max_dd", "sharpe", "profit_factor"):
         rich_tbl.add_column(col, justify="right")
     for _, row in table_df.iterrows():
         style = "[bold green]" if row["total_pnl"] > 0 and row["liquidations"] == 0 else ""
@@ -86,7 +90,7 @@ def main(argv: list[str] | None = None) -> int:
                             ("coverage", "price_scale", "tp_pct", "volume_scale",
                              "n_trades", "win_rate", "total_pnl", "avg_pnl",
                              "min_pnl", "liquidations",
-                             "avg_hold_h", "avg_entries")])
+                             "avg_hold_h", "avg_entries", "max_dd", "sharpe", "profit_factor")])
     console.print(rich_tbl)
 
     # Сводка топ-5
@@ -94,13 +98,13 @@ def main(argv: list[str] | None = None) -> int:
     console.print()
     best_tbl = Table(title="ТОП-5 ПО TOTAL_PNL", header_style="bold green")
     for col in ("coverage", "price_scale", "tp_pct", "win_rate",
-                "total_pnl", "avg_pnl", "liquidations"):
+                "total_pnl", "avg_pnl", "liquidations", "max_dd", "sharpe"):
         best_tbl.add_column(col, justify="right")
     for _, row in best.iterrows():
         best_tbl.add_row(*[str(row[c]) for c in
                             ("coverage", "price_scale", "tp_pct",
                              "win_rate", "total_pnl", "avg_pnl",
-                             "liquidations")])
+                             "liquidations", "max_dd", "sharpe")])
     console.print(best_tbl)
 
     if args.json_path:

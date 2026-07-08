@@ -20,6 +20,7 @@ class TradeResult:
     hit_tp: bool
     liquidated: bool
     hold_hours: int
+    fee_pct: float = 0.0
 
 
 @dataclass
@@ -36,6 +37,10 @@ class BacktestSummary:
     min_pnl_pct: float
     avg_hold_hours: float
     avg_entries: float
+    max_drawdown_pct: float = 0.0
+    sharpe_ratio: float = 0.0
+    sortino_ratio: float = 0.0
+    profit_factor: float = 0.0
 
 
 def _grid_levels(price: float, n: int, ps: float) -> list[float]:
@@ -94,6 +99,7 @@ def simulate_short(
     horizon_h: int = 168,
     base_qty: float = 1.0,
     step: int = 1,
+    fee_pct: float = 0.0004,
 ) -> list[TradeResult]:
     """Симулировать short DCA. Уровни усреднения: price, price*ps, price*ps^2, ...
 
@@ -161,6 +167,9 @@ def simulate_short(
         pnl_pct = (avg_entry - exit_price) / avg_entry * 100.0
         if liquidated:
             pnl_pct = -liq_rise * 100.0
+        
+        fee_total = fee_pct * (len(filled_prices) + 1) * 100.0
+        pnl_pct -= fee_total
 
         results.append(TradeResult(
             entry_idx=i,
@@ -172,6 +181,7 @@ def simulate_short(
             hit_tp=hit_tp,
             liquidated=liquidated,
             hold_hours=exit_idx - i,
+            fee_pct=fee_total,
         ))
     return results
 
@@ -270,6 +280,7 @@ def simulate_long(
     trail_pct: float = 0.003,
     grid_type: str = "geometric",
     tp_mode: str = "static",
+    fee_pct: float = 0.0004,
 ) -> list[TradeResult]:
     """Симулировать long DCA для каждой точки входа.
 
@@ -380,6 +391,9 @@ def simulate_long(
         pnl_pct = (exit_price - avg_entry) / avg_entry * 100.0
         if liquidated:
             pnl_pct = -liq_drop * 100.0
+        
+        fee_total = fee_pct * (len(filled_prices) + 1) * 100.0
+        pnl_pct -= fee_total
 
         results.append(TradeResult(
             entry_idx=i,
@@ -391,17 +405,107 @@ def simulate_long(
             hit_tp=hit_tp,
             liquidated=liquidated,
             hold_hours=exit_idx - i,
+            fee_pct=fee_total,
         ))
     return results
 
 
+def build_equity_curve(
+    results: list[TradeResult],
+    initial_balance: float = 100.0,
+    position_size_pct: float = 0.04,
+) -> np.ndarray:
+    """Построить equity curve по списку сделок.
+    
+    Фиксированная позиция: pnl_abs = pnl_pct * initial_balance * position_size_pct
+    """
+    if not results:
+        return np.array([initial_balance])
+    
+    sorted_trades = sorted(results, key=lambda r: r.entry_idx)
+    equity = [initial_balance]
+    
+    for trade in sorted_trades:
+        pnl_abs = trade.pnl_pct / 100.0 * initial_balance * position_size_pct
+        equity.append(equity[-1] + pnl_abs)
+    
+    return np.array(equity)
+
+
+def portfolio_metrics(equity_curve: np.ndarray) -> dict:
+    """Рассчитать портфельные метрики по equity curve.
+    
+    Returns:
+        dict с ключами:
+        - max_drawdown_pct: максимальная просадка от пика (%)
+        - max_drawdown_duration: длительность просадки в точках
+        - sharpe_ratio: годовая (sqrt(8760) для часовых сделок)
+        - sortino_ratio: downside deviation
+        - profit_factor: sum(wins) / sum(losses)
+        - calmar_ratio: annual_return / max_drawdown
+    """
+    if len(equity_curve) < 2:
+        return {
+            "max_drawdown_pct": 0.0,
+            "max_drawdown_duration": 0,
+            "sharpe_ratio": 0.0,
+            "sortino_ratio": 0.0,
+            "profit_factor": 0.0,
+            "calmar_ratio": 0.0,
+        }
+    
+    returns = np.diff(equity_curve) / equity_curve[:-1]
+    
+    peak = np.maximum.accumulate(equity_curve)
+    drawdown = (equity_curve - peak) / peak * 100.0
+    max_dd = float(np.min(drawdown))
+    
+    max_dd_duration = 0
+    current_duration = 0
+    for dd in drawdown:
+        if dd < 0:
+            current_duration += 1
+            max_dd_duration = max(max_dd_duration, current_duration)
+        else:
+            current_duration = 0
+    
+    mean_return = np.mean(returns)
+    std_return = np.std(returns)
+    sharpe = float(mean_return / std_return * np.sqrt(8760)) if std_return > 0 else 0.0
+    
+    downside_returns = returns[returns < 0]
+    downside_std = np.std(downside_returns) if len(downside_returns) > 0 else 0.0
+    sortino = float(mean_return / downside_std * np.sqrt(8760)) if downside_std > 0 else 0.0
+    
+    wins = returns[returns > 0]
+    losses = returns[returns < 0]
+    profit_factor = float(np.sum(wins) / np.abs(np.sum(losses))) if len(losses) > 0 and np.sum(losses) != 0 else 0.0
+    
+    annual_return = mean_return * 8760 * 100.0
+    calmar = float(annual_return / np.abs(max_dd)) if max_dd != 0 else 0.0
+    
+    return {
+        "max_drawdown_pct": float(max_dd),
+        "max_drawdown_duration": int(max_dd_duration),
+        "sharpe_ratio": float(sharpe),
+        "sortino_ratio": float(sortino),
+        "profit_factor": float(profit_factor),
+        "calmar_ratio": float(calmar),
+    }
+
+
 def summarize(results: list[TradeResult]) -> BacktestSummary:
     if not results:
-        return BacktestSummary(0, 0, 0, 0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+        return BacktestSummary(0, 0, 0, 0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                               0.0, 0.0, 0.0, 0.0)
     pnls = [r.pnl_pct for r in results]
     wins = sum(1 for p in pnls if p > 0)
     losses = sum(1 for p in pnls if p < 0)
     liqs = sum(1 for r in results if r.liquidated)
+    
+    equity = build_equity_curve(results)
+    metrics = portfolio_metrics(equity)
+    
     return BacktestSummary(
         n_trades=len(results),
         n_wins=wins,
@@ -415,6 +519,10 @@ def summarize(results: list[TradeResult]) -> BacktestSummary:
         min_pnl_pct=min(pnls),
         avg_hold_hours=sum(r.hold_hours for r in results) / len(results),
         avg_entries=sum(r.n_entries for r in results) / len(results),
+        max_drawdown_pct=metrics["max_drawdown_pct"],
+        sharpe_ratio=metrics["sharpe_ratio"],
+        sortino_ratio=metrics["sortino_ratio"],
+        profit_factor=metrics["profit_factor"],
     )
 
 
@@ -446,16 +554,18 @@ def simulate(
     filter_mode: str = "none",
     tp_type: str = "fixed",
     trail_pct: float = 0.003,
+    fee_pct: float = 0.0004,
 ) -> list[TradeResult]:
     if side == "long":
         return simulate_long(df, n_orders, price_scale, volume_scale, tp_pct,
                               leverage, maintenance_margin_rate, horizon_h,
                               base_qty, step, filter_mode=filter_mode,
-                              tp_type=tp_type, trail_pct=trail_pct)
+                              tp_type=tp_type, trail_pct=trail_pct,
+                              fee_pct=fee_pct)
     if side == "short":
         return simulate_short(df, n_orders, price_scale, volume_scale, tp_pct,
                                leverage, maintenance_margin_rate, horizon_h,
-                               base_qty, step)
+                               base_qty, step, fee_pct=fee_pct)
     raise ValueError(f"side должен быть long/short, получено {side!r}")
 
 
@@ -472,6 +582,7 @@ def grid_search(
     filter_mode: str = "none",
     tp_type: str = "fixed",
     trail_pct: float = 0.003,
+    fee_pct: float = 0.0004,
 ) -> pd.DataFrame:
     """Перебор coverage × TP. Возвращает DataFrame с метриками для каждого сочетания."""
     rows = []
@@ -484,6 +595,7 @@ def grid_search(
                 leverage=leverage, horizon_h=horizon_h, step=step,
                 side=side, filter_mode=filter_mode,
                 tp_type=tp_type, trail_pct=trail_pct,
+                fee_pct=fee_pct,
             )
             s = summarize(results)
             rows.append({
@@ -500,6 +612,9 @@ def grid_search(
                 "liquidations": s.n_liquidations,
                 "avg_hold_h": round(s.avg_hold_hours, 1),
                 "avg_entries": round(s.avg_entries, 2),
+                "max_dd": round(s.max_drawdown_pct, 2),
+                "sharpe": round(s.sharpe_ratio, 2),
+                "profit_factor": round(s.profit_factor, 2),
             })
     return pd.DataFrame(rows)
 
@@ -649,6 +764,7 @@ def monte_carlo_simulate(
     base_qty: float = 1.0,
     n_paths: int = 1000,
     side: str = "long",
+    fee_pct: float = 0.0004,
 ) -> dict:
     """Монте-Карло симуляция DCA-стратегии на основе геометрического броуновского движения.
     
@@ -751,6 +867,9 @@ def monte_carlo_simulate(
                 pnl_pct = (exit_price - avg_entry) / avg_entry * 100.0
             else:
                 pnl_pct = (avg_entry - exit_price) / avg_entry * 100.0
+        
+        fee_total = fee_pct * (len(filled_prices) + 1) * 100.0
+        pnl_pct -= fee_total
         
         results.append(pnl_pct)
     
