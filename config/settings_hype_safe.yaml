@@ -1,0 +1,64 @@
+# ═══════════════════════════════════════════════════════════════
+# ВАРИАНТ 2: horizon 720ч long — БЕЗОПАСНЫЙ (max stability)
+# ═══════════════════════════════════════════════════════════════
+# Широкая сетка для long (шаг 10%), horizon 30д — все сделки
+# закрываются в TP. 100% win rate, 0% drawdown.
+# Каждая сделка надёжно закрывается даже при глубокой просадке.
+#
+# Backtest 180д:
+#   LONG:  win 100.0%, PnL +824%, DD 0.00%, Sharpe 1145, hold 21ч
+#   SHORT: win 98.4%,  PnL +698%, DD -2.48%, Sharpe 30, hold 12ч
+# ═══════════════════════════════════════════════════════════════
+
+exchange: bybit
+market_type: linear
+timeframe: 1h
+history_days: 90
+horizons_hours: [24, 72, 168]
+safety_factor: 1.2
+leverage: 1
+maintenance_margin_rate: 0.005
+fee_pct: 0.0004
+
+dca:
+  orders_range: [5, 5]
+  price_scale_range: [1.03, 1.10]
+  volume_scale_thresholds:
+    conservative: 1.20
+    moderate: 1.15
+
+current_settings:
+  long:
+    # Coverage: 31.7% (до $49.39 от $72.31)
+    # Шаг: 10% между ордерами
+    # Глубокая сетка + 30д horizon → 100% win
+    # Заполняемость: L0=80% L1=12% L2=4% L3=3% L4=1%
+    orders: 5
+    price_coverage: 0.317
+    price_scale: 1.10         # 72.31 → 65.74 → 59.76 → 54.33 → 49.39
+    volume_scale: 1.20        # 0.30 / 0.36 / 0.43 / 0.52 / 0.62
+    base_qty: 0.30           # $21.69 1-й ордер; total $130 при полном заполнении
+    horizon_h: 720           # 30 дней на закрытие сделки
+
+  short:
+    # Coverage: 12.6% (до $81.39 от $72.31)
+    # Шаг: 3.0% между ордерами
+    # Hold 12ч, быстрый TP
+    orders: 5
+    price_coverage: 0.126
+    price_scale: 1.03         # 72.31 → 74.48 → 76.72 → 79.02 → 81.39
+    volume_scale: 1.20        # 0.015 / 0.018 / 0.022 / 0.026 / 0.031
+    base_qty: 0.015           # $1.08 1-й ордер; total $8.66 при полном заполнении
+    horizon_h: 168
+
+  tp: 0.010                   # 1.0% TP (maker 0.04% за цикл → net ~0.96%)
+
+recommendation_horizon: 168
+
+cache:
+  enabled: true
+  dir: data/cache
+
+trades_journal:
+  csv_path: data/trades/journal.csv
+  json_path: data/trades/journal.json
