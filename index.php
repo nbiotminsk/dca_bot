@@ -2,7 +2,7 @@
 /**
  * Live Web Screener & Signal Scanner для стратегии "Манипуляция на часе (Mon 1H)"
  * Монеты: HYPEUSDT, NEARUSDT, UNIUSDT
- * Автоматическое определение ДОМИНИРУЮЩЕГО СИГНАЛА с фильтром по времени (срок жизни импульса 24 часа).
+ * Автоматическое определение ДОМИНИРУЮЩЕГО СИГНАЛА с ручной кнопкой обновления и авто-сканированием.
  */
 
 error_reporting(E_ALL & ~E_DEPRECATED);
@@ -11,7 +11,7 @@ date_default_timezone_set('Europe/Moscow'); // UTC+3
 $symbols = ['HYPEUSDT', 'NEARUSDT', 'UNIUSDT'];
 $MIN_IMP_MANIP  = 1.0;
 $MIN_IMP_NORMAL = 3.5;
-$MAX_IMPULSE_HOURS = 48; // Импульсы старше 48 часов считаются устаревшими
+$MAX_IMPULSE_HOURS = 48;
 
 function fetchBybitKlines($symbol, $interval = '60', $limit = 100) {
     $url = "https://api.bybit.com/v5/market/kline?category=linear&symbol={$symbol}&interval={$interval}&limit={$limit}";
@@ -85,7 +85,7 @@ function detectLatestLongImpulse($candles, $min_pct) {
         }
     }
     if ($last_valid && ($n - 1 - $last_valid['end_idx']) > $MAX_IMPULSE_HOURS) {
-        return null; // Устаревший импульс
+        return null;
     }
     return $last_valid;
 }
@@ -121,7 +121,7 @@ function detectLatestShortImpulse($candles, $min_pct) {
         }
     }
     if ($last_valid && ($n - 1 - $last_valid['end_idx']) > $MAX_IMPULSE_HOURS) {
-        return null; // Устаревший импульс
+        return null;
     }
     return $last_valid;
 }
@@ -225,7 +225,20 @@ if (isset($_GET['ajax'])) {
         body { background-color: var(--bg); color: var(--text); padding: 24px; }
         .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid var(--border); }
         .header h1 { font-size: 22px; font-weight: 700; display: flex; align-items: center; gap: 10px; }
-        .badge-live { display: inline-flex; align-items: center; gap: 6px; background: rgba(0,230,118,0.15); color: var(--green); padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+        
+        .header-actions { display: flex; align-items: center; gap: 12px; }
+        .btn-refresh { 
+            display: inline-flex; align-items: center; gap: 8px; 
+            background: #252836; color: #fff; border: 1px solid #3b4054; 
+            padding: 8px 16px; border-radius: 8px; font-size: 14px; font-weight: 700; 
+            cursor: pointer; transition: all 0.2s ease; 
+        }
+        .btn-refresh:hover { background: #32374a; border-color: var(--blue); }
+        .btn-refresh:active { transform: scale(0.96); }
+        .btn-refresh.loading svg { animation: spin 0.8s linear infinite; }
+        @keyframes spin { 100% { transform: rotate(360deg); } }
+
+        .badge-live { display: inline-flex; align-items: center; gap: 6px; background: rgba(0,230,118,0.15); color: var(--green); padding: 6px 12px; border-radius: 8px; font-size: 12px; font-weight: 700; }
         .badge-live::before { content: ""; width: 8px; height: 8px; background: var(--green); border-radius: 50%; animation: pulse 1.5s infinite; }
         @keyframes pulse { 0% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(1.2); } 100% { opacity: 1; transform: scale(1); } }
         
@@ -260,8 +273,14 @@ if (isset($_GET['ajax'])) {
 
 <div class="header">
     <h1>📡 Mon 1H Strategy Terminal</h1>
-    <div style="display:flex; align-items:center; gap:16px;">
+    <div class="header-actions">
         <span id="update-time" style="color:var(--text-dim); font-size:13px;">Обновление...</span>
+        <button class="btn-refresh" id="refresh-btn" onclick="manualRefresh()">
+            <svg id="refresh-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+            </svg>
+            Обновить
+        </button>
         <span class="badge-live">LIVE BYBIT</span>
     </div>
 </div>
@@ -271,7 +290,14 @@ if (isset($_GET['ajax'])) {
 </div>
 
 <script>
+let isRefreshing = false;
+
 async function updateScreener() {
+    if (isRefreshing) return;
+    isRefreshing = true;
+    const btn = document.getElementById('refresh-btn');
+    if (btn) btn.classList.add('loading');
+
     try {
         const res = await fetch('?ajax=1');
         const data = await res.json();
@@ -302,7 +328,7 @@ async function updateScreener() {
                         <tr><td class="lbl">Стоп (0.764)</td><td class="c-red">${c.long_normal.sl} $</td></tr>
                     </table>
                     <div class="status-pill ${c.long_normal.active ? 'status-ready' : 'status-wait'}">
-                        ${c.long_normal.active ? (c.long_normal.is_fresher ? '🟢 ВХОД В LONG (Актуальный импульс)' : '⚠️ Старый импульс (предпочтительнее свежий тренд)') : '⏳ Ожидание отката'}
+                        ${c.long_normal.active ? (c.long_normal.is_fresher ? '🟢 ВХОД В LONG (Актуальный импульс)' : '⚠️ Старый импульс') : '⏳ Ожидание отката'}
                     </div>
                     ` : '<div style="color:var(--text-dim); font-size:12px;">Нет импульса ≥ 3.5% за 48ч</div>'}
                 </div>
@@ -320,7 +346,7 @@ async function updateScreener() {
                         <tr><td class="lbl">Стоп (0.764)</td><td class="c-red">${c.short_normal.sl} $</td></tr>
                     </table>
                     <div class="status-pill ${c.short_normal.active ? 'status-ready' : 'status-wait'}">
-                        ${c.short_normal.active ? (c.short_normal.is_fresher ? '🔴 ВХОД В SHORT (Актуальный дамп)' : '⚠️ Старый дамп (предпочтительнее свежий тренд)') : '⏳ Ожидание отскока вверх'}
+                        ${c.short_normal.active ? (c.short_normal.is_fresher ? '🔴 ВХОД В SHORT (Актуальный дамп)' : '⚠️ Старый дамп') : '⏳ Ожидание отскока вверх'}
                     </div>
                     ` : '<div style="color:var(--text-dim); font-size:12px;">Нет дамп-импульса ≥ 3.5% за 48ч</div>'}
                 </div>
@@ -350,11 +376,18 @@ async function updateScreener() {
         document.getElementById('coins-container').innerHTML = html;
     } catch (e) {
         console.error("Ошибка загрузки данных", e);
+    } finally {
+        isRefreshing = false;
+        if (btn) btn.classList.remove('loading');
     }
 }
 
+function manualRefresh() {
+    updateScreener();
+}
+
 updateScreener();
-setInterval(updateScreener, 5000);
+setInterval(updateScreener, 6000); // Фоновый автоапдейт каждые 6 сек
 </script>
 
 </body>
