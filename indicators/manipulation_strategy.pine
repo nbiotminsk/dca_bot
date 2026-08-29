@@ -1,51 +1,50 @@
 //@version=6
-indicator("Манипуляция на часе (Mon 1H) — Сетка Фибо и Сигналы", shorttitle="Mon 1H Live Fib", overlay=true, max_lines_count=100, max_labels_count=100)
+indicator("Манипуляция на часе (Mon 1H) — Сетка Фибо и Сигналы", shorttitle="Mon 1H Log/Lin Fib", overlay=true, max_lines_count=100, max_labels_count=100)
 
 // ─── 1. Настройки ────────────────────────────────────────────────────────────
-min_imp_pct   = input.float(2.0, "Мин. размах импульса (%)", minval=0.5, step=0.1)
-shadow_check  = input.bool(true, "Проверка тени 0.5 Fib при расширении")
-normal_sl_fib = input.float(0.764, "Стоп-Лосс обычного сценария (Fib)")
-show_manip    = input.bool(true, "Показывать уровни Манипуляции (1.618 / 2.0)")
+use_log_scale = input.bool(true, "Использовать ЛОГАРИФМИЧЕСКУЮ шкалу Фибо (Log Fib)", group="Режим шкалы")
+min_imp_pct   = input.float(2.0, "Мин. размах импульса (%)", minval=0.5, step=0.1, group="Импульс")
+shadow_check  = input.bool(true, "Проверка тени 0.5 Fib при расширении", group="Импульс")
+normal_sl_fib = input.float(0.764, "Стоп-Лосс обычного сценария (Fib)", group="Уровни")
+show_manip    = input.bool(true, "Показывать уровни Манипуляции (1.618 / 2.0)", group="Уровни")
 
-// ─── Функция расчета уровня Фибоначчи ────────────────────────────────────────
-fib_l(float h, float l, float lvl) => h - lvl * (h - l)
+// ─── Функция расчета уровня Фибоначчи (Линейная + Логарифмическая) ─────────
+fib_l(float h, float l, float lvl, bool is_log) =>
+    if is_log and h > 0 and l > 0
+        math.exp(math.log(h) - lvl * (math.log(h) - math.log(l)))
+    else
+        h - lvl * (h - l)
 
 // ─── Сканер Самого Свежего Актуального Импульса ──────────────────────────────
-// На каждом новом баре мы ищем самый последний сформированный импульс
 var int   last_imp_start = na
 var int   last_imp_end   = na
 var float last_imp_high  = na
 var float last_imp_low   = na
 
-// Алгоритм сканирования в истории (на глубину 100 баров назад)
 find_latest_impulse() =>
     int   f_start = na
     int   f_end   = na
     float f_high  = na
     float f_low   = na
     
-    // Идем от самых свежих свечей вглубь истории
     for i = 1 to 60
-        // Проверяем, есть ли импульс, начинающийся на баре i
         if high[i] > high[i+1] and low[i+1] > 0
             float cur_low  = low[i+1]
             float cur_high = high[i]
             int   cur_start= bar_index - (i + 1)
             int   cur_end  = bar_index - i
             
-            // Протягиваем импульс вперед по свечам
             bool valid_extension = true
             for j = i - 1 to 0
                 if high[j] > cur_high
-                    float prev_05 = fib_l(cur_high, cur_low, 0.500)
+                    float prev_05 = fib_l(cur_high, cur_low, 0.500, use_log_scale)
                     if shadow_check and low[j] <= prev_05
                         valid_extension := false
                         break
                     cur_high := high[j]
                     cur_end  := bar_index - j
                 else
-                    // Если не обновили HIGH, проверяем, не пробили ли 0.5
-                    float cur_05 = fib_l(cur_high, cur_low, 0.500)
+                    float cur_05 = fib_l(cur_high, cur_low, 0.500, use_log_scale)
                     if low[j] <= cur_05
                         break
                         
@@ -55,11 +54,10 @@ find_latest_impulse() =>
                 f_end   := cur_end
                 f_high  := cur_high
                 f_low   := cur_low
-                break // Нашли самый свежий импульс, прерываем поиск
+                break
                 
     [f_start, f_end, f_high, f_low]
 
-// Обновляем самый свежий импульс
 [cur_start, cur_end, cur_high, cur_low] = find_latest_impulse()
 
 if not na(cur_high) and not na(cur_low)
@@ -70,13 +68,13 @@ if not na(cur_high) and not na(cur_low)
 
 // ─── Расчет уровней Фибоначчи АКТУАЛЬНОГО импульса ────────────────────────────
 float p0    = last_imp_high
-float p382  = fib_l(last_imp_high, last_imp_low, 0.382)
-float p500  = fib_l(last_imp_high, last_imp_low, 0.500)
-float p618  = fib_l(last_imp_high, last_imp_low, 0.618)
-float psl   = fib_l(last_imp_high, last_imp_low, normal_sl_fib)
+float p382  = fib_l(last_imp_high, last_imp_low, 0.382, use_log_scale)
+float p500  = fib_l(last_imp_high, last_imp_low, 0.500, use_log_scale)
+float p618  = fib_l(last_imp_high, last_imp_low, 0.618, use_log_scale)
+float psl   = fib_l(last_imp_high, last_imp_low, normal_sl_fib, use_log_scale)
 float p100  = last_imp_low
-float p1618 = fib_l(last_imp_high, last_imp_low, 1.618)
-float p2000 = fib_l(last_imp_high, last_imp_low, 2.000)
+float p1618 = fib_l(last_imp_high, last_imp_low, 1.618, use_log_scale)
+float p2000 = fib_l(last_imp_high, last_imp_low, 2.000, use_log_scale)
 
 // ─── Отрисовка Живой Сетки Фибоначчи ──────────────────────────────────────────
 var line l0    = na, var line l500  = na, var line l618  = na, var line lsl   = na, var line l100  = na, var line l1618 = na, var line l2000 = na
@@ -89,21 +87,23 @@ if not na(last_imp_high) and not na(last_imp_low)
     int x1 = last_imp_start
     int x2 = bar_index + 12
     
+    string scale_tag = use_log_scale ? " (Log)" : ""
+    
     // 0.000 TOP
     l0    := line.new(x1, p0, x2, p0, color=color.gray, width=1, style=line.style_dashed)
     lbl0  := label.new(x2, p0, "0.000 TOP (" + str.tostring(p0, "#.##") + ")", style=label.style_label_left, color=color.new(color.black, 100), textcolor=color.gray, size=size.small)
     
     // 0.500 ТЕЙК
     l500  := line.new(x1, p500, x2, p500, color=color.green, width=2)
-    lbl500:= label.new(x2, p500, "0.500 ТЕЙК (" + str.tostring(p500, "#.##") + ")", style=label.style_label_left, color=color.new(color.black, 100), textcolor=color.green, size=size.small)
+    lbl500:= label.new(x2, p500, "0.500 ТЕЙК" + scale_tag + " (" + str.tostring(p500, "#.##") + ")", style=label.style_label_left, color=color.new(color.black, 100), textcolor=color.green, size=size.small)
     
     // 0.618 ВХОД
     l618  := line.new(x1, p618, x2, p618, color=color.blue, width=2)
-    lbl618:= label.new(x2, p618, "0.618 ВХОД (" + str.tostring(p618, "#.##") + ")", style=label.style_label_left, color=color.new(color.black, 100), textcolor=color.blue, size=size.small)
+    lbl618:= label.new(x2, p618, "0.618 ВХОД" + scale_tag + " (" + str.tostring(p618, "#.##") + ")", style=label.style_label_left, color=color.new(color.black, 100), textcolor=color.blue, size=size.small)
     
     // 0.764 СТОП
     lsl   := line.new(x1, psl, x2, psl, color=color.red, width=1, style=line.style_dashed)
-    lblsl := label.new(x2, psl, "0.764 СТОП (" + str.tostring(psl, "#.##") + ")", style=label.style_label_left, color=color.new(color.black, 100), textcolor=color.red, size=size.small)
+    lblsl := label.new(x2, psl, "0.764 СТОП" + scale_tag + " (" + str.tostring(psl, "#.##") + ")", style=label.style_label_left, color=color.new(color.black, 100), textcolor=color.red, size=size.small)
     
     // 1.000 ДНО ИМПУЛЬСА
     l100  := line.new(x1, p100, x2, p100, color=color.maroon, width=2)
