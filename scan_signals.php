@@ -4,7 +4,7 @@
  * 
  * Направления торговли:
  * 1) LONG Обычный (0.618 -> 0.500, SL 0.764) — Импульсы от 3.5%
- * 2) LONG Манипуляция (1.618 + 2.0 DCA -> 0.500) — Импульсы от 1.0%
+ * 2) LONG Манипуляция (1.618 + 2.0 DCA -> Тейки 0.618 и 0.500) — Импульсы от 1.0%
  * 3) SHORT Обычный (0.618 -> 0.500, SL 0.764) — Импульсы от 3.5% (Без манипуляции)
  * 
  * Формат цен: 3 знака после запятой
@@ -126,7 +126,7 @@ function detectLatestLongImpulse($candles, $min_pct) {
     return $last_valid;
 }
 
-// Поиск самого свежего SHORT импульса (Дамп)
+// Поиск самого свежего SHORT импульса
 function detectLatestShortImpulse($candles, $min_pct) {
     $n = count($candles);
     $last_valid = null;
@@ -212,11 +212,8 @@ foreach ($symbols as $sym) {
 
     $curPrice = end($candles)['close'];
 
-    // 1. Поиск LONG импульсов
-    $impLongNormal = detectLatestLongImpulse($candles, $MIN_IMP_NORMAL);
-    $impLongManip  = detectLatestLongImpulse($candles, $MIN_IMP_MANIP);
-
-    // 2. Поиск SHORT импульса
+    $impLongNormal  = detectLatestLongImpulse($candles, $MIN_IMP_NORMAL);
+    $impLongManip   = detectLatestLongImpulse($candles, $MIN_IMP_MANIP);
     $impShortNormal = detectLatestShortImpulse($candles, $MIN_IMP_NORMAL);
 
     if ($isCli) {
@@ -286,10 +283,13 @@ foreach ($symbols as $sym) {
         // ─── [3] 🟣 LONG МАНИПУЛЯЦИЯ (1.618 / 2.0 DCA) ───
         if ($impLongManip) {
             $h = $impLongManip['high']; $l = $impLongManip['low'];
-            $tp = calcFibLongLog($h, $l, 0.500);
-            $m1618 = calcFibLongLog($h, $l, 1.618);
-            $m2000 = calcFibLongLog($h, $l, 2.000);
-            $profit_m = (($tp - $m1618) / $m1618) * 100.0;
+            $tp0618 = calcFibLongLog($h, $l, 0.618);
+            $tp0500 = calcFibLongLog($h, $l, 0.500);
+            $m1618  = calcFibLongLog($h, $l, 1.618);
+            $m2000  = calcFibLongLog($h, $l, 2.000);
+
+            $profit_tp0618 = (($tp0618 - $m1618) / $m1618) * 100.0;
+            $profit_tp0500 = (($tp0500 - $m1618) / $m1618) * 100.0;
             $dist = (($curPrice - $m1618) / $curPrice) * 100.0;
 
             $status = "";
@@ -304,7 +304,8 @@ foreach ($symbols as $sym) {
             echo "      • Волна: {$tS} → {$tE} (Дно: " . fmt3($l) . "$ | Пик: " . fmt3($h) . "$ | Рост: +" . number_format($impLongManip['pct'], 2) . "%)\n";
             echo "      • 🟣 ВХОД (1.618) 1 лот : " . fmt3($m1618) . " $\n";
             echo "      • 🟠 ДОБОР (2.000) 2x   : " . fmt3($m2000) . " $\n";
-            echo "      • 🎯 ТЕЙК (0.500)       : " . fmt3($tp) . " $ (Ход: +" . number_format($profit_m, 2) . "%)\n";
+            echo "      • 🎯 ТЕЙК-1 (0.618 Fib) : " . fmt3($tp0618) . " $ (Ход от 1.618: +" . number_format($profit_tp0618, 2) . "%)\n";
+            echo "      • 🎯 ТЕЙК-2 (0.500 Fib) : " . fmt3($tp0500) . " $ (Ход от 1.618: +" . number_format($profit_tp0500, 2) . "%)\n";
             echo "      • 👉 Статус             : {$status}\n";
         }
         echo "\n";
@@ -328,9 +329,11 @@ foreach ($symbols as $sym) {
 
         if ($impLongManip) {
             $h = $impLongManip['high']; $l = $impLongManip['low'];
-            $tp = calcFibLongLog($h, $l, 0.500); $m1618 = calcFibLongLog($h, $l, 1.618); $m2000 = calcFibLongLog($h, $l, 2.000);
+            $tp0618 = calcFibLongLog($h, $l, 0.618); $tp0500 = calcFibLongLog($h, $l, 0.500);
+            $m1618 = calcFibLongLog($h, $l, 1.618); $m2000 = calcFibLongLog($h, $l, 2.000);
             echo "<h3>🟣 LONG Манипуляция 1.618 + 2.0 DCA (Импульс ≥ 1.0%)</h3>";
-            echo "<p>Вход 1.618: <b class='purple'>" . fmt3($m1618) . "$</b> | Добор 2.0: <b class='orange'>" . fmt3($m2000) . "$</b> | Тейк: <b class='green'>" . fmt3($tp) . "$</b></p>";
+            echo "<p>Вход 1.618: <b class='purple'>" . fmt3($m1618) . "$</b> | Добор 2.0: <b class='orange'>" . fmt3($m2000) . "$</b></p>";
+            echo "<p>🎯 Тейк-1 (0.618): <b class='green'>" . fmt3($tp0618) . "$</b> | 🎯 Тейк-2 (0.500): <b class='green'>" . fmt3($tp0500) . "$</b></p>";
         }
         echo "</div>";
     }
