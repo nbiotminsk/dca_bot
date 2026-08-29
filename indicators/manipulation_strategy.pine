@@ -1,9 +1,9 @@
 //@version=6
-indicator("Манипуляция на часе (Mon 1H) — Сетка Фибо и Сигналы", shorttitle="Mon 1H Strategy", overlay=true, max_lines_count=100, max_labels_count=100)
+indicator("Манипуляция на часе (Mon 1H) — Сетка Фибо и Сигналы", shorttitle="Mon 1H Strategy (1%)", overlay=true, max_lines_count=100, max_labels_count=100)
 
 // ─── 1. Настройки ────────────────────────────────────────────────────────────
 use_log_scale = input.bool(true, "Использовать ЛОГАРИФМИЧЕСКУЮ шкалу Фибо (Log Fib)", group="Режим шкалы")
-min_imp_pct   = input.float(2.0, "Мин. размах импульса (%)", minval=0.5, step=0.1, group="Импульс")
+min_imp_pct   = input.float(1.0, "Мин. размах импульса (%)", minval=0.5, step=0.1, group="Импульс")
 shadow_check  = input.bool(true, "Проверка тени 0.5 Fib при расширении", group="Импульс")
 normal_sl_fib = input.float(0.764, "Стоп-Лосс обычного сценария (Fib)", group="Уровни")
 show_manip    = input.bool(true, "Показывать уровни Манипуляции (1.618 / 2.0)", group="Уровни")
@@ -152,3 +152,10 @@ plotshape(buy_m2,     title="ДОБОР 2.0 DCA", style=shape.labelup, location=
 
 plotshape(tp_normal or tp_m, title="TP", style=shape.circle, location=location.abovebar, color=color.green, text="TP", textcolor=color.white, size=size.tiny)
 plotshape(sl_normal, title="SL", style=shape.cross, location=location.belowbar, color=color.red, text="SL", textcolor=color.white, size=size.tiny)
+
+// ─── Оповещения (Alerts) ─────────────────────────────────────────────────────
+alertcondition(buy_normal, "LONG 0.618", "Вход LONG 0.618: {{ticker}} @ {{close}} | TP: 0.500, SL: 0.764")
+alertcondition(buy_m1,     "Манипуляция 1.618", "Вход Манипуляция 1.618: {{ticker}} @ {{close}} | TP: 0.500")
+alertcondition(buy_m2,     "Добор 2.0 DCA", "Добор DCA 2.0: {{ticker}} @ {{close}}")
+alertcondition(tp_normal or tp_m, "Take Profit", "Тейк-Профит 0.500: {{ticker}} @ {{close}}")
+alertcondition(sl_normal, "Stop Loss", "Стоп-Лосс 0.764: {{ticker}} @ {{close}}")
