@@ -1,7 +1,11 @@
 <?php
 /**
  * Live Screener & Signal Scanner для стратегии "Манипуляция на часе (Mon 1H)"
- * Монеты: HYPEUSDT, NEARUSDT, UNIUSDT
+ * 
+ * Правила фильтрации размаха импульсов:
+ * 1) Для Манипуляции (1.618 / 2.0 DCA): импульсы от 1.0%
+ * 2) Для Обычного входа (0.618 -> 0.500): крупные импульсы от 3.5% (чтобы комиссия не съедала профит)
+ * 
  * Формат цен: 3 знака после запятой
  * Запуск: php scan_signals.php
  */
@@ -10,7 +14,10 @@ error_reporting(E_ALL & ~E_DEPRECATED);
 date_default_timezone_set('Europe/Moscow'); // UTC+3
 
 $symbols = ['HYPEUSDT', 'NEARUSDT', 'UNIUSDT'];
-$min_impulse_pct = 1.0; // Порог импульса 1.0%
+
+// Пороги импульсов
+$MIN_IMP_MANIP  = 1.0; // от 1.0% для Манипуляции
+$MIN_IMP_NORMAL = 3.5; // от 3.5% для Обычного входа (0.618 -> 0.500)
 
 // Функция запроса свечей с биржи Bybit (Linear Futures)
 function fetchBybitKlines($symbol, $interval = '60', $limit = 100) {
@@ -26,7 +33,6 @@ function fetchBybitKlines($symbol, $interval = '60', $limit = 100) {
     $json = json_decode($response, true);
     if (!isset($json['result']['list']) || empty($json['result']['list'])) return null;
 
-    // Bybit отдает свечи от новых к старым. Переворачиваем в хронологический порядок:
     $rawList = array_reverse($json['result']['list']);
     $candles = [];
     foreach ($rawList as $k) {
@@ -52,8 +58,8 @@ function fmt3($val) {
     return number_format((float)$val, 3, '.', '');
 }
 
-// Поиск самого свежего актуального импульса (1-в-1 с Python бэктестом)
-function detectLatestImpulse($candles, $min_pct = 1.0) {
+// Поиск самого свежего импульса заданной минимальной величины
+function detectLatestImpulse($candles, $min_pct) {
     $n = count($candles);
     $last_valid = null;
 
@@ -79,7 +85,6 @@ function detectLatestImpulse($candles, $min_pct = 1.0) {
         if ($is_active) {
             $f05 = calcFibLog($active_high, $active_low, 0.500);
             if ($cur['low'] <= $f05 && $i > $active_start) {
-                // Тень сломала 0.5 Fib — завершение
                 $is_active = false;
                 $pct = ($active_high - $active_low) / $active_low * 100.0;
                 if ($pct >= $min_pct && $active_end > $active_start) {
@@ -120,17 +125,17 @@ function detectLatestImpulse($candles, $min_pct = 1.0) {
 $isCli = (php_sapi_name() === 'cli');
 
 if (!$isCli) {
-    echo "<!DOCTYPE html><html><head><meta charset='UTF-8'><title>Mon 1H Live Screener</title>";
+    echo "<!DOCTYPE html><html><head><meta charset='UTF-8'><title>Mon 1H Screener</title>";
     echo "<style>body{font-family:Consolas,monospace;background:#121214;color:#e1e1e6;padding:20px;}";
     echo ".card{background:#1e1e24;border-radius:8px;padding:15px;margin-bottom:20px;border-left:5px solid #00c853;}";
     echo ".val{font-weight:bold;color:#00e5ff;} table{width:100%;border-collapse:collapse;margin-top:10px;}";
     echo "th,td{border:1px solid #333;padding:8px;text-align:left;} th{background:#2a2a35;}";
     echo ".green{color:#00e676;} .purple{color:#d500f9;} .orange{color:#ff9100;} .red{color:#ff5252;}";
-    echo "</style></head><body><h1>📡 Сканер точек входа (Mon 1H Strategy) — UTC+3</h1>";
+    echo "</style></head><body><h1>📡 Сканер раздельных сигналов (Mon 1H Strategy) — UTC+3</h1>";
 } else {
-    echo "\n=======================================================================\n";
-    echo "  📡 СКАНЕР СИГНАЛОВ И ТОЧЕК ВХОДА (Mon 1H Strategy) — " . date('d.m.Y H:i') . " (UTC+3)\n";
-    echo "=======================================================================\n\n";
+    echo "\n========================================================================================\n";
+    echo "  📡 СКАНЕР СИГНАЛОВ: МАНИПУЛЯЦИЯ (от 1.0%) И ОБЫЧНЫЙ ВХОД (от 3.5%) — " . date('d.m.Y H:i') . " (UTC+3)\n";
+    echo "========================================================================================\n\n";
 }
 
 foreach ($symbols as $sym) {
@@ -141,69 +146,106 @@ foreach ($symbols as $sym) {
     }
 
     $curPrice = end($candles)['close'];
-    $imp = detectLatestImpulse($candles, $min_impulse_pct);
 
-    if (!$imp) {
-        if ($isCli) {
-            echo "[$sym] Текущая цена: " . fmt3($curPrice) . "$ | Нет активного импульса > {$min_impulse_pct}%\n\n";
-        }
-        continue;
-    }
-
-    $h = $imp['high'];
-    $l = $imp['low'];
-
-    // Расчет уровней (Log Scale)
-    $tp0500 = calcFibLog($h, $l, 0.500);
-    $in0618 = calcFibLog($h, $l, 0.618);
-    $sl0764 = calcFibLog($h, $l, 0.764);
-    $m1618  = calcFibLog($h, $l, 1.618);
-    $m2000  = calcFibLog($h, $l, 2.000);
-
-    // Определение статуса и рекомендации
-    $distToNormal = (($curPrice - $in0618) / $curPrice) * 100.0;
-    $distToManip  = (($curPrice - $m1618) / $curPrice) * 100.0;
-
-    $recommendation = "";
-    if ($curPrice <= $in0618 && $curPrice > $sl0764) {
-        $recommendation = "🟢 ЗОНА ВХОДА В LONG (0.618)! Тейк: " . fmt3($tp0500) . "$, Стоп: " . fmt3($sl0764) . "$";
-    } elseif ($curPrice <= $m1618 && $curPrice > $m2000) {
-        $recommendation = "🟣 ЗОНА ВХОДА В МАНИПУЛЯЦИЮ 1.618! Тейк: " . fmt3($tp0500) . "$, Добор на: " . fmt3($m2000) . "$";
-    } elseif ($curPrice <= $m2000) {
-        $recommendation = "🟠 ЗОНА ДОБОРА МАНИПУЛЯЦИИ 2.0 (2x)! Тейк: " . fmt3($tp0500) . "$";
-    } elseif ($curPrice > $in0618) {
-        $recommendation = "⏳ ОЖИДАНИЕ КОРРЕКЦИИ: До входа в LONG 0.618 осталось " . number_format($distToNormal, 2) . "% падения.";
-    } else {
-        $recommendation = "🛑 Зона между Стопом и Манипуляцией. Ждем уровня 1.618 (" . fmt3($m1618) . "$).";
-    }
-
-    $tStart = date('d.m H:i', (int)($imp['start_time'] / 1000));
-    $tEnd   = date('d.m H:i', (int)($imp['end_time'] / 1000));
+    // 1. Ищем импульс для Манипуляции (от 1.0%)
+    $impManip  = detectLatestImpulse($candles, $MIN_IMP_MANIP);
+    // 2. Ищем крупный импульс для Обычного входа (от 3.5%)
+    $impNormal = detectLatestImpulse($candles, $MIN_IMP_NORMAL);
 
     if ($isCli) {
-        echo "🪙 МОНЕТА: {$sym}\n";
-        echo "   Текущая цена   : " . fmt3($curPrice) . " $\n";
-        echo "   Импульс волны  : {$tStart} → {$tEnd} (Дно: " . fmt3($l) . "$ | Пик: " . fmt3($h) . "$ | Размах: +" . number_format($imp['pct'], 2) . "%)\n";
-        echo "   --------------------------------------------------------------------\n";
-        echo "   🎯 [0.500] Тейк-Профит (TP)       : " . fmt3($tp0500) . " $\n";
-        echo "   🟢 [0.618] Точка Входа в LONG     : " . fmt3($in0618) . " $\n";
-        echo "   🛑 [0.764] Стоп-Лосс (SL)         : " . fmt3($sl0764) . " $\n";
-        echo "   🟣 [1.618] Манипуляция (1 лот)    : " . fmt3($m1618) . " $\n";
-        echo "   🟠 [2.000] Добор DCA (2 лота)     : " . fmt3($m2000) . " $\n";
-        echo "   --------------------------------------------------------------------\n";
-        echo "   👉 СТАТУС: {$recommendation}\n\n";
+        echo "🪙 МОНЕТА: {$sym} | Текущая цена: " . fmt3($curPrice) . " $\n";
+        echo "========================================================================================\n";
+
+        // ─── БЛОК 1: ОБЫЧНЫЙ ВХОД (0.618 -> 0.500) ОТ 3.5% ───
+        if ($impNormal) {
+            $h_n = $impNormal['high'];
+            $l_n = $impNormal['low'];
+            $tp_n = calcFibLog($h_n, $l_n, 0.500);
+            $in_n = calcFibLog($h_n, $l_n, 0.618);
+            $sl_n = calcFibLog($h_n, $l_n, 0.764);
+            $profit_pct = (($tp_n - $in_n) / $in_n) * 100.0;
+            $dist_n = (($curPrice - $in_n) / $curPrice) * 100.0;
+
+            $status_n = "";
+            if ($curPrice <= $in_n && $curPrice > $sl_n) {
+                $status_n = "🟢 ВХОД В LONG СЕЙЧАС!";
+            } elseif ($curPrice > $in_n) {
+                $status_n = "⏳ Ожидание: до входа осталось " . number_format($dist_n, 2) . "% падения";
+            } else {
+                $status_n = "🛑 Ниже стопа";
+            }
+
+            $tS_n = date('d.m H:i', (int)($impNormal['start_time'] / 1000));
+            $tE_n = date('d.m H:i', (int)($impNormal['end_time'] / 1000));
+
+            echo "  [1] 🟢 ОБЫЧНЫЙ ВХОД 0.618 → 0.500 (Импульс ≥ 3.5%):\n";
+            echo "      • Волна: {$tS_n} → {$tE_n} (Дно: " . fmt3($l_n) . "$ | Пик: " . fmt3($h_n) . "$ | Размах: +" . number_format($impNormal['pct'], 2) . "%)\n";
+            echo "      • 🟢 ВХОД (0.618)      : " . fmt3($in_n) . " $\n";
+            echo "      • 🎯 ТЕЙК (0.500)      : " . fmt3($tp_n) . " $ (Чистый ход: +" . number_format($profit_pct, 2) . "%)\n";
+            echo "      • 🛑 СТОП (0.764)      : " . fmt3($sl_n) . " $\n";
+            echo "      • 👉 Статус            : {$status_n}\n";
+        } else {
+            echo "  [1] 🟢 ОБЫЧНЫЙ ВХОД 0.618 → 0.500 (Импульс ≥ 3.5%):\n";
+            echo "      • Нет активного крупного импульса ≥ 3.5% (защита от комиссий)\n";
+        }
+
+        echo "  --------------------------------------------------------------------------------------\n";
+
+        // ─── БЛОК 2: МАНИПУЛЯЦИЯ (1.618 / 2.0 DCA) ОТ 1.0% ───
+        if ($impManip) {
+            $h_m = $impManip['high'];
+            $l_m = $impManip['low'];
+            $tp_m = calcFibLog($h_m, $l_m, 0.500);
+            $m1618 = calcFibLog($h_m, $l_m, 1.618);
+            $m2000 = calcFibLog($h_m, $l_m, 2.000);
+            $profit_m = (($tp_m - $m1618) / $m1618) * 100.0;
+            $dist_m = (($curPrice - $m1618) / $curPrice) * 100.0;
+
+            $status_m = "";
+            if ($curPrice <= $m1618 && $curPrice > $m2000) {
+                $status_m = "🟣 ВХОД В МАНИПУЛЯЦИЮ 1.618 СЕЙЧАС!";
+            } elseif ($curPrice <= $m2000) {
+                $status_m = "🟠 ДОБОР DCA 2.0 (2 лота) СЕЙЧАС!";
+            } else {
+                $status_m = "⏳ Ожидание: до уровня 1.618 осталось " . number_format($dist_m, 2) . "%";
+            }
+
+            $tS_m = date('d.m H:i', (int)($impManip['start_time'] / 1000));
+            $tE_m = date('d.m H:i', (int)($impManip['end_time'] / 1000));
+
+            echo "  [2] 🟣 МАНИПУЛЯЦИЯ 1.618 + 2.0 DCA (Импульс ≥ 1.0%):\n";
+            echo "      • Волна: {$tS_m} → {$tE_m} (Дно: " . fmt3($l_m) . "$ | Пик: " . fmt3($h_m) . "$ | Размах: +" . number_format($impManip['pct'], 2) . "%)\n";
+            echo "      • 🟣 ВХОД (1.618) 1 лот : " . fmt3($m1618) . " $\n";
+            echo "      • 🟠 ДОБОР (2.000) 2x   : " . fmt3($m2000) . " $\n";
+            echo "      • 🎯 ТЕЙК (0.500)       : " . fmt3($tp_m) . " $ (Чистый ход: +" . number_format($profit_m, 2) . "%)\n";
+            echo "      • 👉 Статус             : {$status_m}\n";
+        }
+        echo "\n";
     } else {
         echo "<div class='card'>";
         echo "<h2>🪙 {$sym} — Цена: <span class='val'>" . fmt3($curPrice) . " $</span></h2>";
-        echo "<p>Импульс: {$tStart} → {$tEnd} (Дно: " . fmt3($l) . "$ | Пик: " . fmt3($h) . "$ | Рост: +" . number_format($imp['pct'], 2) . "%)</p>";
-        echo "<table><tr><th>Уровень Fib</th><th>Назначение</th><th>Цена ($)</th></tr>";
-        echo "<tr><td class='green'>0.500</td><td>Тейк-Профит (TP)</td><td>" . fmt3($tp0500) . " $</td></tr>";
-        echo "<tr><td class='green'>0.618</td><td>Точка Входа в LONG</td><td>" . fmt3($in0618) . " $</td></tr>";
-        echo "<tr><td class='red'>0.764</td><td>Стоп-Лосс (SL)</td><td>" . fmt3($sl0764) . " $</td></tr>";
-        echo "<tr><td class='purple'>1.618</td><td>Манипуляция (1 лот)</td><td>" . fmt3($m1618) . " $</td></tr>";
-        echo "<tr><td class='orange'>2.000</td><td>Добор DCA (2 лота)</td><td>" . fmt3($m2000) . " $</td></tr>";
-        echo "</table>";
-        echo "<p style='margin-top:12px;font-size:16px;'><b>👉 Статус:</b> {$recommendation}</p>";
+        
+        if ($impNormal) {
+            $h_n = $impNormal['high']; $l_n = $impNormal['low'];
+            $tp_n = calcFibLog($h_n, $l_n, 0.500);
+            $in_n = calcFibLog($h_n, $l_n, 0.618);
+            $sl_n = calcFibLog($h_n, $l_n, 0.764);
+            $profit_pct = (($tp_n - $in_n) / $in_n) * 100.0;
+            echo "<h3>🟢 Обычный вход 0.618 → 0.500 (Импульс ≥ 3.5%)</h3>";
+            echo "<p>Вход: <b>" . fmt3($in_n) . "$</b> | Тейк: <b class='green'>" . fmt3($tp_n) . "$ (+" . number_format($profit_pct, 2) . "%)</b> | Стоп: <b class='red'>" . fmt3($sl_n) . "$</b></p>";
+        } else {
+            echo "<p><i>Нет импульса ≥ 3.5% для обычного входа (защита от комиссий)</i></p>";
+        }
+
+        if ($impManip) {
+            $h_m = $impManip['high']; $l_m = $impManip['low'];
+            $tp_m = calcFibLog($h_m, $l_m, 0.500);
+            $m1618 = calcFibLog($h_m, $l_m, 1.618);
+            $m2000 = calcFibLog($h_m, $l_m, 2.000);
+            $profit_m = (($tp_m - $m1618) / $m1618) * 100.0;
+            echo "<h3>🟣 Манипуляция 1.618 + 2.0 DCA (Импульс ≥ 1.0%)</h3>";
+            echo "<p>Вход 1.618: <b class='purple'>" . fmt3($m1618) . "$</b> | Добор 2.0: <b class='orange'>" . fmt3($m2000) . "$</b> | Тейк: <b class='green'>" . fmt3($tp_m) . "$ (+" . number_format($profit_m, 2) . "%)</b></p>";
+        }
         echo "</div>";
     }
 }
