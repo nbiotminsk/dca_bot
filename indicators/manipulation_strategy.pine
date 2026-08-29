@@ -1,5 +1,5 @@
 //@version=6
-indicator("Манипуляция на часе (Mon 1H) — Сетка Фибо и Сигналы", shorttitle="Mon 1H Fib", overlay=true, max_lines_count=100, max_labels_count=100)
+indicator("Манипуляция на часе (Mon 1H) — Сетка Фибо и Сигналы", shorttitle="Mon 1H Live Fib", overlay=true, max_lines_count=100, max_labels_count=100)
 
 // ─── 1. Настройки ────────────────────────────────────────────────────────────
 min_imp_pct   = input.float(2.0, "Мин. размах импульса (%)", minval=0.5, step=0.1)
@@ -7,66 +7,86 @@ shadow_check  = input.bool(true, "Проверка тени 0.5 Fib при ра�
 normal_sl_fib = input.float(0.764, "Стоп-Лосс обычного сценария (Fib)")
 show_manip    = input.bool(true, "Показывать уровни Манипуляции (1.618 / 2.0)")
 
-// ─── Функции расчета Фибоначчи ───────────────────────────────────────────────
+// ─── Функция расчета уровня Фибоначчи ────────────────────────────────────────
 fib_l(float h, float l, float lvl) => h - lvl * (h - l)
 
-// ─── Точный Детектор Импульса (Идентичен Python бэктесту) ───────────────────
-var int   imp_start_idx = na
-var int   imp_end_idx   = na
-var float imp_high      = na
-var float imp_low       = na
-var bool  imp_active    = false
+// ─── Сканер Самого Свежего Актуального Импульса ──────────────────────────────
+// На каждом новом баре мы ищем самый последний сформированный импульс
+var int   last_imp_start = na
+var int   last_imp_end   = na
+var float last_imp_high  = na
+var float last_imp_low   = na
 
-// 1. Старт импульса: свеча обновляет HIGH предыдущей свечи снизу
-if ta.crossover(high, high[1]) and not imp_active
-    // Ищем локальное дно (минимум перед началом движения)
-    imp_start_idx := bar_index - 1
-    imp_low       := low[1]
-    imp_high      := high
-    imp_end_idx   := bar_index
-    imp_active    := true
+// Алгоритм сканирования в истории (на глубину 100 баров назад)
+find_latest_impulse() =>
+    int   f_start = na
+    int   f_end   = na
+    float f_high  = na
+    float f_low   = na
+    
+    // Идем от самых свежих свечей вглубь истории
+    for i = 1 to 60
+        // Проверяем, есть ли импульс, начинающийся на баре i
+        if high[i] > high[i+1] and low[i+1] > 0
+            float cur_low  = low[i+1]
+            float cur_high = high[i]
+            int   cur_start= bar_index - (i + 1)
+            int   cur_end  = bar_index - i
+            
+            // Протягиваем импульс вперед по свечам
+            bool valid_extension = true
+            for j = i - 1 to 0
+                if high[j] > cur_high
+                    float prev_05 = fib_l(cur_high, cur_low, 0.500)
+                    if shadow_check and low[j] <= prev_05
+                        valid_extension := false
+                        break
+                    cur_high := high[j]
+                    cur_end  := bar_index - j
+                else
+                    // Если не обновили HIGH, проверяем, не пробили ли 0.5
+                    float cur_05 = fib_l(cur_high, cur_low, 0.500)
+                    if low[j] <= cur_05
+                        break
+                        
+            float pct = (cur_high - cur_low) / cur_low * 100.0
+            if pct >= min_imp_pct and cur_end > cur_start
+                f_start := cur_start
+                f_end   := cur_end
+                f_high  := cur_high
+                f_low   := cur_low
+                break // Нашли самый свежий импульс, прерываем поиск
+                
+    [f_start, f_end, f_high, f_low]
 
-// 2. Расширение импульса
-if imp_active
-    // Если импульс продолжается и обновляет максимум:
-    if high > imp_high
-        // Тень текущей свечи не должна пробивать 0.500 Fib от ПРЕДЫДУЩЕГО максимума
-        float prev_05 = fib_l(imp_high, imp_low, 0.500)
-        if not shadow_check or low > prev_05
-            imp_high    := high
-            imp_end_idx := bar_index
-        else
-            // Тень нарушила 0.5 Fib — импульс завершился на предыдущей свече
-            imp_active := false
-    else
-        // Свеча не обновила максимум (пауза/откат). Проверяем, не сломала ли она 0.5 Fib:
-        float cur_05 = fib_l(imp_high, imp_low, 0.500)
-        if low <= cur_05
-            // Коррекция глубже 0.5 — импульс окончательно зафиксирован и завершен
-            imp_active := false
+// Обновляем самый свежий импульс
+[cur_start, cur_end, cur_high, cur_low] = find_latest_impulse()
 
-// Проверка минимального размера (≥ 2%)
-bool is_valid_imp = not na(imp_high) and not na(imp_low) and ((imp_high - imp_low) / imp_low * 100.0 >= min_imp_pct)
+if not na(cur_high) and not na(cur_low)
+    last_imp_start := cur_start
+    last_imp_end   := cur_end
+    last_imp_high  := cur_high
+    last_imp_low   := cur_low
 
-// ─── Расчет уровней Фибоначчи актуального импульса ───────────────────────────
-float p0    = imp_high
-float p382  = fib_l(imp_high, imp_low, 0.382)
-float p500  = fib_l(imp_high, imp_low, 0.500)
-float p618  = fib_l(imp_high, imp_low, 0.618)
-float psl   = fib_l(imp_high, imp_low, normal_sl_fib)
-float p100  = imp_low
-float p1618 = fib_l(imp_high, imp_low, 1.618)
-float p2000 = fib_l(imp_high, imp_low, 2.000)
+// ─── Расчет уровней Фибоначчи АКТУАЛЬНОГО импульса ────────────────────────────
+float p0    = last_imp_high
+float p382  = fib_l(last_imp_high, last_imp_low, 0.382)
+float p500  = fib_l(last_imp_high, last_imp_low, 0.500)
+float p618  = fib_l(last_imp_high, last_imp_low, 0.618)
+float psl   = fib_l(last_imp_high, last_imp_low, normal_sl_fib)
+float p100  = last_imp_low
+float p1618 = fib_l(last_imp_high, last_imp_low, 1.618)
+float p2000 = fib_l(last_imp_high, last_imp_low, 2.000)
 
-// ─── Отрисовка ПРАВИЛЬНОЙ сетки Фибоначчи от НАЧАЛА импульса ─────────────────
+// ─── Отрисовка Живой Сетки Фибоначчи ──────────────────────────────────────────
 var line l0    = na, var line l500  = na, var line l618  = na, var line lsl   = na, var line l100  = na, var line l1618 = na, var line l2000 = na
 var label lbl0 = na, var label lbl500 = na, var label lbl618 = na, var label lblsl = na, var label lbl100 = na, var label lbl1618 = na, var label lbl2000 = na
 
-if is_valid_imp
+if not na(last_imp_high) and not na(last_imp_low)
     line.delete(l0), line.delete(l500), line.delete(l618), line.delete(lsl), line.delete(l100), line.delete(l1618), line.delete(l2000)
     label.delete(lbl0), label.delete(lbl500), label.delete(lbl618), label.delete(lblsl), label.delete(lbl100), label.delete(lbl1618), label.delete(lbl2000)
     
-    int x1 = imp_start_idx
+    int x1 = last_imp_start
     int x2 = bar_index + 12
     
     // 0.000 TOP
@@ -103,7 +123,7 @@ var bool in_pos_normal = false
 var bool in_pos_manip  = false
 var bool in_pos_dca    = false
 
-bool buy_normal = is_valid_imp and not in_pos_normal and ta.crossunder(low, p618) and low > psl
+bool buy_normal = not in_pos_normal and ta.crossunder(low, p618) and low > psl
 if buy_normal
     in_pos_normal := true
 
@@ -112,7 +132,7 @@ bool sl_normal  = in_pos_normal and ta.crossunder(low, psl)
 if tp_normal or sl_normal
     in_pos_normal := false
 
-bool buy_m1 = show_manip and is_valid_imp and not in_pos_manip and ta.crossunder(low, p1618)
+bool buy_m1 = show_manip and not in_pos_manip and ta.crossunder(low, p1618)
 if buy_m1
     in_pos_manip := true
 
