@@ -2,7 +2,7 @@
 /**
  * Live Web Screener & Signal Scanner для стратегии "Манипуляция на часе (Mon 1H)"
  * Монеты: HYPEUSDT, NEARUSDT, UNIUSDT
- * Автоматическое обновление данных без перезагрузки страницы каждые 10 секунд.
+ * Автоматическое определение ДОМИНИРУЮЩЕГО СИГНАЛА с фильтром по времени (срок жизни импульса 24 часа).
  */
 
 error_reporting(E_ALL & ~E_DEPRECATED);
@@ -11,6 +11,7 @@ date_default_timezone_set('Europe/Moscow'); // UTC+3
 $symbols = ['HYPEUSDT', 'NEARUSDT', 'UNIUSDT'];
 $MIN_IMP_MANIP  = 1.0;
 $MIN_IMP_NORMAL = 3.5;
+$MAX_IMPULSE_HOURS = 48; // Импульсы старше 48 часов считаются устаревшими
 
 function fetchBybitKlines($symbol, $interval = '60', $limit = 100) {
     $url = "https://api.bybit.com/v5/market/kline?category=linear&symbol={$symbol}&interval={$interval}&limit={$limit}";
@@ -54,6 +55,7 @@ function fmt3($val) {
 }
 
 function detectLatestLongImpulse($candles, $min_pct) {
+    global $MAX_IMPULSE_HOURS;
     $n = count($candles);
     $last_valid = null;
     $active_start = null; $active_low = null; $active_high = null; $active_end = null; $is_active = false;
@@ -69,23 +71,27 @@ function detectLatestLongImpulse($candles, $min_pct) {
                 $is_active = false;
                 $pct = ($active_high - $active_low) / $active_low * 100.0;
                 if ($pct >= $min_pct && $active_end > $active_start) {
-                    $last_valid = ['start_time' => $candles[$active_start]['time'], 'end_time' => $candles[$active_end]['time'], 'high' => $active_high, 'low' => $active_low, 'pct' => $pct];
+                    $last_valid = ['start_time' => $candles[$active_start]['time'], 'end_time' => $candles[$active_end]['time'], 'end_idx' => $active_end, 'high' => $active_high, 'low' => $active_low, 'pct' => $pct];
                 }
             } else {
-                if ($cur['high'] > $active_high) { $active_high = $cur['high']; $active_end = $i; }
+                if ($cur['high'] > $active_high) { $active_high = $cur['high']; $active_end  = $i; }
             }
         }
     }
     if ($is_active && $active_high && $active_low) {
         $pct = ($active_high - $active_low) / $active_low * 100.0;
         if ($pct >= $min_pct) {
-            $last_valid = ['start_time' => $candles[$active_start]['time'], 'end_time' => $candles[$active_end]['time'], 'high' => $active_high, 'low' => $active_low, 'pct' => $pct, 'is_live' => true];
+            $last_valid = ['start_time' => $candles[$active_start]['time'], 'end_time' => $candles[$active_end]['time'], 'end_idx' => $active_end, 'high' => $active_high, 'low' => $active_low, 'pct' => $pct, 'is_live' => true];
         }
+    }
+    if ($last_valid && ($n - 1 - $last_valid['end_idx']) > $MAX_IMPULSE_HOURS) {
+        return null; // Устаревший импульс
     }
     return $last_valid;
 }
 
 function detectLatestShortImpulse($candles, $min_pct) {
+    global $MAX_IMPULSE_HOURS;
     $n = count($candles);
     $last_valid = null;
     $active_start = null; $active_high = null; $active_low = null; $active_end = null; $is_active = false;
@@ -101,7 +107,7 @@ function detectLatestShortImpulse($candles, $min_pct) {
                 $is_active = false;
                 $pct = ($active_high - $active_low) / $active_high * 100.0;
                 if ($pct >= $min_pct && $active_end > $active_start) {
-                    $last_valid = ['start_time' => $candles[$active_start]['time'], 'end_time' => $candles[$active_end]['time'], 'high' => $active_high, 'low' => $active_low, 'pct' => $pct];
+                    $last_valid = ['start_time' => $candles[$active_start]['time'], 'end_time' => $candles[$active_end]['time'], 'end_idx' => $active_end, 'high' => $active_high, 'low' => $active_low, 'pct' => $pct];
                 }
             } else {
                 if ($cur['low'] < $active_low) { $active_low = $cur['low']; $active_end = $i; }
@@ -111,13 +117,15 @@ function detectLatestShortImpulse($candles, $min_pct) {
     if ($is_active && $active_high && $active_low) {
         $pct = ($active_high - $active_low) / $active_high * 100.0;
         if ($pct >= $min_pct) {
-            $last_valid = ['start_time' => $candles[$active_start]['time'], 'end_time' => $candles[$active_end]['time'], 'high' => $active_high, 'low' => $active_low, 'pct' => $pct, 'is_live' => true];
+            $last_valid = ['start_time' => $candles[$active_start]['time'], 'end_time' => $candles[$active_end]['time'], 'end_idx' => $active_end, 'high' => $active_high, 'low' => $active_low, 'pct' => $pct, 'is_live' => true];
         }
+    }
+    if ($last_valid && ($n - 1 - $last_valid['end_idx']) > $MAX_IMPULSE_HOURS) {
+        return null; // Устаревший импульс
     }
     return $last_valid;
 }
 
-// Если запрос пришел по AJAX для обновления карточек:
 if (isset($_GET['ajax'])) {
     header('Content-Type: application/json');
     $data = [];
@@ -131,6 +139,9 @@ if (isset($_GET['ajax'])) {
 
         $card = ['symbol' => $sym, 'price' => fmt3($curPrice)];
 
+        $long_time = $impLN ? $impLN['end_time'] : 0;
+        $short_time = $impSN ? $impSN['end_time'] : 0;
+
         // Long Normal
         if ($impLN) {
             $in = calcFibLongLog($impLN['high'], $impLN['low'], 0.618);
@@ -139,7 +150,9 @@ if (isset($_GET['ajax'])) {
             $card['long_normal'] = [
                 'entry' => fmt3($in), 'tp' => fmt3($tp), 'sl' => fmt3($sl),
                 'pct' => number_format($impLN['pct'], 2),
-                'active' => ($curPrice <= $in && $curPrice > $sl)
+                'active' => ($curPrice <= $in && $curPrice > $sl),
+                'time' => date('d.m H:i', (int)($impLN['end_time'] / 1000)),
+                'is_fresher' => ($long_time >= $short_time)
             ];
         }
 
@@ -151,7 +164,9 @@ if (isset($_GET['ajax'])) {
             $card['short_normal'] = [
                 'entry' => fmt3($in), 'tp' => fmt3($tp), 'sl' => fmt3($sl),
                 'pct' => number_format($impSN['pct'], 2),
-                'active' => ($curPrice >= $in && $curPrice < $sl)
+                'active' => ($curPrice >= $in && $curPrice < $sl),
+                'time' => date('d.m H:i', (int)($impSN['end_time'] / 1000)),
+                'is_fresher' => ($short_time > $long_time)
             ];
         }
 
@@ -165,8 +180,20 @@ if (isset($_GET['ajax'])) {
                 'entry_1' => fmt3($m1), 'entry_2' => fmt3($m2),
                 'tp_1' => fmt3($tp1), 'tp_2' => fmt3($tp2),
                 'pct' => number_format($impLM['pct'], 2),
-                'active' => ($curPrice <= $m1)
+                'active' => ($curPrice <= $m1),
+                'time' => date('d.m H:i', (int)($impLM['end_time'] / 1000))
             ];
+        }
+
+        // Авто-вердикт главного приоритета
+        if (isset($card['long_manip']) && $card['long_manip']['active']) {
+            $card['best_choice'] = "🟣 ВХОД В МАНИПУЛЯЦИЮ (Приоритет 1)";
+        } elseif (isset($card['long_normal']) && $card['long_normal']['active'] && $card['long_normal']['is_fresher']) {
+            $card['best_choice'] = "🟢 ВХОД В LONG (Свежий тренд роста)";
+        } elseif (isset($card['short_normal']) && $card['short_normal']['active'] && $card['short_normal']['is_fresher']) {
+            $card['best_choice'] = "🔴 ВХОД В SHORT (Свежий тренд падения)";
+        } else {
+            $card['best_choice'] = "⏳ ВНЕ ПОЗИЦИИ (Ждем подхода к лимиткам)";
         }
 
         $data[] = $card;
@@ -203,21 +230,22 @@ if (isset($_GET['ajax'])) {
         @keyframes pulse { 0% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(1.2); } 100% { opacity: 1; transform: scale(1); } }
         
         .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 20px; }
-        .coin-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; padding: 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); transition: transform 0.2s ease; }
-        .coin-card:hover { transform: translateY(-2px); }
-        .coin-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 16px; }
+        .coin-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; padding: 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); }
+        .coin-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px; }
         .coin-title { font-size: 20px; font-weight: 800; }
         .coin-price { font-size: 22px; font-weight: 800; color: #fff; font-family: monospace; }
 
+        .verdict-box { background: rgba(255,255,255,0.06); border-radius: 8px; padding: 10px; margin-bottom: 16px; text-align: center; font-weight: 800; font-size: 14px; border: 1px solid var(--border); }
+
         .block { background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 12px; }
-        .block-title { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; display: flex; justify-content: space-between; }
+        .block-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; display: flex; justify-content: space-between; }
         
         .table-levels { width: 100%; border-collapse: collapse; font-size: 13px; font-family: monospace; }
-        .table-levels td { padding: 4px 0; }
+        .table-levels td { padding: 3px 0; }
         .table-levels td:last-child { text-align: right; font-weight: 700; }
         .lbl { color: var(--text-dim); }
 
-        .status-pill { display: block; text-align: center; padding: 6px; border-radius: 6px; font-size: 12px; font-weight: 700; margin-top: 8px; }
+        .status-pill { display: block; text-align: center; padding: 5px; border-radius: 6px; font-size: 11px; font-weight: 700; margin-top: 8px; }
         .status-ready { background: rgba(0,230,118,0.2); color: var(--green); border: 1px solid var(--green); }
         .status-wait { background: rgba(255,255,255,0.05); color: var(--text-dim); }
 
@@ -258,9 +286,15 @@ async function updateScreener() {
                     <div class="coin-price">${c.price} $</div>
                 </div>
 
+                <!-- ГЛАВНЫЙ ВЕРДИКТ -->
+                <div class="verdict-box">👉 РЕШЕНИЕ: ${c.best_choice}</div>
+
                 <!-- 1. LONG NORMAL -->
-                <div class="block" style="border-left: 3px solid var(--blue);">
-                    <div class="block-title c-blue">🟢 LONG ОБЫЧНЫЙ (0.618 → 0.500) <span style="font-size:11px; color:var(--text-dim);">≥ 3.5%</span></div>
+                <div class="block" style="border-left: 3px solid var(--blue); opacity: ${c.long_normal && !c.long_normal.is_fresher ? '0.6' : '1.0'};">
+                    <div class="block-title c-blue">
+                        🟢 LONG ОБЫЧНЫЙ (0.618 → 0.500) 
+                        <span style="font-size:10px; color:var(--text-dim);">${c.long_normal ? c.long_normal.time : ''}</span>
+                    </div>
                     ${c.long_normal ? `
                     <table class="table-levels">
                         <tr><td class="lbl">Вход (0.618)</td><td class="c-blue">${c.long_normal.entry} $</td></tr>
@@ -268,14 +302,17 @@ async function updateScreener() {
                         <tr><td class="lbl">Стоп (0.764)</td><td class="c-red">${c.long_normal.sl} $</td></tr>
                     </table>
                     <div class="status-pill ${c.long_normal.active ? 'status-ready' : 'status-wait'}">
-                        ${c.long_normal.active ? '🟢 ВХОД В LONG ПРЯМО СЕЙЧАС' : '⏳ Ожидание отката'}
+                        ${c.long_normal.active ? (c.long_normal.is_fresher ? '🟢 ВХОД В LONG (Актуальный импульс)' : '⚠️ Старый импульс (предпочтительнее свежий тренд)') : '⏳ Ожидание отката'}
                     </div>
-                    ` : '<div style="color:var(--text-dim); font-size:12px;">Нет активного импульса ≥ 3.5%</div>'}
+                    ` : '<div style="color:var(--text-dim); font-size:12px;">Нет импульса ≥ 3.5% за 48ч</div>'}
                 </div>
 
                 <!-- 2. SHORT NORMAL -->
-                <div class="block" style="border-left: 3px solid var(--red);">
-                    <div class="block-title c-red">🔴 SHORT ОБЫЧНЫЙ (0.618 → 0.500) <span style="font-size:11px; color:var(--text-dim);">≥ 3.5%</span></div>
+                <div class="block" style="border-left: 3px solid var(--red); opacity: ${c.short_normal && !c.short_normal.is_fresher ? '0.6' : '1.0'};">
+                    <div class="block-title c-red">
+                        🔴 SHORT ОБЫЧНЫЙ (0.618 → 0.500)
+                        <span style="font-size:10px; color:var(--text-dim);">${c.short_normal ? c.short_normal.time : ''}</span>
+                    </div>
                     ${c.short_normal ? `
                     <table class="table-levels">
                         <tr><td class="lbl">Вход (0.618)</td><td class="c-red">${c.short_normal.entry} $</td></tr>
@@ -283,14 +320,17 @@ async function updateScreener() {
                         <tr><td class="lbl">Стоп (0.764)</td><td class="c-red">${c.short_normal.sl} $</td></tr>
                     </table>
                     <div class="status-pill ${c.short_normal.active ? 'status-ready' : 'status-wait'}">
-                        ${c.short_normal.active ? '🔴 ВХОД В SHORT ПРЯМО СЕЙЧАС' : '⏳ Ожидание отскока вверх'}
+                        ${c.short_normal.active ? (c.short_normal.is_fresher ? '🔴 ВХОД В SHORT (Актуальный дамп)' : '⚠️ Старый дамп (предпочтительнее свежий тренд)') : '⏳ Ожидание отскока вверх'}
                     </div>
-                    ` : '<div style="color:var(--text-dim); font-size:12px;">Нет дамп-импульса ≥ 3.5%</div>'}
+                    ` : '<div style="color:var(--text-dim); font-size:12px;">Нет дамп-импульса ≥ 3.5% за 48ч</div>'}
                 </div>
 
                 <!-- 3. LONG MANIPULATION -->
                 <div class="block" style="border-left: 3px solid var(--purple);">
-                    <div class="block-title c-purple">🟣 МАНИПУЛЯЦИЯ (1.618 + 2.0 DCA) <span style="font-size:11px; color:var(--text-dim);">≥ 1.0%</span></div>
+                    <div class="block-title c-purple">
+                        🟣 МАНИПУЛЯЦИЯ (1.618 + 2.0 DCA)
+                        <span style="font-size:10px; color:var(--text-dim);">${c.long_manip ? c.long_manip.time : ''}</span>
+                    </div>
                     ${c.long_manip ? `
                     <table class="table-levels">
                         <tr><td class="lbl">Вход (1.618) 1 лот</td><td class="c-purple">${c.long_manip.entry_1} $</td></tr>
@@ -314,7 +354,7 @@ async function updateScreener() {
 }
 
 updateScreener();
-setInterval(updateScreener, 5000); // Автообновление каждые 5 секунд
+setInterval(updateScreener, 5000);
 </script>
 
 </body>
