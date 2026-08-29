@@ -1,174 +1,188 @@
 //@version=6
-indicator("Манипуляция на часе (Mon 1H) — Strategy & Alerts", overlay=true, max_lines_count=500, max_labels_count=500, max_boxes_count=500)
+indicator("Манипуляция на часе (Mon 1H) — Сетка Фибо и Сигналы", shorttitle="Mon 1H Strategy", overlay=true, max_lines_count=500, max_labels_count=500, max_boxes_count=500)
 
-// ─── Настройки ───────────────────────────────────────────────────────────────
-group_imp    = "1. Настройки Импульса"
-min_imp_pct  = input.float(2.0, "Мин. размах импульса (%)", minval=0.5, step=0.1, group=group_imp)
-shadow_check = input.bool(true, "Проверять тень 0.5 Fib при расширении", group=group_imp)
+// ─── 1. Настройки ────────────────────────────────────────────────────────────
+group_imp     = "1. Параметры Импульса"
+min_imp_pct   = input.float(2.0, "Мин. размер импульса (%)", minval=0.5, step=0.1, group=group_imp)
+shadow_check  = input.bool(true, "Проверка тени 0.5 Fib при формировании", group=group_imp)
 
-group_mode   = "2. Режимы и Направления"
-enable_long  = input.bool(true, "Торговать LONG", group=group_mode)
-enable_short = input.bool(true, "Торговать SHORT (только обычный сценарий)", group=group_mode)
-enable_manip = input.bool(true, "Включить сценарий Манипуляции (1.618 / 2.0)", group=group_mode)
+group_mode    = "2. Торговые Режимы"
+enable_long   = input.bool(true, "Сигналы LONG", group=group_mode)
+enable_short  = input.bool(true, "Сигналы SHORT (Обычный)", group=group_mode)
+enable_manip  = input.bool(true, "Сценарий Манипуляции (1.618 / 2.0)", group=group_mode)
 
-group_levels = "3. Уровни Тейк-Профита и Стоп-Лосса"
-normal_sl_fib = input.float(0.764, "Стоп-Лосс для обычного сценария (Fib)", group=group_levels)
-manip_tp_fib  = input.float(0.500, "Тейк-Профит для манипуляции (Fib)", group=group_levels)
+group_levels  = "3. Уровни Тейк-Профита и Стопа"
+normal_sl_fib = input.float(0.764, "Стоп-Лосс для обычного отскока (Fib)", group=group_levels)
+manip_tp_fib  = input.float(0.500, "Тейк-Профит Манипуляции (Fib)", group=group_levels)
 
-group_style  = "4. Отображение"
-show_fibs    = input.bool(true, "Отрисовывать сетку Фибоначчи актуального импульса", group=group_style)
-show_labels  = input.bool(true, "Отображать метки сигналов на графике", group=group_style)
+group_visual  = "4. Визуализация и Сетка"
+show_fib_grid = input.bool(true, "Показывать сетку Фибоначчи и подписи уровней", group=group_visual)
+show_labels   = input.bool(true, "Показывать стрелки и карточки входа", group=group_visual)
+extend_bars   = input.int(25, "Длина линий Фибо вперед (баров)", minval=5, maxval=100, group=group_visual)
 
-// ─── Цветовая гамма ──────────────────────────────────────────────────────────
-color_long   = color.green
-color_short  = color.red
-color_manip  = color.purple
+// ─── Цвета ───────────────────────────────────────────────────────────────────
+c_bull = color.green
+c_bear = color.red
+c_dca  = color.orange
 
 // ─── Детектор восходящего импульса (LONG) ────────────────────────────────────
-var int   long_imp_start = na
-var int   long_imp_end   = na
-var float long_imp_high  = na
-var float long_imp_low   = na
-var bool  long_active    = false
+var int   l_start_idx = na
+var int   l_end_idx   = na
+var float l_high      = na
+var float l_low       = na
+var bool  l_building  = false
 
-// Функция расчета цены Fib для LONG (0.0 = HIGH, 1.0 = LOW)
-fib_long(float h, float l, float lvl) => h - lvl * (h - l)
+fib_l(float h, float l, float lvl) => h - lvl * (h - l)
 
-if ta.crossover(high, high[1]) and not long_active
+if ta.crossover(high, high[1]) and not l_building
     if high > high[1] and low[1] > 0
-        long_imp_start := bar_index - 1
-        long_imp_low   := low[1]
-        long_imp_high  := high
-        long_imp_end   := bar_index
-        long_active    := true
+        l_start_idx := bar_index - 1
+        l_low       := low[1]
+        l_high      := high
+        l_end_idx   := bar_index
+        l_building  := true
 
-if long_active
-    if high > long_imp_high
-        float cur_05 = fib_long(high, long_imp_low, 0.500)
+if l_building
+    if high > l_high
+        float cur_05 = fib_l(high, l_low, 0.500)
         if not shadow_check or low > cur_05
-            long_imp_high := high
-            long_imp_end  := bar_index
+            l_high    := high
+            l_end_idx := bar_index
         else
-            long_active := false
+            l_building := false
     else
-        float final_05 = fib_long(long_imp_high, long_imp_low, 0.500)
+        float final_05 = fib_l(l_high, l_low, 0.500)
         if low <= final_05
-            long_active := false
+            l_building := false
 
-// Проверка валидности по %
-bool valid_long_imp = not long_active and not na(long_imp_high) and not na(long_imp_low) and ((long_imp_high - long_imp_low) / long_imp_low * 100.0 >= min_imp_pct)
+bool is_new_long_imp = not l_building and not na(l_high) and not na(l_low) and ((l_high - l_low) / l_low * 100.0 >= min_imp_pct)
 
 // ─── Детектор нисходящего импульса (SHORT) ───────────────────────────────────
-var int   short_imp_start = na
-var int   short_imp_end   = na
-var float short_imp_high  = na
-var float short_imp_low   = na
-var bool  short_active    = false
+var int   s_start_idx = na
+var int   s_end_idx   = na
+var float s_high      = na
+var float s_low       = na
+var bool  s_building  = false
 
-// Функция расчета цены Fib для SHORT (0.0 = LOW, 1.0 = HIGH)
-fib_short(float h, float l, float lvl) => l + lvl * (h - l)
+fib_s(float h, float l, float lvl) => l + lvl * (h - l)
 
-if ta.crossunder(low, low[1]) and not short_active
+if ta.crossunder(low, low[1]) and not s_building
     if low < low[1] and high[1] > 0
-        short_imp_start := bar_index - 1
-        short_imp_high  := high[1]
-        short_imp_low   := low
-        short_imp_end   := bar_index
-        short_active    := true
+        s_start_idx := bar_index - 1
+        s_high      := high[1]
+        s_low       := low
+        s_end_idx   := bar_index
+        s_building  := true
 
-if short_active
-    if low < short_imp_low
-        float cur_05 = fib_short(short_imp_high, low, 0.500)
+if s_building
+    if low < s_low
+        float cur_05 = fib_s(s_high, low, 0.500)
         if not shadow_check or high < cur_05
-            short_imp_low := low
-            short_imp_end := bar_index
+            s_low     := low
+            s_end_idx := bar_index
         else
-            short_active := false
+            s_building := false
     else
-        float final_05 = fib_short(short_imp_high, short_imp_low, 0.500)
+        float final_05 = fib_s(s_high, s_low, 0.500)
         if high >= final_05
-            short_active := false
+            s_building := false
 
-bool valid_short_imp = not short_active and not na(short_imp_high) and not na(short_imp_low) and ((short_imp_high - short_imp_low) / short_imp_high * 100.0 >= min_imp_pct)
+bool is_new_short_imp = not s_building and not na(s_high) and not na(s_low) and ((s_high - s_low) / s_high * 100.0 >= min_imp_pct)
 
-// ─── Уровни актуального LONG импульса ───────────────────────────────────────
-float l_p0    = long_imp_high
-float l_p382  = fib_long(long_imp_high, long_imp_low, 0.382)
-float l_p500  = fib_long(long_imp_high, long_imp_low, 0.500)
-float l_p618  = fib_long(long_imp_high, long_imp_low, 0.618)
-float l_psl   = fib_long(long_imp_high, long_imp_low, normal_sl_fib)
-float l_p100  = long_imp_low
-float l_p1618 = fib_long(long_imp_high, long_imp_low, 1.618)
-float l_p2000 = fib_long(long_imp_high, long_imp_low, 2.000)
-float l_pmtp  = fib_long(long_imp_high, long_imp_low, manip_tp_fib)
+// ─── Расчет уровней Фибоначчи ────────────────────────────────────────────────
+// LONG уровни
+float lp0    = l_high
+float lp382  = fib_l(l_high, l_low, 0.382)
+float lp500  = fib_l(l_high, l_low, 0.500)
+float lp618  = fib_l(l_high, l_low, 0.618)
+float lpsl   = fib_l(l_high, l_low, normal_sl_fib)
+float lp100  = l_low
+float lp1618 = fib_l(l_high, l_low, 1.618)
+float lp2000 = fib_l(l_high, l_low, 2.000)
+float lpmtp  = fib_l(l_high, l_low, manip_tp_fib)
 
-// ─── Уровни актуального SHORT импульса ──────────────────────────────────────
-float s_p0    = short_imp_low
-float s_p382  = fib_short(short_imp_high, short_imp_low, 0.382)
-float s_p500  = fib_short(short_imp_high, short_imp_low, 0.500)
-float s_p618  = fib_short(short_imp_high, short_imp_low, 0.618)
-float s_psl   = fib_short(short_imp_high, short_imp_low, normal_sl_fib)
-float s_p100  = short_imp_high
+// SHORT уровни
+float sp0    = s_low
+float sp382  = fib_s(s_high, s_low, 0.382)
+float sp500  = fib_s(s_high, s_low, 0.500)
+float sp618  = fib_s(s_high, s_low, 0.618)
+float spsl   = fib_s(s_high, s_low, normal_sl_fib)
+float sp100  = s_high
 
-// ─── Сигналы входа / выхода ──────────────────────────────────────────────────
+// ─── Отрисовка Фибо-сетки на основном графике ─────────────────────────────────
+var line[] fib_lines = array.new_line()
+var label[] fib_labels = array.new_label()
 
-// LONG Normal (0.618 -> TP 0.500, SL 0.764)
-bool long_normal_entry = enable_long and valid_long_imp and ta.crossunder(low, l_p618) and low > l_psl
-bool long_normal_tp    = enable_long and ta.crossover(high, l_p500)
-bool long_normal_sl    = enable_long and ta.crossunder(low, l_psl)
+// Функция для добавления линии с подписью цены и уровня
+add_fib_level(int x1, int x2, float price, string name, color col, int width, string l_style) =>
+    line_st = l_style == "dashed" ? line.style_dashed : (l_style == "dotted" ? line.style_dotted : line.style_solid)
+    l = line.new(x1, price, x2, price, color=col, width=width, style=line_st)
+    lbl = label.new(x2, price, name + " (" + str.tostring(price, "#.##") + ")", 
+                    style=label.style_label_left, color=color.new(color.black, 100), 
+                    textcolor=col, size=size.small)
+    array.push(fib_lines, l)
+    array.push(fib_labels, lbl)
 
-// LONG Manipulation (1.618 / 2.0 -> TP 0.500)
-bool long_manip_entry1 = enable_long and enable_manip and valid_long_imp and ta.crossunder(low, l_p1618)
-bool long_manip_dca    = enable_long and enable_manip and valid_long_imp and ta.crossunder(low, l_p2000)
-bool long_manip_tp     = enable_long and enable_manip and ta.crossover(high, l_pmtp)
+clear_fib_grid() =>
+    if array.size(fib_lines) > 0
+        for i = 0 to array.size(fib_lines) - 1
+            line.delete(array.get(fib_lines, i))
+        array.clear(fib_lines)
+    if array.size(fib_labels) > 0
+        for i = 0 to array.size(fib_labels) - 1
+            label.delete(array.get(fib_labels, i))
+        array.clear(fib_labels)
 
-// SHORT Normal (0.618 -> TP 0.500, SL 0.764)
-bool short_normal_entry = enable_short and valid_short_imp and ta.crossover(high, s_p618) and high < s_psl
-bool short_normal_tp    = enable_short and ta.crossunder(low, s_p500)
-bool short_normal_sl    = enable_short and ta.crossover(high, s_psl)
-
-// ─── Визуализация меток на графике ───────────────────────────────────────────
-if show_labels
-    if long_normal_entry
-        label.new(bar_index, low, "LONG 0.618\nTP: " + str.tostring(l_p500, "#.##") + "\nSL: " + str.tostring(l_psl, "#.##"), color=color_long, style=label.style_label_up, textcolor=color.white)
-
-    if long_manip_entry1
-        label.new(bar_index, low, "МАНИПУЛЯЦИЯ 1.618\nTP: " + str.tostring(l_pmtp, "#.##"), color=color_manip, style=label.style_label_up, textcolor=color.white)
-
-    if long_manip_dca
-        label.new(bar_index, low, "DCA 2.000 (2x)\nTP: " + str.tostring(l_pmtp, "#.##"), color=color.orange, style=label.style_label_up, textcolor=color.black)
-
-    if short_normal_entry
-        label.new(bar_index, high, "SHORT 0.618\nTP: " + str.tostring(s_p500, "#.##") + "\nSL: " + str.tostring(s_psl, "#.##"), color=color_short, style=label.style_label_down, textcolor=color.white)
-
-// ─── Отрисовка сетки Фибоначчи для последнего импульса ───────────────────────
-var line l_line0    = na
-var line l_line618  = na
-var line l_line500  = na
-var line l_line100  = na
-var line l_line1618 = na
-var line l_line2000 = na
-
-if show_fibs and valid_long_imp
-    line.delete(l_line0)
-    line.delete(l_line618)
-    line.delete(l_line500)
-    line.delete(l_line100)
-    line.delete(l_line1618)
-    line.delete(l_line2000)
+// Отрисовываем сетку последнего подтвержденного импульса
+if show_fib_grid and (is_new_long_imp or (not na(l_start_idx) and bar_index % 15 == 0))
+    clear_fib_grid()
+    int x1 = l_start_idx
+    int x2 = bar_index + extend_bars
     
-    l_line0    := line.new(long_imp_start, l_p0, bar_index + 10, l_p0, color=color.gray, width=1, style=line.style_dashed)
-    l_line500  := line.new(long_imp_start, l_p500, bar_index + 10, l_p500, color=color.green, width=1)
-    l_line618  := line.new(long_imp_start, l_p618, bar_index + 10, l_p618, color=color.blue, width=2)
-    l_line100  := line.new(long_imp_start, l_p100, bar_index + 10, l_p100, color=color.red, width=1)
-    l_line1618 := line.new(long_imp_start, l_p1618, bar_index + 10, l_p1618, color=color.purple, width=2)
-    l_line2000 := line.new(long_imp_start, l_p2000, bar_index + 10, l_p2000, color=color.orange, width=2)
+    add_fib_level(x1, x2, lp0,    "0.000 — TOP (High)", color.gray, 1, "dashed")
+    add_fib_level(x1, x2, lp382,  "0.382 — TP для 0.500", color.teal, 1, "dotted")
+    add_fib_level(x1, x2, lp500,  "0.500 — ТЕЙК-ПРОФИТ (TP)", color.green, 2, "solid")
+    add_fib_level(x1, x2, lp618,  "0.618 — ВХОД LONG", color.blue, 2, "solid")
+    add_fib_level(x1, x2, lpsl,   "0.764 — СТОП-ЛОСС (SL)", color.red, 1, "dashed")
+    add_fib_level(x1, x2, lp100,  "1.000 — Дно Импульса", color.maroon, 1, "solid")
+    if enable_manip
+        add_fib_level(x1, x2, lp1618, "1.618 — ВХОД МАНИПУЛЯЦИЯ (1 лот)", color.purple, 2, "solid")
+        add_fib_level(x1, x2, lp2000, "2.000 — ДОБОР DCA (2 лота)", c_dca, 2, "solid")
 
-// ─── Настройка оповещений (Alerts для вебхуков / Telegram бота) ─────────────
-alertcondition(long_normal_entry, "LONG Вход 0.618", "LONG 0.618 Entry: {{ticker}} @ {{close}}")
-alertcondition(long_manip_entry1, "LONG Манипуляция 1.618", "LONG Manip 1.618 Entry: {{ticker}} @ {{close}}")
-alertcondition(long_manip_dca,    "LONG Манипуляция DCA 2.0", "LONG Manip DCA 2.0 Entry: {{ticker}} @ {{close}}")
-alertcondition(short_normal_entry,"SHORT Вход 0.618", "SHORT 0.618 Entry: {{ticker}} @ {{close}}")
-alertcondition(long_normal_tp or long_manip_tp, "LONG Take Profit", "LONG TP Reached: {{ticker}} @ {{close}}")
-alertcondition(short_normal_tp, "SHORT Take Profit", "SHORT TP Reached: {{ticker}} @ {{close}}")
-alertcondition(long_normal_sl, "LONG Stop Loss", "LONG SL Triggered: {{ticker}} @ {{close}}")
+// ─── Торговые Сигналы ────────────────────────────────────────────────────────
+bool sig_long_normal = enable_long and is_new_long_imp and ta.crossunder(low, lp618) and low > lpsl
+bool sig_long_manip1 = enable_long and enable_manip and is_new_long_imp and ta.crossunder(low, lp1618)
+bool sig_long_dca    = enable_long and enable_manip and is_new_long_imp and ta.crossunder(low, lp2000)
+bool sig_long_tp     = enable_long and ta.crossover(high, lp500)
+bool sig_long_sl     = enable_long and ta.crossunder(low, lpsl)
+
+bool sig_short_normal= enable_short and is_new_short_imp and ta.crossover(high, sp618) and high < spsl
+bool sig_short_tp    = enable_short and ta.crossunder(low, sp500)
+bool sig_short_sl    = enable_short and ta.crossover(high, spsl)
+
+// ─── Визуальные стрелки и метки на свечах ────────────────────────────────────
+plotshape(show_labels and sig_long_normal, title="Вход LONG 0.618", style=shape.triangleup, location=location.belowbar, color=color.blue, size=size.normal, text="LONG 0.618")
+plotshape(show_labels and sig_long_manip1, title="Вход Манипуляция 1.618", style=shape.triangleup, location=location.belowbar, color=color.purple, size=size.large, text="МАНИПУЛЯЦИЯ\n1.618")
+plotshape(show_labels and sig_long_dca,    title="Добор 2.000 DCA", style=shape.triangleup, location=location.belowbar, color=c_dca, size=size.large, text="DCA 2.0 (2x)")
+
+plotshape(show_labels and sig_short_normal,title="Вход SHORT 0.618", style=shape.triangledown, location=location.abovebar, color=color.red, size=size.normal, text="SHORT 0.618")
+
+plotshape(show_labels and sig_long_tp,     title="Take Profit", style=shape.circle, location=location.abovebar, color=color.green, size=size.small, text="TP")
+plotshape(show_labels and sig_long_sl,     title="Stop Loss", style=shape.xcross, location=location.belowbar, color=color.red, size=size.small, text="SL")
+
+// Подробная всплывающая карточка для входа
+if show_labels and sig_long_normal
+    label.new(bar_index, low, "🟢 LONG ВХОД: " + str.tostring(lp618, "#.##") + "\n🎯 TP (0.500): " + str.tostring(lp500, "#.##") + "\n🛑 SL (0.764): " + str.tostring(lpsl, "#.##"), 
+              style=label.style_label_up, color=color.new(color.blue, 10), textcolor=color.white, size=size.small)
+
+if show_labels and sig_long_manip1
+    label.new(bar_index, low, "🟣 МАНИПУЛЯЦИЯ ВХОД: " + str.tostring(lp1618, "#.##") + "\n🎯 ТЕЙК (0.500): " + str.tostring(lp500, "#.##") + "\n📦 ДОБОР (2.000): " + str.tostring(lp2000, "#.##"), 
+              style=label.style_label_up, color=color.new(color.purple, 10), textcolor=color.white, size=size.small)
+
+// ─── Оповещения (TradingView Alerts) ─────────────────────────────────────────
+alertcondition(sig_long_normal,  "1. LONG Вход 0.618", "🟢 Вход в LONG на 0.618 Fib: {{ticker}} @ {{close}} | TP: 0.500, SL: 0.764")
+alertcondition(sig_long_manip1,  "2. LONG Манипуляция 1.618", "🟣 Вход Манипуляция на 1.618 Fib: {{ticker}} @ {{close}} | TP: 0.500")
+alertcondition(sig_long_dca,     "3. LONG Добор DCA 2.000", "🟠 Добор позиции DCA на 2.000 Fib (2x лота): {{ticker}} @ {{close}}")
+alertcondition(sig_short_normal, "4. SHORT Вход 0.618", "🔴 Вход в SHORT на 0.618 Fib: {{ticker}} @ {{close}} | TP: 0.500")
+alertcondition(sig_long_tp or sig_short_tp, "5. Take Profit", "🎯 Сработал Take Profit: {{ticker}} @ {{close}}")
+alertcondition(sig_long_sl or sig_short_sl, "6. Stop Loss", "🛑 Сработал Stop Loss: {{ticker}} @ {{close}}")
