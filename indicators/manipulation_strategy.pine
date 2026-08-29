@@ -15,50 +15,50 @@ fib_l(float h, float l, float lvl, bool is_log) =>
     else
         h - lvl * (h - l)
 
-// ─── Сканер Самого Свежего Актуального Импульса ──────────────────────────────
+// ─── Точный Детектор Полной Волны Импульса (Идентичен Python) ───────────────
 var int   last_imp_start = na
 var int   last_imp_end   = na
 var float last_imp_high  = na
 var float last_imp_low   = na
 
-find_latest_impulse() =>
+// Ищем самый свежий полный импульс во всей видимой истории назад
+find_latest_full_impulse() =>
     int   f_start = na
     int   f_end   = na
     float f_high  = na
     float f_low   = na
     
-    for i = 1 to 60
+    // Сканируем бары назад
+    for i = 1 to 120
         if high[i] > high[i+1] and low[i+1] > 0
-            float cur_low  = low[i+1]
-            float cur_high = high[i]
-            int   cur_start= bar_index - (i + 1)
-            int   cur_end  = bar_index - i
+            // Нашли потенциальный старт импульса
+            int   start_idx = bar_index - (i + 1)
+            float imp_bot   = low[i+1]
+            float imp_top   = high[i]
+            int   end_idx   = bar_index - i
             
-            bool valid_extension = true
+            // Протягиваем импульс вперед
             for j = i - 1 to 0
-                if high[j] > cur_high
-                    float prev_05 = fib_l(cur_high, cur_low, 0.500, use_log_scale)
-                    if shadow_check and low[j] <= prev_05
-                        valid_extension := false
-                        break
-                    cur_high := high[j]
-                    cur_end  := bar_index - j
-                else
-                    float cur_05 = fib_l(cur_high, cur_low, 0.500, use_log_scale)
-                    if low[j] <= cur_05
-                        break
-                        
-            float pct = (cur_high - cur_low) / cur_low * 100.0
-            if pct >= min_imp_pct and cur_end > cur_start
-                f_start := cur_start
-                f_end   := cur_end
-                f_high  := cur_high
-                f_low   := cur_low
-                break
+                // Если тень пробила 0.5 Fib от текущего TOP — импульс завершен
+                float level_05 = fib_l(imp_top, imp_bot, 0.500, use_log_scale)
+                if shadow_check and low[j] <= level_05
+                    break
+                    
+                if high[j] > imp_top
+                    imp_top := high[j]
+                    end_idx := bar_index - j
+            
+            float pct = (imp_top - imp_bot) / imp_bot * 100.0
+            if pct >= min_imp_pct and end_idx > start_idx
+                f_start := start_idx
+                f_end   := end_idx
+                f_high  := imp_top
+                f_low   := imp_bot
+                break // Забираем самый свежий валидный импульс
                 
     [f_start, f_end, f_high, f_low]
 
-[cur_start, cur_end, cur_high, cur_low] = find_latest_impulse()
+[cur_start, cur_end, cur_high, cur_low] = find_latest_full_impulse()
 
 if not na(cur_high) and not na(cur_low)
     last_imp_start := cur_start
@@ -86,8 +86,7 @@ if not na(last_imp_high) and not na(last_imp_low)
     
     int x1 = last_imp_start
     int x2 = bar_index + 12
-    
-    string scale_tag = use_log_scale ? " (Log)" : ""
+    string tag = use_log_scale ? " (Log)" : ""
     
     // 0.000 TOP
     l0    := line.new(x1, p0, x2, p0, color=color.gray, width=1, style=line.style_dashed)
@@ -95,15 +94,15 @@ if not na(last_imp_high) and not na(last_imp_low)
     
     // 0.500 ТЕЙК
     l500  := line.new(x1, p500, x2, p500, color=color.green, width=2)
-    lbl500:= label.new(x2, p500, "0.500 ТЕЙК" + scale_tag + " (" + str.tostring(p500, "#.##") + ")", style=label.style_label_left, color=color.new(color.black, 100), textcolor=color.green, size=size.small)
+    lbl500:= label.new(x2, p500, "0.500 ТЕЙК" + tag + " (" + str.tostring(p500, "#.##") + ")", style=label.style_label_left, color=color.new(color.black, 100), textcolor=color.green, size=size.small)
     
     // 0.618 ВХОД
     l618  := line.new(x1, p618, x2, p618, color=color.blue, width=2)
-    lbl618:= label.new(x2, p618, "0.618 ВХОД" + scale_tag + " (" + str.tostring(p618, "#.##") + ")", style=label.style_label_left, color=color.new(color.black, 100), textcolor=color.blue, size=size.small)
+    lbl618:= label.new(x2, p618, "0.618 ВХОД" + tag + " (" + str.tostring(p618, "#.##") + ")", style=label.style_label_left, color=color.new(color.black, 100), textcolor=color.blue, size=size.small)
     
     // 0.764 СТОП
     lsl   := line.new(x1, psl, x2, psl, color=color.red, width=1, style=line.style_dashed)
-    lblsl := label.new(x2, psl, "0.764 СТОП" + scale_tag + " (" + str.tostring(psl, "#.##") + ")", style=label.style_label_left, color=color.new(color.black, 100), textcolor=color.red, size=size.small)
+    lblsl := label.new(x2, psl, "0.764 СТОП" + tag + " (" + str.tostring(psl, "#.##") + ")", style=label.style_label_left, color=color.new(color.black, 100), textcolor=color.red, size=size.small)
     
     // 1.000 ДНО ИМПУЛЬСА
     l100  := line.new(x1, p100, x2, p100, color=color.maroon, width=2)
