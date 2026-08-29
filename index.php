@@ -2,7 +2,7 @@
 /**
  * Live Web Screener & Signal Scanner для стратегии "Манипуляция на часе (Mon 1H)"
  * Монеты: HYPEUSDT, NEARUSDT, UNIUSDT
- * Автоматическое определение ДОМИНИРУЮЩЕГО СИГНАЛА с ручной кнопкой обновления и авто-сканированием.
+ * Автоматическое определение ДОМИНИРУЮЩЕГО СИГНАЛА с ручной кнопкой обновления и защитой от кэширования.
  */
 
 error_reporting(E_ALL & ~E_DEPRECATED);
@@ -128,6 +128,10 @@ function detectLatestShortImpulse($candles, $min_pct) {
 
 if (isset($_GET['ajax'])) {
     header('Content-Type: application/json');
+    header('Cache-Control: no-cache, no-store, must-revalidate');
+    header('Pragma: no-cache');
+    header('Expires: 0');
+
     $data = [];
     foreach ($symbols as $sym) {
         $candles = fetchBybitKlines($sym, '60', 100);
@@ -275,7 +279,7 @@ if (isset($_GET['ajax'])) {
     <h1>📡 Mon 1H Strategy Terminal</h1>
     <div class="header-actions">
         <span id="update-time" style="color:var(--text-dim); font-size:13px;">Обновление...</span>
-        <button class="btn-refresh" id="refresh-btn" onclick="manualRefresh()">
+        <button class="btn-refresh" id="refresh-btn" type="button">
             <svg id="refresh-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
             </svg>
@@ -299,7 +303,9 @@ async function updateScreener() {
     if (btn) btn.classList.add('loading');
 
     try {
-        const res = await fetch('?ajax=1');
+        // Указываем текущий URL страницы + timestamp для предотвращения кэширования браузером / Cloudflare / Nginx
+        const currentUrl = window.location.pathname;
+        const res = await fetch(currentUrl + '?ajax=1&t=' + new Date().getTime());
         const data = await res.json();
         document.getElementById('update-time').innerText = 'UTC+3: ' + data.time;
         
@@ -382,12 +388,17 @@ async function updateScreener() {
     }
 }
 
-function manualRefresh() {
+document.addEventListener('DOMContentLoaded', () => {
+    const btn = document.getElementById('refresh-btn');
+    if (btn) {
+        btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            updateScreener();
+        });
+    }
     updateScreener();
-}
-
-updateScreener();
-setInterval(updateScreener, 6000); // Фоновый автоапдейт каждые 6 сек
+    setInterval(updateScreener, 6000);
+});
 </script>
 
 </body>
