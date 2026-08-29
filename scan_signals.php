@@ -2,6 +2,7 @@
 /**
  * Live Screener & Signal Scanner для стратегии "Манипуляция на часе (Mon 1H)"
  * Монеты: HYPEUSDT, NEARUSDT, UNIUSDT
+ * Формат цен: 3 знака после запятой
  * Запуск: php scan_signals.php
  */
 
@@ -44,6 +45,11 @@ function fetchBybitKlines($symbol, $interval = '60', $limit = 100) {
 function calcFibLog($high, $low, $level) {
     if ($high <= 0 || $low <= 0) return 0;
     return exp(log($high) - $level * (log($high) - log($low)));
+}
+
+// Форматирование цен с 3 знаками после запятой
+function fmt3($val) {
+    return number_format((float)$val, 3, '.', '');
 }
 
 // Поиск самого свежего актуального импульса (1-в-1 с Python бэктестом)
@@ -139,7 +145,7 @@ foreach ($symbols as $sym) {
 
     if (!$imp) {
         if ($isCli) {
-            echo "[$sym] Текущая цена: {$curPrice}$ | Нет активного импульса > {$min_impulse_pct}%\n\n";
+            echo "[$sym] Текущая цена: " . fmt3($curPrice) . "$ | Нет активного импульса > {$min_impulse_pct}%\n\n";
         }
         continue;
     }
@@ -160,15 +166,15 @@ foreach ($symbols as $sym) {
 
     $recommendation = "";
     if ($curPrice <= $in0618 && $curPrice > $sl0764) {
-        $recommendation = "🟢 ЗОНА ВХОДА В LONG (0.618)! Тейк: " . number_format($tp0500, 4) . "$, Стоп: " . number_format($sl0764, 4) . "$";
+        $recommendation = "🟢 ЗОНА ВХОДА В LONG (0.618)! Тейк: " . fmt3($tp0500) . "$, Стоп: " . fmt3($sl0764) . "$";
     } elseif ($curPrice <= $m1618 && $curPrice > $m2000) {
-        $recommendation = "🟣 ЗОНА ВХОДА В МАНИПУЛЯЦИЮ 1.618! Тейк: " . number_format($tp0500, 4) . "$, Добор на: " . number_format($m2000, 4) . "$";
+        $recommendation = "🟣 ЗОНА ВХОДА В МАНИПУЛЯЦИЮ 1.618! Тейк: " . fmt3($tp0500) . "$, Добор на: " . fmt3($m2000) . "$";
     } elseif ($curPrice <= $m2000) {
-        $recommendation = "🟠 ЗОНА ДОБОРА МАНИПУЛЯЦИИ 2.0 (2x)! Тейк: " . number_format($tp0500, 4) . "$";
+        $recommendation = "🟠 ЗОНА ДОБОРА МАНИПУЛЯЦИИ 2.0 (2x)! Тейк: " . fmt3($tp0500) . "$";
     } elseif ($curPrice > $in0618) {
         $recommendation = "⏳ ОЖИДАНИЕ КОРРЕКЦИИ: До входа в LONG 0.618 осталось " . number_format($distToNormal, 2) . "% падения.";
     } else {
-        $recommendation = "🛑 Зона между Стопом и Манипуляцией. Ждем уровня 1.618 (" . number_format($m1618, 4) . "$).";
+        $recommendation = "🛑 Зона между Стопом и Манипуляцией. Ждем уровня 1.618 (" . fmt3($m1618) . "$).";
     }
 
     $tStart = date('d.m H:i', (int)($imp['start_time'] / 1000));
@@ -176,26 +182,26 @@ foreach ($symbols as $sym) {
 
     if ($isCli) {
         echo "🪙 МОНЕТА: {$sym}\n";
-        echo "   Текущая цена   : " . number_format($curPrice, 4) . " $\n";
-        echo "   Импульс волны  : {$tStart} → {$tEnd} (Дно: " . number_format($l, 4) . "$ | Пик: " . number_format($h, 4) . "$ | Размах: +" . number_format($imp['pct'], 2) . "%)\n";
+        echo "   Текущая цена   : " . fmt3($curPrice) . " $\n";
+        echo "   Импульс волны  : {$tStart} → {$tEnd} (Дно: " . fmt3($l) . "$ | Пик: " . fmt3($h) . "$ | Размах: +" . number_format($imp['pct'], 2) . "%)\n";
         echo "   --------------------------------------------------------------------\n";
-        echo "   🎯 [0.500] Тейк-Профит (TP)       : " . number_format($tp0500, 4) . " $\n";
-        echo "   🟢 [0.618] Точка Входа в LONG     : " . number_format($in0618, 4) . " $\n";
-        echo "   🛑 [0.764] Стоп-Лосс (SL)         : " . number_format($sl0764, 4) . " $\n";
-        echo "   🟣 [1.618] Манипуляция (1 лот)    : " . number_format($m1618, 4) . " $\n";
-        echo "   🟠 [2.000] Добор DCA (2 лота)     : " . number_format($m2000, 4) . " $\n";
+        echo "   🎯 [0.500] Тейк-Профит (TP)       : " . fmt3($tp0500) . " $\n";
+        echo "   🟢 [0.618] Точка Входа в LONG     : " . fmt3($in0618) . " $\n";
+        echo "   🛑 [0.764] Стоп-Лосс (SL)         : " . fmt3($sl0764) . " $\n";
+        echo "   🟣 [1.618] Манипуляция (1 лот)    : " . fmt3($m1618) . " $\n";
+        echo "   🟠 [2.000] Добор DCA (2 лота)     : " . fmt3($m2000) . " $\n";
         echo "   --------------------------------------------------------------------\n";
         echo "   👉 СТАТУС: {$recommendation}\n\n";
     } else {
         echo "<div class='card'>";
-        echo "<h2>🪙 {$sym} — Цена: <span class='val'>" . number_format($curPrice, 4) . " $</span></h2>";
-        echo "<p>Импульс: {$tStart} → {$tEnd} (Дно: " . number_format($l, 4) . "$ | Пик: " . number_format($h, 4) . "$ | Рост: +" . number_format($imp['pct'], 2) . "%)</p>";
+        echo "<h2>🪙 {$sym} — Цена: <span class='val'>" . fmt3($curPrice) . " $</span></h2>";
+        echo "<p>Импульс: {$tStart} → {$tEnd} (Дно: " . fmt3($l) . "$ | Пик: " . fmt3($h) . "$ | Рост: +" . number_format($imp['pct'], 2) . "%)</p>";
         echo "<table><tr><th>Уровень Fib</th><th>Назначение</th><th>Цена ($)</th></tr>";
-        echo "<tr><td class='green'>0.500</td><td>Тейк-Профит (TP)</td><td>" . number_format($tp0500, 4) . " $</td></tr>";
-        echo "<tr><td class='green'>0.618</td><td>Точка Входа в LONG</td><td>" . number_format($in0618, 4) . " $</td></tr>";
-        echo "<tr><td class='red'>0.764</td><td>Стоп-Лосс (SL)</td><td>" . number_format($sl0764, 4) . " $</td></tr>";
-        echo "<tr><td class='purple'>1.618</td><td>Манипуляция (1 лот)</td><td>" . number_format($m1618, 4) . " $</td></tr>";
-        echo "<tr><td class='orange'>2.000</td><td>Добор DCA (2 лота)</td><td>" . number_format($m2000, 4) . " $</td></tr>";
+        echo "<tr><td class='green'>0.500</td><td>Тейк-Профит (TP)</td><td>" . fmt3($tp0500) . " $</td></tr>";
+        echo "<tr><td class='green'>0.618</td><td>Точка Входа в LONG</td><td>" . fmt3($in0618) . " $</td></tr>";
+        echo "<tr><td class='red'>0.764</td><td>Стоп-Лосс (SL)</td><td>" . fmt3($sl0764) . " $</td></tr>";
+        echo "<tr><td class='purple'>1.618</td><td>Манипуляция (1 лот)</td><td>" . fmt3($m1618) . " $</td></tr>";
+        echo "<tr><td class='orange'>2.000</td><td>Добор DCA (2 лота)</td><td>" . fmt3($m2000) . " $</td></tr>";
         echo "</table>";
         echo "<p style='margin-top:12px;font-size:16px;'><b>👉 Статус:</b> {$recommendation}</p>";
         echo "</div>";
