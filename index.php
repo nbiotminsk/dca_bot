@@ -73,55 +73,45 @@ function detectLatestLongImpulse($candles, $min_pct) {
     $n = count($candles);
     $best = null;
 
-    for ($i = 1; $i < min(72, $n - 1); $i++) {
-        $start_idx = $n - 1 - $i;
+    for ($start_idx = max(0, $n - 72); $start_idx < $n - 1; $start_idx++) {
         $imp_low   = $candles[$start_idx]['low'];
-        
-        // Находим наивысшую точку после дна
-        $max_high = $imp_low;
-        $max_idx  = $start_idx;
-        for ($k = $start_idx; $k < $n; $k++) {
+        $max_high  = $candles[$start_idx]['high'];
+        $broken    = false;
+        $has_growth = false;
+
+        // Пошагово идем свеча за свечой
+        for ($k = $start_idx + 1; $k < $n; $k++) {
+            // Текущая свеча не должна корректировать всю натянутую фибу к 0.500 уровню
+            $fib_05 = calcFibLongLog($max_high, $imp_low, 0.500);
+            if ($candles[$k]['low'] <= $fib_05) {
+                $broken = true;
+                break;
+            }
+            if ($candles[$k]['low'] < $imp_low) {
+                $broken = true;
+                break;
+            }
+
+            // Если свеча обновляет максимум — поднимаем фибу выше!
             if ($candles[$k]['high'] > $max_high) {
                 $max_high = $candles[$k]['high'];
-                $max_idx  = $k;
+                $has_growth = true;
             }
         }
 
-        $pct = ($max_high - $imp_low) / $imp_low * 100.0;
-        if ($pct < $min_pct) {
-            continue;
-        }
-
-        // Проверяем, не было ли отката ниже 0.500 СТРОГО ПОСЛЕ достижения пика (max_idx + 1)
-        $broken = false;
-        $fib_05 = calcFibLongLog($max_high, $imp_low, 0.500);
-        for ($step = $max_idx + 1; $step < $n; $step++) {
-            if ($candles[$step]['low'] <= $fib_05) {
-                $broken = true;
-                break;
-            }
-        }
-
-        // И не пробивалось ли само дно до пика
-        for ($step = $start_idx; $step <= $max_idx; $step++) {
-            if ($candles[$step]['low'] < $imp_low) {
-                $broken = true;
-                break;
-            }
-        }
-
-        // Выбираем полноценный импульс с максимальным чистым развитием тренда
-        if (!$broken) {
-            if ($best === null || $pct > $best['pct']) {
-                $best = [
-                    'start_time' => $candles[$start_idx]['time'],
-                    'end_time'   => $candles[$max_idx]['time'],
-                    'end_idx'    => $max_idx,
-                    'high'       => $max_high,
-                    'low'        => $imp_low,
-                    'pct'        => $pct,
-                    'is_live'    => true
-                ];
+        if (!$broken && $has_growth) {
+            $pct = ($max_high - $imp_low) / $imp_low * 100.0;
+            if ($pct >= $min_pct) {
+                if ($best === null || $pct > $best['pct']) {
+                    $best = [
+                        'start_time' => $candles[$start_idx]['time'],
+                        'end_time'   => $candles[$n - 1]['time'],
+                        'high'       => $max_high,
+                        'low'        => $imp_low,
+                        'pct'        => $pct,
+                        'is_live'    => true
+                    ];
+                }
             }
         }
     }
@@ -133,55 +123,45 @@ function detectLatestShortImpulse($candles, $min_pct) {
     $n = count($candles);
     $best = null;
 
-    for ($i = 1; $i < min(72, $n - 1); $i++) {
-        $start_idx = $n - 1 - $i;
+    for ($start_idx = max(0, $n - 72); $start_idx < $n - 1; $start_idx++) {
         $imp_high  = $candles[$start_idx]['high'];
-        
-        // Находим низшую точку после пика
-        $min_low = $imp_high;
-        $min_idx = $start_idx;
-        for ($k = $start_idx; $k < $n; $k++) {
+        $min_low   = $candles[$start_idx]['low'];
+        $broken    = false;
+        $has_drop  = false;
+
+        // Пошагово идем свеча за свечой
+        for ($k = $start_idx + 1; $k < $n; $k++) {
+            // Текущая свеча не должна откатывать вверх к 0.500 уровню дамп-фибы
+            $fib_05 = calcFibShortLog($imp_high, $min_low, 0.500);
+            if ($candles[$k]['high'] >= $fib_05) {
+                $broken = true;
+                break;
+            }
+            if ($candles[$k]['high'] > $imp_high) {
+                $broken = true;
+                break;
+            }
+
+            // Если свеча обновляет минимум — опускаем фибу ниже!
             if ($candles[$k]['low'] < $min_low) {
                 $min_low = $candles[$k]['low'];
-                $min_idx = $k;
+                $has_drop = true;
             }
         }
 
-        $pct = ($imp_high - $min_low) / $imp_high * 100.0;
-        if ($pct < $min_pct) {
-            continue;
-        }
-
-        // Проверяем, не было ли отскока выше 0.500 СТРОГО ПОСЛЕ достижения дна (min_idx + 1)
-        $broken = false;
-        $fib_05 = calcFibShortLog($imp_high, $min_low, 0.500);
-        for ($step = $min_idx + 1; $step < $n; $step++) {
-            if ($candles[$step]['high'] >= $fib_05) {
-                $broken = true;
-                break;
-            }
-        }
-
-        // И не пробивался ли сам пик до достижения дна
-        for ($step = $start_idx; $step <= $min_idx; $step++) {
-            if ($candles[$step]['high'] > $imp_high) {
-                $broken = true;
-                break;
-            }
-        }
-
-        // Выбираем полноценный дамп-импульс тренда
-        if (!$broken) {
-            if ($best === null || $pct > $best['pct']) {
-                $best = [
-                    'start_time' => $candles[$start_idx]['time'],
-                    'end_time'   => $candles[$min_idx]['time'],
-                    'end_idx'    => $min_idx,
-                    'high'       => $imp_high,
-                    'low'        => $min_low,
-                    'pct'        => $pct,
-                    'is_live'    => true
-                ];
+        if (!$broken && $has_drop) {
+            $pct = ($imp_high - $min_low) / $imp_high * 100.0;
+            if ($pct >= $min_pct) {
+                if ($best === null || $pct > $best['pct']) {
+                    $best = [
+                        'start_time' => $candles[$start_idx]['time'],
+                        'end_time'   => $candles[$n - 1]['time'],
+                        'high'       => $imp_high,
+                        'low'        => $min_low,
+                        'pct'        => $pct,
+                        'is_live'    => true
+                    ];
+                }
             }
         }
     }
