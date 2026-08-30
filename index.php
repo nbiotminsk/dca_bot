@@ -695,13 +695,13 @@ function renderCards(data) {
             <div class="verdict-box">👉 РЕШЕНИЕ: ${c.best_choice}</div>
             
             <div class="coin-blocks-row">
+            ${c.long_normal && ln_grid ? `
             <!-- 1. LONG NORMAL -->
-            <div class="block" style="border-left: 3px solid var(--blue); opacity: ${c.long_normal && !c.long_normal.is_fresher ? '0.6' : '1.0'};">
+            <div class="block" style="border-left: 3px solid var(--blue); opacity: ${!c.long_normal.is_fresher ? '0.6' : '1.0'};">
                 <div class="block-title c-blue">
                     🟢 LONG ОБЫЧНЫЙ (Сетка 0.500 / 0.618) 
-                    <span style="font-size:10px; color:var(--text-dim);">${c.long_normal ? c.long_normal.time : ''}</span>
+                    <span style="font-size:10px; color:var(--text-dim);">${c.long_normal.time}</span>
                 </div>
-                ${c.long_normal && ln_grid ? `
                 <table class="table-levels">
                     <tr>
                         <td class="lbl">🔹 Вход-1 (0.500 Fib) 1x</td>
@@ -762,16 +762,16 @@ function renderCards(data) {
                 <div class="status-pill ${c.long_normal.active ? 'status-ready' : 'status-wait'}">
                     ${c.long_normal.active ? (c.long_normal.is_fresher ? '🟢 ВХОД В LONG (Актуальный импульс)' : '⚠️ Старый импульс') : '⏳ Ожидание отката'}
                 </div>
-                ` : '<div style="color:var(--text-dim); font-size:12px;">Нет импульса ≥ 3.5%</div>'}
             </div>
+            ` : ''}
 
+            ${c.short_normal && sn_grid ? `
             <!-- 2. SHORT NORMAL -->
-            <div class="block" style="border-left: 3px solid var(--red); opacity: ${c.short_normal && !c.short_normal.is_fresher ? '0.6' : '1.0'};">
+            <div class="block" style="border-left: 3px solid var(--red); opacity: ${!c.short_normal.is_fresher ? '0.6' : '1.0'};">
                 <div class="block-title c-red">
                     🔴 SHORT ОБЫЧНЫЙ (Сетка 0.500 / 0.618)
-                    <span style="font-size:10px; color:var(--text-dim);">${c.short_normal ? c.short_normal.time : ''}</span>
+                    <span style="font-size:10px; color:var(--text-dim);">${c.short_normal.time}</span>
                 </div>
-                ${c.short_normal && sn_grid ? `
                 <table class="table-levels">
                     <tr>
                         <td class="lbl">🔹 Вход-1 в Short (0.500)</td>
@@ -832,16 +832,16 @@ function renderCards(data) {
                 <div class="status-pill ${c.short_normal.active ? 'status-ready' : 'status-wait'}">
                     ${c.short_normal.active ? (c.short_normal.is_fresher ? '🔴 ВХОД В SHORT (Актуальный дамп)' : '⚠️ Старый дамп') : '⏳ Ожидание отскока вверх'}
                 </div>
-                ` : '<div style="color:var(--text-dim); font-size:12px;">Нет дамп-импульса ≥ 3.5%</div>'}
             </div>
+            ` : ''}
 
+            ${c.long_manip && lm_grid ? `
             <!-- 3. LONG MANIPULATION -->
             <div class="block" style="border-left: 3px solid var(--purple);">
                 <div class="block-title c-purple">
                     🟣 МАНИПУЛЯЦИЯ (1.618 + 2.0 DCA)
-                    <span style="font-size:10px; color:var(--text-dim);">${c.long_manip ? c.long_manip.time : ''}</span>
+                    <span style="font-size:10px; color:var(--text-dim);">${c.long_manip.time}</span>
                 </div>
-                ${c.long_manip && lm_grid ? `
                 <table class="table-levels">
                     <tr>
                         <td class="lbl">🔹 Вход-1 (1.618) 1x</td>
@@ -902,10 +902,16 @@ function renderCards(data) {
                 <div class="status-pill ${c.long_manip.active ? 'status-ready' : 'status-wait'}">
                     ${c.long_manip.active ? '🟣 ВХОД В МАНИПУЛЯЦИЮ ПРЯМО СЕЙЧАС' : '⏳ Ожидание уровня 1.618'}
                 </div>
-                ` : '<div style="color:var(--text-dim); font-size:12px;">Нет импульса ≥ 1.0%</div>'}
             </div>
-            </div> <!-- .coin-blocks-row -->
+            ` : ''}
 
+            ${(!c.long_normal && !c.short_normal && !c.long_manip) ? `
+            <div style="grid-column: 1 / -1; background:rgba(255,255,255,0.02); border:1px dashed var(--border); border-radius:8px; padding:20px; text-align:center; color:var(--text-dim); font-size:13px;">
+                💤 Нет активных импульсов (цена во флэте)
+            </div>
+            ` : ''}
+
+            </div> <!-- .coin-blocks-row -->
         </div>
         `;
     });
