@@ -12,7 +12,7 @@
 error_reporting(E_ALL & ~E_DEPRECATED);
 date_default_timezone_set('Europe/Moscow'); // UTC+3
 
-$symbols = ['HYPEUSDT', 'NEARUSDT', 'UNIUSDT', 'SUIUSDT', 'ICPUSDT', 'ENAUSDT', 'AVAXUSDT', 'XRPUSDT'];
+$symbols = ['HYPEUSDT', 'NEARUSDT', 'UNIUSDT', 'SUIUSDT', 'ICPUSDT', 'ENAUSDT', 'AVAXUSDT', 'XRPUSDT', 'LINKUSDT', 'DOGEUSDT'];
 $MIN_IMP_MANIP  = 1.0;
 $MIN_IMP_NORMAL = 3.5;
 
@@ -248,7 +248,9 @@ foreach ($symbols as $sym) {
         'ICPUSDT'  => ['sl_fib' => 2.337, 'rr' => '1:2.7'],
         'ENAUSDT'  => ['sl_fib' => 2.291, 'rr' => '1:3.0'],
         'AVAXUSDT' => ['sl_fib' => 2.291, 'rr' => '1:3.0'],
-        'XRPUSDT'  => ['sl_fib' => 2.500, 'rr' => '1:2.0']
+        'XRPUSDT'  => ['sl_fib' => 2.500, 'rr' => '1:2.0'],
+        'LINKUSDT' => ['sl_fib' => 2.395, 'rr' => '1:2.4'],
+        'DOGEUSDT' => ['sl_fib' => 2.395, 'rr' => '1:2.4']
     ];
     $sl_fib_opt   = isset($coinManipConfig[$sym]) ? $coinManipConfig[$sym]['sl_fib'] : 2.500;
     $rr_label_opt = isset($coinManipConfig[$sym]) ? $coinManipConfig[$sym]['rr'] : '1:2.0';
