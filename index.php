@@ -407,12 +407,86 @@ if (isset($_GET['ajax'])) {
             background: var(--card-bg); 
             border: 1px solid var(--border); 
             border-radius: 14px; 
-            padding: 18px 20px; 
+            padding: 16px 20px; 
             box-shadow: 0 4px 20px rgba(0,0,0,0.3); 
+            transition: border-color 0.2s, box-shadow 0.2s;
         }
-        .coin-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px; }
-        .coin-title { font-size: 22px; font-weight: 800; }
-        .coin-price { font-size: 24px; font-weight: 800; color: #fff; font-family: monospace; }
+        .coin-card.is-active-signal {
+            border-color: rgba(0, 230, 118, 0.4);
+            box-shadow: 0 0 20px rgba(0, 230, 118, 0.1);
+        }
+        .coin-header { 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+            cursor: pointer;
+            user-select: none;
+            padding: 4px 0;
+        }
+        .coin-header:hover .coin-title {
+            color: var(--yellow);
+        }
+        .coin-header-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        .coin-header-right {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        .toggle-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 28px;
+            height: 28px;
+            border-radius: 6px;
+            background: rgba(255,255,255,0.06);
+            border: 1px solid var(--border);
+            color: var(--text-dim);
+            font-size: 13px;
+            transition: transform 0.25s ease, background 0.2s, color 0.2s;
+        }
+        .coin-card.open .toggle-icon {
+            transform: rotate(180deg);
+            background: rgba(255,214,0,0.15);
+            color: var(--yellow);
+            border-color: rgba(255,214,0,0.3);
+        }
+        .coin-title { font-size: 22px; font-weight: 800; transition: color 0.2s; }
+        .coin-price { font-size: 22px; font-weight: 800; color: #fff; font-family: monospace; }
+        .coin-quick-summary {
+            font-size: 13px;
+            color: var(--text-dim);
+            background: rgba(255,255,255,0.04);
+            padding: 4px 10px;
+            border-radius: 6px;
+            border: 1px solid rgba(255,255,255,0.08);
+            font-weight: 600;
+        }
+        .coin-card.is-active-signal .coin-quick-summary {
+            background: rgba(0, 230, 118, 0.15);
+            color: var(--green);
+            border-color: rgba(0, 230, 118, 0.3);
+        }
+
+        .coin-body {
+            display: none;
+            margin-top: 14px;
+            padding-top: 14px;
+            border-top: 1px solid rgba(255,255,255,0.06);
+            animation: fadeIn 0.2s ease;
+        }
+        .coin-card.open .coin-body {
+            display: block;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-4px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
 
         .coin-blocks-row {
             display: flex;
@@ -719,237 +793,269 @@ function renderCards(data) {
             }
         }
 
+        // Определяем наличие активного входа
+        const hasActiveSignal = (c.long_normal && c.long_normal.active) || 
+                                (c.short_normal && c.short_normal.active) || 
+                                (c.long_manip && c.long_manip.active);
+
+        // Статус раскрытия: сохраняем в памяти, по умолчанию активные сигналы раскрыты, остальные свернуты
+        const isOpen = openedCards[c.symbol] !== undefined ? openedCards[c.symbol] : (hasActiveSignal);
+
         html += `
-        <div class="coin-card">
-            <div class="coin-header">
-                <div class="coin-title">${coinTicker}<span style="color:var(--text-dim); font-size:13px;"> / USDT</span></div>
-                <div class="coin-price">${c.price} $</div>
-            </div>
-
-            <div class="verdict-box">👉 РЕШЕНИЕ: ${c.best_choice}</div>
-            
-            <div class="coin-blocks-row">
-            ${c.long_normal && ln_grid ? `
-            <!-- 1. LONG NORMAL -->
-            <div class="block" style="border-left: 3px solid var(--blue); opacity: ${!c.long_normal.is_fresher ? '0.6' : '1.0'};">
-                <div class="block-title c-blue">
-                    <span>🟢 LONG ОБЫЧНЫЙ (0.5 / 0.618) <span class="badge-wr">WR ${c.long_normal.wr}</span></span>
-                    <span style="font-size:10px; color:var(--text-dim);">${c.long_normal.time}</span>
+        <div class="coin-card ${isOpen ? 'open' : ''} ${hasActiveSignal ? 'is-active-signal' : ''}" id="card-${c.symbol}">
+            <div class="coin-header" onclick="toggleCard('${c.symbol}')">
+                <div class="coin-header-left">
+                    <div class="coin-title">${coinTicker}<span style="color:var(--text-dim); font-size:13px;"> / USDT</span></div>
+                    <div class="coin-quick-summary">${c.best_choice}</div>
                 </div>
-                <table class="table-levels">
-                    <tr>
-                        <td class="lbl">🔹 Вход-1 (0.500 Fib) 1x</td>
-                        <td>
-                            <div class="entry-val-box">
-                                <span class="price-num c-cyan">${c.long_normal.entry_050} $</span>
-                                <div class="coins-badge-row">
-                                    <span class="coins-tag">${ln_grid.q1_fmt} ${coinTicker}</span>
-                                    <span class="margin-subtext">($${ln_grid.margin1})</span>
-                                </div>
-                            </div>
-                        </td>
-                    </tr>
-                    <tr>
-                        <td class="lbl">🔹 Вход-2 / DCA (0.618 Fib) 2x</td>
-                        <td>
-                            <div class="entry-val-box">
-                                <span class="price-num c-blue">${c.long_normal.entry_0618} $</span>
-                                <div class="coins-badge-row">
-                                    <span class="coins-tag">${ln_grid.q2_fmt} ${coinTicker}</span>
-                                    <span class="margin-subtext">($${ln_grid.margin2})</span>
-                                </div>
-                            </div>
-                        </td>
-                    </tr>
-                    <tr><td class="lbl">🎯 Тейк-1 (0.500 Fib)</td><td class="c-green">${c.long_normal.tp_0500} $</td></tr>
-                    <tr><td class="lbl">🎯 Тейк-2 (0.382 Fib)</td><td class="c-green">${c.long_normal.tp_0382} $</td></tr>
-                    <tr><td class="lbl">🛑 Стоп (0.710 Fib)</td><td class="c-red">${c.long_normal.sl} $ <span style="font-size:10px; color:var(--text-dim);">(-${ln_grid.stop_pct}%)</span></td></tr>
-                </table>
-
-                <div class="profit-payout-box">
-                    <div class="profit-payout-row">
-                        <span class="lbl">💰 [1] Только Вход-1 → 0.382:</span>
-                        <span class="payout-val-green">+$${ln_pnl_only1_to_382}</span>
-                    </div>
-                    <div class="profit-payout-row">
-                        <span class="lbl">💰 [2] ОБА входа → 100% на 0.500:</span>
-                        <span class="payout-val-green">+$${ln_pnl_both_to_500}</span>
-                    </div>
-                    <div class="profit-payout-row">
-                        <span class="lbl">⭐ [3] Сплит (50% на 0.5 + 50% на 0.382):</span>
-                        <span class="payout-val-cyan">+$${ln_pnl_split_50_382}</span>
-                    </div>
-                    <div class="profit-payout-row">
-                        <span class="lbl">🚀 [4] ОБА входа → 100% на 0.382:</span>
-                        <span class="payout-val-green">+$${ln_pnl_both_to_382}</span>
-                    </div>
-                    <div class="profit-payout-row" style="border-top:1px solid rgba(255,255,255,0.08); margin-top:3px; padding-top:3px;">
-                        <span class="lbl">🛑 Стоп (если только Вход-1):</span>
-                        <span class="payout-val-red">-$${ln_grid.loss_if_only_1}</span>
-                    </div>
-                    <div class="profit-payout-row">
-                        <span class="lbl">🛑 Стоп (если ОБА входа 1+2):</span>
-                        <span class="payout-val-red">-$${ln_grid.loss_total}</span>
-                    </div>
-                </div>
-
-                <div class="status-pill ${c.long_normal.active ? 'status-ready' : 'status-wait'}">
-                    ${c.long_normal.active ? (c.long_normal.is_fresher ? '🟢 ВХОД В LONG (Актуальный импульс)' : '⚠️ Старый импульс') : '⏳ Ожидание отката'}
+                <div class="coin-header-right">
+                    <div class="coin-price">${c.price} $</div>
+                    <div class="toggle-icon">▼</div>
                 </div>
             </div>
-            ` : ''}
 
-            ${c.short_normal && sn_grid ? `
-            <!-- 2. SHORT NORMAL -->
-            <div class="block" style="border-left: 3px solid var(--red); opacity: ${!c.short_normal.is_fresher ? '0.6' : '1.0'};">
-                <div class="block-title c-red">
-                    <span>🔴 SHORT ОБЫЧНЫЙ (0.5 / 0.618) <span class="badge-wr">WR ${c.short_normal.wr}</span></span>
-                    <span style="font-size:10px; color:var(--text-dim);">${c.short_normal.time}</span>
-                </div>
-                <table class="table-levels">
-                    <tr>
-                        <td class="lbl">🔹 Вход-1 в Short (0.500)</td>
-                        <td>
-                            <div class="entry-val-box">
-                                <span class="price-num c-orange">${c.short_normal.entry_050} $</span>
-                                <div class="coins-badge-row">
-                                    <span class="coins-tag">${sn_grid.q1_fmt} ${coinTicker}</span>
-                                    <span class="margin-subtext">($${sn_grid.margin1})</span>
+            <div class="coin-body">
+                <div class="verdict-box">👉 РЕШЕНИЕ: ${c.best_choice}</div>
+                
+                <div class="coin-blocks-row">
+                ${c.long_normal && ln_grid ? `
+                <!-- 1. LONG NORMAL -->
+                <div class="block" style="border-left: 3px solid var(--blue); opacity: ${!c.long_normal.is_fresher ? '0.6' : '1.0'};">
+                    <div class="block-title c-blue">
+                        <span>🟢 LONG ОБЫЧНЫЙ (0.5 / 0.618) <span class="badge-wr">WR ${c.long_normal.wr}</span></span>
+                        <span style="font-size:10px; color:var(--text-dim);">${c.long_normal.time}</span>
+                    </div>
+                    <table class="table-levels">
+                        <tr>
+                            <td class="lbl">🔹 Вход-1 (0.500 Fib) 1x</td>
+                            <td>
+                                <div class="entry-val-box">
+                                    <span class="price-num c-cyan">${c.long_normal.entry_050} $</span>
+                                    <div class="coins-badge-row">
+                                        <span class="coins-tag">${ln_grid.q1_fmt} ${coinTicker}</span>
+                                        <span class="margin-subtext">($${ln_grid.margin1})</span>
+                                    </div>
                                 </div>
-                            </div>
-                        </td>
-                    </tr>
-                    <tr>
-                        <td class="lbl">🔹 Вход-2 в Short (0.618)</td>
-                        <td>
-                            <div class="entry-val-box">
-                                <span class="price-num c-red">${c.short_normal.entry_0618} $</span>
-                                <div class="coins-badge-row">
-                                    <span class="coins-tag">${sn_grid.q2_fmt} ${coinTicker}</span>
-                                    <span class="margin-subtext">($${sn_grid.margin2})</span>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="lbl">🔹 Вход-2 / DCA (0.618 Fib) 2x</td>
+                            <td>
+                                <div class="entry-val-box">
+                                    <span class="price-num c-blue">${c.long_normal.entry_0618} $</span>
+                                    <div class="coins-badge-row">
+                                        <span class="coins-tag">${ln_grid.q2_fmt} ${coinTicker}</span>
+                                        <span class="margin-subtext">($${ln_grid.margin2})</span>
+                                    </div>
                                 </div>
-                            </div>
-                        </td>
-                    </tr>
-                    <tr><td class="lbl">🎯 Тейк-1 (0.500 Fib)</td><td class="c-green">${c.short_normal.tp_0500} $</td></tr>
-                    <tr><td class="lbl">🎯 Тейк-2 (0.382 Fib)</td><td class="c-green">${c.short_normal.tp_0382} $</td></tr>
-                    <tr><td class="lbl">🛑 Стоп (0.710 Fib)</td><td class="c-red">${c.short_normal.sl} $ <span style="font-size:10px; color:var(--text-dim);">(-${sn_grid.stop_pct}%)</span></td></tr>
-                </table>
+                            </td>
+                        </tr>
+                        <tr><td class="lbl">🎯 Тейк-1 (0.500 Fib)</td><td class="c-green">${c.long_normal.tp_0500} $</td></tr>
+                        <tr><td class="lbl">🎯 Тейк-2 (0.382 Fib)</td><td class="c-green">${c.long_normal.tp_0382} $</td></tr>
+                        <tr><td class="lbl">🛑 Стоп (0.710 Fib)</td><td class="c-red">${c.long_normal.sl} $ <span style="font-size:10px; color:var(--text-dim);">(-${ln_grid.stop_pct}%)</span></td></tr>
+                    </table>
 
-                <div class="profit-payout-box">
-                    <div class="profit-payout-row">
-                        <span class="lbl">💰 [1] Только Вход-1 → 0.382:</span>
-                        <span class="payout-val-green">+$${sn_pnl_only1_to_382}</span>
+                    <div class="profit-payout-box">
+                        <div class="profit-payout-row">
+                            <span class="lbl">💰 [1] Только Вход-1 → 0.382:</span>
+                            <span class="payout-val-green">+$${ln_pnl_only1_to_382}</span>
+                        </div>
+                        <div class="profit-payout-row">
+                            <span class="lbl">💰 [2] ОБА входа → 100% на 0.500:</span>
+                            <span class="payout-val-green">+$${ln_pnl_both_to_500}</span>
+                        </div>
+                        <div class="profit-payout-row">
+                            <span class="lbl">⭐ [3] Сплит (50% на 0.5 + 50% на 0.382):</span>
+                            <span class="payout-val-cyan">+$${ln_pnl_split_50_382}</span>
+                        </div>
+                        <div class="profit-payout-row">
+                            <span class="lbl">🚀 [4] ОБА входа → 100% на 0.382:</span>
+                            <span class="payout-val-green">+$${ln_pnl_both_to_382}</span>
+                        </div>
+                        <div class="profit-payout-row" style="border-top:1px solid rgba(255,255,255,0.08); margin-top:3px; padding-top:3px;">
+                            <span class="lbl">🛑 Стоп (если только Вход-1):</span>
+                            <span class="payout-val-red">-$${ln_grid.loss_if_only_1}</span>
+                        </div>
+                        <div class="profit-payout-row">
+                            <span class="lbl">🛑 Стоп (если ОБА входа 1+2):</span>
+                            <span class="payout-val-red">-$${ln_grid.loss_total}</span>
+                        </div>
                     </div>
-                    <div class="profit-payout-row">
-                        <span class="lbl">💰 [2] ОБА входа → 100% на 0.500:</span>
-                        <span class="payout-val-green">+$${sn_pnl_both_to_500}</span>
-                    </div>
-                    <div class="profit-payout-row">
-                        <span class="lbl">⭐ [3] Сплит (50% на 0.5 + 50% на 0.382):</span>
-                        <span class="payout-val-cyan">+$${sn_pnl_split_50_382}</span>
-                    </div>
-                    <div class="profit-payout-row">
-                        <span class="lbl">🚀 [4] ОБА входа → 100% на 0.382:</span>
-                        <span class="payout-val-green">+$${sn_pnl_both_to_382}</span>
-                    </div>
-                    <div class="profit-payout-row" style="border-top:1px solid rgba(255,255,255,0.08); margin-top:3px; padding-top:3px;">
-                        <span class="lbl">🛑 Стоп (если только Вход-1):</span>
-                        <span class="payout-val-red">-$${sn_grid.loss_if_only_1}</span>
-                    </div>
-                    <div class="profit-payout-row">
-                        <span class="lbl">🛑 Стоп (если ОБА входа 1+2):</span>
-                        <span class="payout-val-red">-$${sn_grid.loss_total}</span>
+
+                    <div class="status-pill ${c.long_normal.active ? 'status-ready' : 'status-wait'}">
+                        ${c.long_normal.active ? (c.long_normal.is_fresher ? '🟢 ВХОД В LONG (Актуальный импульс)' : '⚠️ Старый импульс') : '⏳ Ожидание отката'}
                     </div>
                 </div>
+                ` : ''}
 
-                <div class="status-pill ${c.short_normal.active ? 'status-ready' : 'status-wait'}">
-                    ${c.short_normal.active ? (c.short_normal.is_fresher ? '🔴 ВХОД В SHORT (Актуальный дамп)' : '⚠️ Старый дамп') : '⏳ Ожидание отскока вверх'}
-                </div>
-            </div>
-            ` : ''}
-
-            ${c.long_manip && lm_grid ? `
-            <!-- 3. LONG MANIPULATION -->
-            <div class="block" style="border-left: 3px solid var(--purple);">
-                <div class="block-title c-purple">
-                    <span>🟣 МАНИПУЛЯЦИЯ (1.618+2.0) <span class="badge-wr">WR ${c.long_manip.wr}</span></span>
-                    <span style="font-size:10px; color:var(--text-dim);">${c.long_manip.time}</span>
-                </div>
-                <table class="table-levels">
-                    <tr>
-                        <td class="lbl">🔹 Вход-1 (1.618) 1x</td>
-                        <td>
-                            <div class="entry-val-box">
-                                <span class="price-num c-purple">${c.long_manip.entry_1} $</span>
-                                <div class="coins-badge-row">
-                                    <span class="coins-tag">${lm_grid.q1_fmt} ${coinTicker}</span>
-                                    <span class="margin-subtext">($${lm_grid.margin1})</span>
+                ${c.short_normal && sn_grid ? `
+                <!-- 2. SHORT NORMAL -->
+                <div class="block" style="border-left: 3px solid var(--red); opacity: ${!c.short_normal.is_fresher ? '0.6' : '1.0'};">
+                    <div class="block-title c-red">
+                        <span>🔴 SHORT ОБЫЧНЫЙ (0.5 / 0.618) <span class="badge-wr">WR ${c.short_normal.wr}</span></span>
+                        <span style="font-size:10px; color:var(--text-dim);">${c.short_normal.time}</span>
+                    </div>
+                    <table class="table-levels">
+                        <tr>
+                            <td class="lbl">🔹 Вход-1 в Short (0.500)</td>
+                            <td>
+                                <div class="entry-val-box">
+                                    <span class="price-num c-orange">${c.short_normal.entry_050} $</span>
+                                    <div class="coins-badge-row">
+                                        <span class="coins-tag">${sn_grid.q1_fmt} ${coinTicker}</span>
+                                        <span class="margin-subtext">($${sn_grid.margin1})</span>
+                                    </div>
                                 </div>
-                            </div>
-                        </td>
-                    </tr>
-                    <tr>
-                        <td class="lbl">🔹 Добор-2 (2.000) 2x</td>
-                        <td>
-                            <div class="entry-val-box">
-                                <span class="price-num c-orange">${c.long_manip.entry_2} $</span>
-                                <div class="coins-badge-row">
-                                    <span class="coins-tag">${lm_grid.q2_fmt} ${coinTicker}</span>
-                                    <span class="margin-subtext">($${lm_grid.margin2})</span>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="lbl">🔹 Вход-2 в Short (0.618)</td>
+                            <td>
+                                <div class="entry-val-box">
+                                    <span class="price-num c-red">${c.short_normal.entry_0618} $</span>
+                                    <div class="coins-badge-row">
+                                        <span class="coins-tag">${sn_grid.q2_fmt} ${coinTicker}</span>
+                                        <span class="margin-subtext">($${sn_grid.margin2})</span>
+                                    </div>
                                 </div>
-                            </div>
-                        </td>
-                    </tr>
-                    <tr><td class="lbl">🎯 Тейк-1 (0.618 Fib)</td><td class="c-green">${c.long_manip.tp_1} $</td></tr>
-                    <tr><td class="lbl">🎯 Тейк-2 (0.500 Fib)</td><td class="c-green">${c.long_manip.tp_2} $</td></tr>
-                    <tr><td class="lbl">🛑 Стоп (${c.long_manip.sl_fib} Fib) [R:R ${c.long_manip.rr_label}]</td><td class="c-red">${c.long_manip.sl} $ <span style="font-size:10px; color:var(--text-dim);">(-${lm_grid.stop_pct}%)</span></td></tr>
-                </table>
+                            </td>
+                        </tr>
+                        <tr><td class="lbl">🎯 Тейк-1 (0.500 Fib)</td><td class="c-green">${c.short_normal.tp_0500} $</td></tr>
+                        <tr><td class="lbl">🎯 Тейк-2 (0.382 Fib)</td><td class="c-green">${c.short_normal.tp_0382} $</td></tr>
+                        <tr><td class="lbl">🛑 Стоп (0.710 Fib)</td><td class="c-red">${c.short_normal.sl} $ <span style="font-size:10px; color:var(--text-dim);">(-${sn_grid.stop_pct}%)</span></td></tr>
+                    </table>
 
-                <div class="profit-payout-box">
-                    <div class="profit-payout-row">
-                        <span class="lbl">💰 Тейк-1 (только Вход-1 → 0.618):</span>
-                        <span class="payout-val-green">+$${lm_pnl_only1_tp1}</span>
+                    <div class="profit-payout-box">
+                        <div class="profit-payout-row">
+                            <span class="lbl">💰 [1] Только Вход-1 → 0.382:</span>
+                            <span class="payout-val-green">+$${sn_pnl_only1_to_382}</span>
+                        </div>
+                        <div class="profit-payout-row">
+                            <span class="lbl">💰 [2] ОБА входа → 100% на 0.500:</span>
+                            <span class="payout-val-green">+$${sn_pnl_both_to_500}</span>
+                        </div>
+                        <div class="profit-payout-row">
+                            <span class="lbl">⭐ [3] Сплит (50% на 0.5 + 50% на 0.382):</span>
+                            <span class="payout-val-cyan">+$${sn_pnl_split_50_382}</span>
+                        </div>
+                        <div class="profit-payout-row">
+                            <span class="lbl">🚀 [4] ОБА входа → 100% на 0.382:</span>
+                            <span class="payout-val-green">+$${sn_pnl_both_to_382}</span>
+                        </div>
+                        <div class="profit-payout-row" style="border-top:1px solid rgba(255,255,255,0.08); margin-top:3px; padding-top:3px;">
+                            <span class="lbl">🛑 Стоп (если только Вход-1):</span>
+                            <span class="payout-val-red">-$${sn_grid.loss_if_only_1}</span>
+                        </div>
+                        <div class="profit-payout-row">
+                            <span class="lbl">🛑 Стоп (если ОБА входа 1+2):</span>
+                            <span class="payout-val-red">-$${sn_grid.loss_total}</span>
+                        </div>
                     </div>
-                    <div class="profit-payout-row">
-                        <span class="lbl">💰 Тейк-2 (только Вход-1 → 0.500):</span>
-                        <span class="payout-val-cyan">+$${lm_pnl_only1_tp2}</span>
-                    </div>
-                    <div class="profit-payout-row">
-                        <span class="lbl">🚀 Тейк-1 (ОБА входа → 0.618) [R:R ${c.long_manip.rr_label}]:</span>
-                        <span class="payout-val-green">+$${lm_pnl_both_tp1}</span>
-                    </div>
-                    <div class="profit-payout-row">
-                        <span class="lbl">🔥 Тейк-2 (ОБА входа → 0.500):</span>
-                        <span class="payout-val-green">+$${lm_pnl_both_tp2}</span>
-                    </div>
-                    <div class="profit-payout-row" style="border-top:1px solid rgba(255,255,255,0.08); margin-top:3px; padding-top:3px;">
-                        <span class="lbl">🛑 Стоп (если только Вход-1):</span>
-                        <span class="payout-val-red">-$${lm_grid.loss_if_only_1}</span>
-                    </div>
-                    <div class="profit-payout-row">
-                        <span class="lbl">🛑 Стоп (если ОБА входа 1+2) [R:R ${c.long_manip.rr_label}]:</span>
-                        <span class="payout-val-red">-$${lm_grid.loss_total}</span>
+
+                    <div class="status-pill ${c.short_normal.active ? 'status-ready' : 'status-wait'}">
+                        ${c.short_normal.active ? (c.short_normal.is_fresher ? '🔴 ВХОД В SHORT (Актуальный дамп)' : '⚠️ Старый дамп') : '⏳ Ожидание отскока вверх'}
                     </div>
                 </div>
+                ` : ''}
 
-                <div class="status-pill ${c.long_manip.active ? 'status-ready' : 'status-wait'}">
-                    ${c.long_manip.active ? '🟣 ВХОД В МАНИПУЛЯЦИЮ ПРЯМО СЕЙЧАС' : '⏳ Ожидание уровня 1.618'}
+                ${c.long_manip && lm_grid ? `
+                <!-- 3. LONG MANIPULATION -->
+                <div class="block" style="border-left: 3px solid var(--purple);">
+                    <div class="block-title c-purple">
+                        <span>🟣 МАНИПУЛЯЦИЯ (1.618+2.0) <span class="badge-wr">WR ${c.long_manip.wr}</span></span>
+                        <span style="font-size:10px; color:var(--text-dim);">${c.long_manip.time}</span>
+                    </div>
+                    <table class="table-levels">
+                        <tr>
+                            <td class="lbl">🔹 Вход-1 (1.618) 1x</td>
+                            <td>
+                                <div class="entry-val-box">
+                                    <span class="price-num c-purple">${c.long_manip.entry_1} $</span>
+                                    <div class="coins-badge-row">
+                                        <span class="coins-tag">${lm_grid.q1_fmt} ${coinTicker}</span>
+                                        <span class="margin-subtext">($${lm_grid.margin1})</span>
+                                    </div>
+                                </div>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="lbl">🔹 Добор-2 (2.000) 2x</td>
+                            <td>
+                                <div class="entry-val-box">
+                                    <span class="price-num c-orange">${c.long_manip.entry_2} $</span>
+                                    <div class="coins-badge-row">
+                                        <span class="coins-tag">${lm_grid.q2_fmt} ${coinTicker}</span>
+                                        <span class="margin-subtext">($${lm_grid.margin2})</span>
+                                    </div>
+                                </div>
+                            </td>
+                        </tr>
+                        <tr><td class="lbl">🎯 Тейк-1 (0.618 Fib)</td><td class="c-green">${c.long_manip.tp_1} $</td></tr>
+                        <tr><td class="lbl">🎯 Тейк-2 (0.500 Fib)</td><td class="c-green">${c.long_manip.tp_2} $</td></tr>
+                        <tr><td class="lbl">🛑 Стоп (${c.long_manip.sl_fib} Fib) [R:R ${c.long_manip.rr_label}]</td><td class="c-red">${c.long_manip.sl} $ <span style="font-size:10px; color:var(--text-dim);">(-${lm_grid.stop_pct}%)</span></td></tr>
+                    </table>
+
+                    <div class="profit-payout-box">
+                        <div class="profit-payout-row">
+                            <span class="lbl">💰 Тейк-1 (только Вход-1 → 0.618):</span>
+                            <span class="payout-val-green">+$${lm_pnl_only1_tp1}</span>
+                        </div>
+                        <div class="profit-payout-row">
+                            <span class="lbl">💰 Тейк-2 (только Вход-1 → 0.500):</span>
+                            <span class="payout-val-cyan">+$${lm_pnl_only1_tp2}</span>
+                        </div>
+                        <div class="profit-payout-row">
+                            <span class="lbl">🚀 Тейк-1 (ОБА входа → 0.618) [R:R ${c.long_manip.rr_label}]:</span>
+                            <span class="payout-val-green">+$${lm_pnl_both_tp1}</span>
+                        </div>
+                        <div class="profit-payout-row">
+                            <span class="lbl">🔥 Тейк-2 (ОБА входа → 0.500):</span>
+                            <span class="payout-val-green">+$${lm_pnl_both_tp2}</span>
+                        </div>
+                        <div class="profit-payout-row" style="border-top:1px solid rgba(255,255,255,0.08); margin-top:3px; padding-top:3px;">
+                            <span class="lbl">🛑 Стоп (если только Вход-1):</span>
+                            <span class="payout-val-red">-$${lm_grid.loss_if_only_1}</span>
+                        </div>
+                        <div class="profit-payout-row">
+                            <span class="lbl">🛑 Стоп (если ОБА входа 1+2) [R:R ${c.long_manip.rr_label}]:</span>
+                            <span class="payout-val-red">-$${lm_grid.loss_total}</span>
+                        </div>
+                    </div>
+
+                    <div class="status-pill ${c.long_manip.active ? 'status-ready' : 'status-wait'}">
+                        ${c.long_manip.active ? '🟣 ВХОД В МАНИПУЛЯЦИЮ ПРЯМО СЕЙЧАС' : '⏳ Ожидание уровня 1.618'}
+                    </div>
                 </div>
-            </div>
-            ` : ''}
+                ` : ''}
 
-            ${(!c.long_normal && !c.short_normal && !c.long_manip) ? `
-            <div style="grid-column: 1 / -1; background:rgba(255,255,255,0.02); border:1px dashed var(--border); border-radius:8px; padding:20px; text-align:center; color:var(--text-dim); font-size:13px;">
-                💤 Нет активных импульсов (цена во флэте)
-            </div>
-            ` : ''}
+                ${(!c.long_normal && !c.short_normal && !c.long_manip) ? `
+                <div style="grid-column: 1 / -1; background:rgba(255,255,255,0.02); border:1px dashed var(--border); border-radius:8px; padding:20px; text-align:center; color:var(--text-dim); font-size:13px;">
+                    💤 Нет активных импульсов (цена во флэте)
+                </div>
+                ` : ''}
 
-            </div> <!-- .coin-blocks-row -->
+                </div> <!-- .coin-blocks-row -->
+            </div> <!-- .coin-body -->
         </div>
         `;
     });
     document.getElementById('coins-container').innerHTML = html;
+}
+
+let openedCards = JSON.parse(localStorage.getItem('dca_opened_cards') || '{}');
+
+function toggleCard(symbol) {
+    const card = document.getElementById('card-' + symbol);
+    if (!card) return;
+    
+    if (card.classList.contains('open')) {
+        card.classList.remove('open');
+        openedCards[symbol] = false;
+    } else {
+        card.classList.add('open');
+        openedCards[symbol] = true;
+    }
+    localStorage.setItem('dca_opened_cards', JSON.stringify(openedCards));
 }
 
 async function updateScreener() {
