@@ -239,33 +239,37 @@ foreach ($symbols as $sym) {
 
     echo "  --------------------------------------------------------------------------------------\n";
 
-    // LONG MANIP
+    // LONG MANIPULATION
     if ($impLongManip) {
         $h = $impLongManip['high']; $l = $impLongManip['low'];
-        $tp0618 = calcFibLongLog($h, $l, 0.618);
-        $tp0500 = calcFibLongLog($h, $l, 0.500);
-        $m1618  = calcFibLongLog($h, $l, 1.618);
-        $m2000  = calcFibLongLog($h, $l, 2.000);
+        $m1 = calcFibLongLog($h, $l, 1.618);
+        $m2 = calcFibLongLog($h, $l, 2.000);
+        $tp1 = calcFibLongLog($h, $l, 0.618);
+        $tp2 = calcFibLongLog($h, $l, 0.500);
+        $sl2500 = calcFibLongLog($h, $l, 2.500);
 
-        $profit_tp0618 = (($tp0618 - $m1618) / $m1618) * 100.0;
-        $profit_tp0500 = (($tp0500 - $m1618) / $m1618) * 100.0;
-        $dist = (($curPrice - $m1618) / $curPrice) * 100.0;
-
+        $distM1 = (($curPrice - $m1) / $curPrice) * 100.0;
         $status = "";
-        if ($curPrice <= $m1618 && $curPrice > $m2000) $status = "🟣 ВХОД В МАНИПУЛЯЦИЮ 1.618 СЕЙЧАС!";
-        elseif ($curPrice <= $m2000) $status = "🟠 ДОБОР DCA 2.0 (2 лота) СЕЙЧАС!";
-        else $status = "⏳ Ожидание: до уровня 1.618 осталось " . number_format($dist, 2) . "%";
+        if ($curPrice <= $m1 && $curPrice > $sl2500) $status = "🟣 ВХОД В МАНИПУЛЯЦИЮ СЕЙЧАС!";
+        elseif ($curPrice > $m1) $status = "⏳ Ожидание: до уровня 1.618 осталось " . number_format($distM1, 2) . "%";
+        else $status = "🛑 Ниже стопа 2.500";
+
+        $pctGain1 = (($tp1 - $m1) / $m1) * 100.0;
+        $pctGain2 = (($tp2 - $m1) / $m1) * 100.0;
 
         $tS = date('d.m H:i', (int)($impLongManip['start_time'] / 1000));
         $tE = date('d.m H:i', (int)($impLongManip['end_time'] / 1000));
 
         echo "  [3] 🟣 LONG МАНИПУЛЯЦИЯ 1.618 + 2.0 DCA (Импульс ≥ 1.0%):\n";
         echo "      • Волна: {$tS} → {$tE} (Дно: " . fmt3($l) . "$ | Пик: " . fmt3($h) . "$ | Рост: +" . number_format($impLongManip['pct'], 2) . "%)\n";
-        echo "      • 🟣 ВХОД (1.618) 1 лот : " . fmt3($m1618) . " $\n";
-        echo "      • 🟠 ДОБОР (2.000) 2x   : " . fmt3($m2000) . " $\n";
-        echo "      • 🎯 ТЕЙК-1 (0.618 Fib) : " . fmt3($tp0618) . " $ (Ход от 1.618: +" . number_format($profit_tp0618, 2) . "%)\n";
-        echo "      • 🎯 ТЕЙК-2 (0.500 Fib) : " . fmt3($tp0500) . " $ (Ход от 1.618: +" . number_format($profit_tp0500, 2) . "%)\n";
-        echo "      • 👉 Статус             : {$status}\n";
+        echo "      • 🟣 ВХОД-1 (1.618 Fib) 1x    : " . fmt3($m1) . " $\n";
+        echo "      • 🟠 ВХОД-2 (2.000 Fib) 2x    : " . fmt3($m2) . " $\n";
+        echo "      • 🎯 ТЕЙК-1 (0.618 Fib) [R:R 1:2]: " . fmt3($tp1) . " $ (Ход: +" . number_format($pctGain1, 2) . "%)\n";
+        echo "      • 🎯 ТЕЙК-2 (0.500 Fib)       : " . fmt3($tp2) . " $ (Ход: +" . number_format($pctGain2, 2) . "%)\n";
+        echo "      • 🛑 СТОП   (2.500 Fib) [R:R 1:2]: " . fmt3($sl2500) . " $\n";
+        echo "      • 👉 Статус                   : {$status}\n";
+    } else {
+        echo "  [3] 🟣 LONG МАНИПУЛЯЦИЯ:\n      • Нет импульса ≥ 1.0%\n";
     }
     echo "\n";
 }

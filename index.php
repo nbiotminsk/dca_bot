@@ -234,7 +234,7 @@ if (isset($_GET['ajax'])) {
             $m2 = calcFibLongLog($impLM['high'], $impLM['low'], 2.000);
             $tp1 = calcFibLongLog($impLM['high'], $impLM['low'], 0.618);
             $tp2 = calcFibLongLog($impLM['high'], $impLM['low'], 0.500);
-            $sl2618 = calcFibLongLog($impLM['high'], $impLM['low'], 2.618);
+            $sl2500 = calcFibLongLog($impLM['high'], $impLM['low'], 2.500);
 
             $card['long_manip'] = [
                 'entry_1'      => fmt3($m1),
@@ -245,10 +245,10 @@ if (isset($_GET['ajax'])) {
                 'raw_tp1'      => (float)$tp1,
                 'tp_2'         => fmt3($tp2),
                 'raw_tp2'      => (float)$tp2,
-                'sl_2618'      => fmt3($sl2618),
-                'raw_sl'       => (float)$sl2618,
+                'sl_2500'      => fmt3($sl2500),
+                'raw_sl'       => (float)$sl2500,
                 'pct'          => number_format($impLM['pct'], 2),
-                'active'       => ($curPrice <= $m1 && $curPrice > $sl2618),
+                'active'       => ($curPrice <= $m1 && $curPrice > $sl2500),
                 'time'         => date('d.m H:i', (int)($impLM['end_time'] / 1000))
             ];
         }
@@ -795,7 +795,7 @@ function renderCards(data) {
                     </tr>
                     <tr><td class="lbl">🎯 Тейк-1 (0.618 Fib)</td><td class="c-green">${c.long_manip.tp_1} $</td></tr>
                     <tr><td class="lbl">🎯 Тейк-2 (0.500 Fib)</td><td class="c-green">${c.long_manip.tp_2} $</td></tr>
-                    <tr><td class="lbl">🛑 Стоп (2.618 Fib)</td><td class="c-red">${c.long_manip.sl_2618} $ <span style="font-size:10px; color:var(--text-dim);">(-${lm_grid.stop_pct}%)</span></td></tr>
+                    <tr><td class="lbl">🛑 Стоп (2.500 Fib) [R:R 1:2]</td><td class="c-red">${c.long_manip.sl_2500} $ <span style="font-size:10px; color:var(--text-dim);">(-${lm_grid.stop_pct}%)</span></td></tr>
                 </table>
 
                 <div class="profit-payout-box">
