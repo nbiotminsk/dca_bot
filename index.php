@@ -466,6 +466,22 @@ if (isset($_GET['ajax'])) {
         .margin-subtext { color: var(--text-dim); font-size: 11.5px; font-weight: 700; }
 
         .status-pill { display: block; text-align: center; padding: 7px; border-radius: 6px; font-size: 12px; font-weight: 800; margin-top: 10px; }
+
+        /* 📱 Компактный аккуратный вид на мобильных */
+        @media (max-width: 768px) {
+            .table-levels { font-size: 12.5px; }
+            .table-levels td { padding: 3px 0; }
+            .table-levels td:last-child { font-size: 13px; font-weight: 700; }
+            .lbl { font-size: 11.5px; font-weight: 500; }
+            .price-num { font-size: 13px; font-weight: 700; }
+            .coins-tag { font-size: 10px; font-weight: 800; padding: 1px 5px; }
+            .margin-subtext { font-size: 10px; font-weight: 600; }
+            .profit-payout-box { font-size: 11px; padding: 7px 9px; margin-top: 8px; }
+            .profit-payout-row { padding: 2.5px 0; }
+            .payout-val-green, .payout-val-cyan, .payout-val-red { font-size: 11.5px; font-weight: 800; }
+            .status-pill { font-size: 11px; padding: 5px; margin-top: 7px; }
+            .coin-card { padding: 12px; }
+        }
         .status-ready { background: rgba(0,230,118,0.2); color: var(--green); border: 1px solid var(--green); }
         .status-wait { background: rgba(255,255,255,0.05); color: var(--text-dim); }
 
