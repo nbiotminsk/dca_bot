@@ -183,16 +183,16 @@ if (isset($_GET['ajax'])) {
             $in0618 = calcFibLongLog($impLN['high'], $impLN['low'], 0.618);
             $tp0500 = calcFibLongLog($impLN['high'], $impLN['low'], 0.500);
             $tp0382 = calcFibLongLog($impLN['high'], $impLN['low'], 0.382);
-            $sl0764 = calcFibLongLog($impLN['high'], $impLN['low'], 0.764);
+            $sl0710 = calcFibLongLog($impLN['high'], $impLN['low'], 0.710);
 
             $card['long_normal'] = [
                 'entry_050'  => fmt3($in050),
                 'entry_0618' => fmt3($in0618),
                 'tp_0500'    => fmt3($tp0500),
                 'tp_0382'    => fmt3($tp0382),
-                'sl'         => fmt3($sl0764),
+                'sl'         => fmt3($sl0710),
                 'pct'        => number_format($impLN['pct'], 2),
-                'active'     => ($curPrice <= $in050 && $curPrice > $sl0764),
+                'active'     => ($curPrice <= $in050 && $curPrice > $sl0710),
                 'time'       => date('d.m H:i', (int)($impLN['end_time'] / 1000)),
                 'is_fresher' => ($long_time >= $short_time)
             ];
@@ -204,16 +204,16 @@ if (isset($_GET['ajax'])) {
             $in0618 = calcFibShortLog($impSN['high'], $impSN['low'], 0.618);
             $tp0500 = calcFibShortLog($impSN['high'], $impSN['low'], 0.500);
             $tp0382 = calcFibShortLog($impSN['high'], $impSN['low'], 0.382);
-            $sl0764 = calcFibShortLog($impSN['high'], $impSN['low'], 0.764);
+            $sl0710 = calcFibShortLog($impSN['high'], $impSN['low'], 0.710);
 
             $card['short_normal'] = [
                 'entry_050'  => fmt3($in050),
                 'entry_0618' => fmt3($in0618),
                 'tp_0500'    => fmt3($tp0500),
                 'tp_0382'    => fmt3($tp0382),
-                'sl'         => fmt3($sl0764),
+                'sl'         => fmt3($sl0710),
                 'pct'        => number_format($impSN['pct'], 2),
-                'active'     => ($curPrice >= $in050 && $curPrice < $sl0764),
+                'active'     => ($curPrice >= $in050 && $curPrice < $sl0710),
                 'time'       => date('d.m H:i', (int)($impSN['end_time'] / 1000)),
                 'is_fresher' => ($short_time > $long_time)
             ];
@@ -379,7 +379,7 @@ async function updateScreener() {
                         <tr><td class="lbl">🔹 Вход-2 / DCA (0.618 Fib) 2x</td><td class="c-blue">${c.long_normal.entry_0618} $</td></tr>
                         <tr><td class="lbl">🎯 Тейк-1 (0.500 Fib)</td><td class="c-green">${c.long_normal.tp_0500} $</td></tr>
                         <tr><td class="lbl">🎯 Тейк-2 (0.382 Fib)</td><td class="c-green">${c.long_normal.tp_0382} $</td></tr>
-                        <tr><td class="lbl">🛑 Стоп (0.764 Fib)</td><td class="c-red">${c.long_normal.sl} $</td></tr>
+                        <tr><td class="lbl">🛑 Стоп (0.710 Fib)</td><td class="c-red">${c.long_normal.sl} $</td></tr>
                     </table>
                     <div class="status-pill ${c.long_normal.active ? 'status-ready' : 'status-wait'}">
                         ${c.long_normal.active ? (c.long_normal.is_fresher ? '🟢 ВХОД В LONG (Актуальный импульс)' : '⚠️ Старый импульс') : '⏳ Ожидание отката'}
@@ -399,7 +399,7 @@ async function updateScreener() {
                         <tr><td class="lbl">🔹 Вход-2 в Short (0.618)</td><td class="c-red">${c.short_normal.entry_0618} $</td></tr>
                         <tr><td class="lbl">🎯 Тейк-1 (0.500 Fib)</td><td class="c-green">${c.short_normal.tp_0500} $</td></tr>
                         <tr><td class="lbl">🎯 Тейк-2 (0.382 Fib)</td><td class="c-green">${c.short_normal.tp_0382} $</td></tr>
-                        <tr><td class="lbl">🛑 Стоп (0.764 Fib)</td><td class="c-red">${c.short_normal.sl} $</td></tr>
+                        <tr><td class="lbl">🛑 Стоп (0.710 Fib)</td><td class="c-red">${c.short_normal.sl} $</td></tr>
                     </table>
                     <div class="status-pill ${c.short_normal.active ? 'status-ready' : 'status-wait'}">
                         ${c.short_normal.active ? (c.short_normal.is_fresher ? '🔴 ВХОД В SHORT (Актуальный дамп)' : '⚠️ Старый дамп') : '⏳ Ожидание отскока вверх'}

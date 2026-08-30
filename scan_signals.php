@@ -180,12 +180,12 @@ foreach ($symbols as $sym) {
         $in0618 = calcFibLongLog($h, $l, 0.618);
         $tp0500 = calcFibLongLog($h, $l, 0.500);
         $tp0382 = calcFibLongLog($h, $l, 0.382);
-        $sl0764 = calcFibLongLog($h, $l, 0.764);
+        $sl0710 = calcFibLongLog($h, $l, 0.710);
 
         $dist050 = (($curPrice - $in050) / $curPrice) * 100.0;
 
         $status = "";
-        if ($curPrice <= $in050 && $curPrice > $sl0764) $status = "🟢 ВХОД В LONG СЕЙЧАС!";
+        if ($curPrice <= $in050 && $curPrice > $sl0710) $status = "🟢 ВХОД В LONG СЕЙЧАС!";
         elseif ($curPrice > $in050) $status = "⏳ Ожидание отката к 0.500: осталось " . number_format($dist050, 2) . "%";
         else $status = "🛑 Ниже стопа";
 
@@ -198,7 +198,7 @@ foreach ($symbols as $sym) {
         echo "      • 🔹 Вход-2 / DCA (0.618) 2x  : " . fmt3($in0618) . " $\n";
         echo "      • 🎯 Тейк-1 (0.500 Fib)       : " . fmt3($tp0500) . " $\n";
         echo "      • 🎯 Тейк-2 (0.382 Fib)       : " . fmt3($tp0382) . " $\n";
-        echo "      • 🛑 Стоп (0.764 Fib)         : " . fmt3($sl0764) . " $\n";
+        echo "      • 🛑 Стоп (0.710 Fib)         : " . fmt3($sl0710) . " $\n";
         echo "      • 👉 Статус                   : {$status}\n";
     } else {
         echo "  [1] 🟢 LONG ОБЫЧНЫЙ (Импульс ≥ 3.5%):\n      • Нет импульса ≥ 3.5%\n";
@@ -213,12 +213,12 @@ foreach ($symbols as $sym) {
         $in0618 = calcFibShortLog($h, $l, 0.618);
         $tp0500 = calcFibShortLog($h, $l, 0.500);
         $tp0382 = calcFibShortLog($h, $l, 0.382);
-        $sl0764 = calcFibShortLog($h, $l, 0.764);
+        $sl0710 = calcFibShortLog($h, $l, 0.710);
 
         $dist050 = (($in050 - $curPrice) / $curPrice) * 100.0;
 
         $status = "";
-        if ($curPrice >= $in050 && $curPrice < $sl0764) $status = "🔴 ВХОД В SHORT СЕЙЧАС!";
+        if ($curPrice >= $in050 && $curPrice < $sl0710) $status = "🔴 ВХОД В SHORT СЕЙЧАС!";
         elseif ($curPrice < $in050) $status = "⏳ Ожидание отскока к 0.500: осталось " . number_format($dist050, 2) . "%";
         else $status = "🛑 Выше стопа";
 
@@ -231,7 +231,7 @@ foreach ($symbols as $sym) {
         echo "      • 🔹 Вход-2 в Short (0.618)   : " . fmt3($in0618) . " $\n";
         echo "      • 🎯 Тейк-1 (0.500 Fib)       : " . fmt3($tp0500) . " $\n";
         echo "      • 🎯 Тейк-2 (0.382 Fib)       : " . fmt3($tp0382) . " $\n";
-        echo "      • 🛑 Стоп (0.764 Fib)         : " . fmt3($sl0764) . " $\n";
+        echo "      • 🛑 Стоп (0.710 Fib)         : " . fmt3($sl0710) . " $\n";
         echo "      • 👉 Статус                   : {$status}\n";
     } else {
         echo "  [2] 🔴 SHORT ОБЫЧНЫЙ:\n      • Нет дамп-импульса ≥ 3.5%\n";
