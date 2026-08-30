@@ -239,20 +239,28 @@ foreach ($symbols as $sym) {
 
     echo "  --------------------------------------------------------------------------------------\n";
 
-    // LONG MANIPULATION
+    // LONG MANIPULATION (Индивидуальный оптимальный стоп и R:R под характер каждой монеты)
+    $coinManipConfig = [
+        'UNIUSDT'  => ['sl_fib' => 2.395, 'rr' => '1:2.4'],
+        'NEARUSDT' => ['sl_fib' => 2.570, 'rr' => '1:1.8'],
+        'HYPEUSDT' => ['sl_fib' => 2.291, 'rr' => '1:3.0']
+    ];
+    $sl_fib_opt   = isset($coinManipConfig[$sym]) ? $coinManipConfig[$sym]['sl_fib'] : 2.500;
+    $rr_label_opt = isset($coinManipConfig[$sym]) ? $coinManipConfig[$sym]['rr'] : '1:2.0';
+
     if ($impLongManip) {
         $h = $impLongManip['high']; $l = $impLongManip['low'];
         $m1 = calcFibLongLog($h, $l, 1.618);
         $m2 = calcFibLongLog($h, $l, 2.000);
         $tp1 = calcFibLongLog($h, $l, 0.618);
         $tp2 = calcFibLongLog($h, $l, 0.500);
-        $sl2500 = calcFibLongLog($h, $l, 2.500);
+        $sl_opt = calcFibLongLog($h, $l, $sl_fib_opt);
 
         $distM1 = (($curPrice - $m1) / $curPrice) * 100.0;
         $status = "";
-        if ($curPrice <= $m1 && $curPrice > $sl2500) $status = "🟣 ВХОД В МАНИПУЛЯЦИЮ СЕЙЧАС!";
+        if ($curPrice <= $m1 && $curPrice > $sl_opt) $status = "🟣 ВХОД В МАНИПУЛЯЦИЮ СЕЙЧАС!";
         elseif ($curPrice > $m1) $status = "⏳ Ожидание: до уровня 1.618 осталось " . number_format($distM1, 2) . "%";
-        else $status = "🛑 Ниже стопа 2.500";
+        else $status = "🛑 Ниже стопа {$sl_fib_opt}";
 
         $pctGain1 = (($tp1 - $m1) / $m1) * 100.0;
         $pctGain2 = (($tp2 - $m1) / $m1) * 100.0;
@@ -264,9 +272,9 @@ foreach ($symbols as $sym) {
         echo "      • Волна: {$tS} → {$tE} (Дно: " . fmt3($l) . "$ | Пик: " . fmt3($h) . "$ | Рост: +" . number_format($impLongManip['pct'], 2) . "%)\n";
         echo "      • 🟣 ВХОД-1 (1.618 Fib) 1x    : " . fmt3($m1) . " $\n";
         echo "      • 🟠 ВХОД-2 (2.000 Fib) 2x    : " . fmt3($m2) . " $\n";
-        echo "      • 🎯 ТЕЙК-1 (0.618 Fib) [R:R 1:2]: " . fmt3($tp1) . " $ (Ход: +" . number_format($pctGain1, 2) . "%)\n";
+        echo "      • 🎯 ТЕЙК-1 (0.618 Fib) [R:R {$rr_label_opt}]: " . fmt3($tp1) . " $ (Ход: +" . number_format($pctGain1, 2) . "%)\n";
         echo "      • 🎯 ТЕЙК-2 (0.500 Fib)       : " . fmt3($tp2) . " $ (Ход: +" . number_format($pctGain2, 2) . "%)\n";
-        echo "      • 🛑 СТОП   (2.500 Fib) [R:R 1:2]: " . fmt3($sl2500) . " $\n";
+        echo "      • 🛑 СТОП   ({$sl_fib_opt} Fib) [R:R {$rr_label_opt}]: " . fmt3($sl_opt) . " $\n";
         echo "      • 👉 Статус                   : {$status}\n";
     } else {
         echo "  [3] 🟣 LONG МАНИПУЛЯЦИЯ:\n      • Нет импульса ≥ 1.0%\n";

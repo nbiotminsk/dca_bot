@@ -228,13 +228,21 @@ if (isset($_GET['ajax'])) {
             ];
         }
 
-        // Long Manip
+        // Long Manip (Индивидуальный оптимальный стоп и R:R под характер каждой монеты)
+        $coinManipConfig = [
+            'UNIUSDT'  => ['sl_fib' => 2.395, 'rr' => '1:2.4'],
+            'NEARUSDT' => ['sl_fib' => 2.570, 'rr' => '1:1.8'],
+            'HYPEUSDT' => ['sl_fib' => 2.291, 'rr' => '1:3.0']
+        ];
+        $sl_fib_opt = isset($coinManipConfig[$sym]) ? $coinManipConfig[$sym]['sl_fib'] : 2.500;
+        $rr_label_opt = isset($coinManipConfig[$sym]) ? $coinManipConfig[$sym]['rr'] : '1:2.0';
+
         if ($impLM) {
             $m1 = calcFibLongLog($impLM['high'], $impLM['low'], 1.618);
             $m2 = calcFibLongLog($impLM['high'], $impLM['low'], 2.000);
             $tp1 = calcFibLongLog($impLM['high'], $impLM['low'], 0.618);
             $tp2 = calcFibLongLog($impLM['high'], $impLM['low'], 0.500);
-            $sl2500 = calcFibLongLog($impLM['high'], $impLM['low'], 2.500);
+            $sl_opt = calcFibLongLog($impLM['high'], $impLM['low'], $sl_fib_opt);
 
             $card['long_manip'] = [
                 'entry_1'      => fmt3($m1),
@@ -245,10 +253,12 @@ if (isset($_GET['ajax'])) {
                 'raw_tp1'      => (float)$tp1,
                 'tp_2'         => fmt3($tp2),
                 'raw_tp2'      => (float)$tp2,
-                'sl_2500'      => fmt3($sl2500),
-                'raw_sl'       => (float)$sl2500,
+                'sl'           => fmt3($sl_opt),
+                'raw_sl'       => (float)$sl_opt,
+                'sl_fib'       => $sl_fib_opt,
+                'rr_label'     => $rr_label_opt,
                 'pct'          => number_format($impLM['pct'], 2),
-                'active'       => ($curPrice <= $m1 && $curPrice > $sl2500),
+                'active'       => ($curPrice <= $m1 && $curPrice > $sl_opt),
                 'time'         => date('d.m H:i', (int)($impLM['end_time'] / 1000))
             ];
         }
@@ -799,7 +809,7 @@ function renderCards(data) {
                     </tr>
                     <tr><td class="lbl">🎯 Тейк-1 (0.618 Fib)</td><td class="c-green">${c.long_manip.tp_1} $</td></tr>
                     <tr><td class="lbl">🎯 Тейк-2 (0.500 Fib)</td><td class="c-green">${c.long_manip.tp_2} $</td></tr>
-                    <tr><td class="lbl">🛑 Стоп (2.500 Fib) [R:R 1:2]</td><td class="c-red">${c.long_manip.sl_2500} $ <span style="font-size:10px; color:var(--text-dim);">(-${lm_grid.stop_pct}%)</span></td></tr>
+                    <tr><td class="lbl">🛑 Стоп (${c.long_manip.sl_fib} Fib) [R:R ${c.long_manip.rr_label}]</td><td class="c-red">${c.long_manip.sl} $ <span style="font-size:10px; color:var(--text-dim);">(-${lm_grid.stop_pct}%)</span></td></tr>
                 </table>
 
                 <div class="profit-payout-box">
@@ -812,7 +822,7 @@ function renderCards(data) {
                         <span class="payout-val-cyan">+$${lm_pnl_only1_tp2}</span>
                     </div>
                     <div class="profit-payout-row">
-                        <span class="lbl">🚀 Тейк-1 (ОБА входа → 0.618) [R:R 1:2]:</span>
+                        <span class="lbl">🚀 Тейк-1 (ОБА входа → 0.618) [R:R ${c.long_manip.rr_label}]:</span>
                         <span class="payout-val-green">+$${lm_pnl_both_tp1}</span>
                     </div>
                     <div class="profit-payout-row">
@@ -824,7 +834,7 @@ function renderCards(data) {
                         <span class="payout-val-red">-$${lm_grid.loss_if_only_1}</span>
                     </div>
                     <div class="profit-payout-row">
-                        <span class="lbl">🛑 Стоп (если ОБА входа 1+2) [R:R 1:2]:</span>
+                        <span class="lbl">🛑 Стоп (если ОБА входа 1+2) [R:R ${c.long_manip.rr_label}]:</span>
                         <span class="payout-val-red">-$${lm_grid.loss_total}</span>
                     </div>
                 </div>
