@@ -183,13 +183,13 @@ if (isset($_GET['ajax'])) {
 
             $card['long_normal'] = [
                 'entry_050'    => fmt3($in050),
-                'raw_e050'     => $in050,
+                'raw_e050'     => (float)$in050,
                 'entry_0618'   => fmt3($in0618),
-                'raw_e0618'    => $in0618,
+                'raw_e0618'    => (float)$in0618,
                 'tp_0500'      => fmt3($tp0500),
                 'tp_0382'      => fmt3($tp0382),
                 'sl'           => fmt3($sl0710),
-                'raw_sl'       => $sl0710,
+                'raw_sl'       => (float)$sl0710,
                 'pct'          => number_format($impLN['pct'], 2),
                 'active'       => ($curPrice <= $in050 && $curPrice > $sl0710),
                 'time'         => date('d.m H:i', (int)($impLN['end_time'] / 1000)),
@@ -207,13 +207,13 @@ if (isset($_GET['ajax'])) {
 
             $card['short_normal'] = [
                 'entry_050'    => fmt3($in050),
-                'raw_e050'     => $in050,
+                'raw_e050'     => (float)$in050,
                 'entry_0618'   => fmt3($in0618),
-                'raw_e0618'    => $in0618,
+                'raw_e0618'    => (float)$in0618,
                 'tp_0500'      => fmt3($tp0500),
                 'tp_0382'      => fmt3($tp0382),
                 'sl'           => fmt3($sl0710),
-                'raw_sl'       => $sl0710,
+                'raw_sl'       => (float)$sl0710,
                 'pct'          => number_format($impSN['pct'], 2),
                 'active'       => ($curPrice >= $in050 && $curPrice < $sl0710),
                 'time'         => date('d.m H:i', (int)($impSN['end_time'] / 1000)),
@@ -229,9 +229,9 @@ if (isset($_GET['ajax'])) {
             $tp2 = calcFibLongLog($impLM['high'], $impLM['low'], 0.500);
             $card['long_manip'] = [
                 'entry_1'   => fmt3($m1),
-                'raw_e1'    => $m1,
+                'raw_e1'    => (float)$m1,
                 'entry_2'   => fmt3($m2),
-                'raw_e2'    => $m2,
+                'raw_e2'    => (float)$m2,
                 'tp_1'      => fmt3($tp1),
                 'tp_2'      => fmt3($tp2),
                 'pct'       => number_format($impLM['pct'], 2),
@@ -339,7 +339,6 @@ if (isset($_GET['ajax'])) {
         .table-levels td:last-child { text-align: right; font-weight: 700; }
         .lbl { color: var(--text-dim); font-size: 12px; }
         
-        /* Выделение рассчитанных денег входа */
         .money-tag {
             display: inline-block;
             background: rgba(255, 214, 0, 0.15);
@@ -422,7 +421,6 @@ if (isset($_GET['ajax'])) {
 let isRefreshing = false;
 let globalData = null;
 
-// Загрузка настроек из LocalStorage
 function loadSavedSettings() {
     const dep = localStorage.getItem('mon1h_deposit');
     const rsk = localStorage.getItem('mon1h_risk');
@@ -449,17 +447,12 @@ function saveAndRecalc() {
     }
 }
 
-// Расчет размера позиции исходя из % расстояния до стопа
 function calculatePosition(entryPrice, stopPrice, isManip = false) {
     const dep = parseFloat(document.getElementById('cfg-deposit').value) || 1000;
     const rsk = parseFloat(document.getElementById('cfg-risk').value) || 2.0;
     const lev = parseFloat(document.getElementById('cfg-leverage').value) || 1;
 
-    const maxRiskDollar = dep * (rsk / 100.0);
-    
     if (isManip) {
-        // Для манипуляции (1 лот на 1.618 + 2 лота на 2.000):
-        // Сетка манипуляции выделяет долю депозита (например, 10-20%) под 3 доли
         const totalPosDollar = (dep * 0.15) * lev;
         const lot1Dollar = totalPosDollar * (1 / 3);
         const lot2Dollar = totalPosDollar * (2 / 3);
@@ -470,11 +463,12 @@ function calculatePosition(entryPrice, stopPrice, isManip = false) {
         };
     }
 
-    // Для Обычного входа (Long / Short со стопом 0.710):
-    const stopDistancePct = Math.abs((entryPrice - stopPrice) / entryPrice);
-    if (stopDistancePct <= 0.0001) return { total_pos: "0", margin: "0" };
+    if (!entryPrice || !stopPrice) return { margin_usd: "0", stop_pct: "0" };
 
-    // Размер позиции, при котором потеря на стопе = ровно maxRiskDollar
+    const maxRiskDollar = dep * (rsk / 100.0);
+    const stopDistancePct = Math.abs((entryPrice - stopPrice) / entryPrice);
+    if (stopDistancePct <= 0.0001) return { margin_usd: "0", stop_pct: "0" };
+
     const totalPosDollar = maxRiskDollar / stopDistancePct;
     const marginDollar = totalPosDollar / lev;
 
@@ -486,26 +480,24 @@ function calculatePosition(entryPrice, stopPrice, isManip = false) {
 }
 
 function renderCards(data) {
+    if (!data || !data.items) return;
     let html = '';
     data.items.forEach(c => {
-        // Расчет денег для Long Normal
-        let ln_calc_050 = null;
-        let ln_calc_0618 = null;
+        let ln_calc_050 = { margin_usd: "0", stop_pct: "0" };
+        let ln_calc_0618 = { margin_usd: "0", stop_pct: "0" };
         if (c.long_normal) {
             ln_calc_050 = calculatePosition(c.long_normal.raw_e050, c.long_normal.raw_sl);
             ln_calc_0618 = calculatePosition(c.long_normal.raw_e0618, c.long_normal.raw_sl);
         }
 
-        // Расчет денег для Short Normal
-        let sn_calc_050 = null;
-        let sn_calc_0618 = null;
+        let sn_calc_050 = { margin_usd: "0", stop_pct: "0" };
+        let sn_calc_0618 = { margin_usd: "0", stop_pct: "0" };
         if (c.short_normal) {
             sn_calc_050 = calculatePosition(c.short_normal.raw_e050, c.short_normal.raw_sl);
             sn_calc_0618 = calculatePosition(c.short_normal.raw_e0618, c.short_normal.raw_sl);
         }
 
-        // Расчет денег для Long Manip
-        let lm_calc = null;
+        let lm_calc = { lot1_usd: "0", lot2_usd: "0" };
         if (c.long_manip) {
             lm_calc = calculatePosition(c.long_manip.raw_e1, 0, true);
         }
@@ -517,7 +509,6 @@ function renderCards(data) {
                 <div class="coin-price">${c.price} $</div>
             </div>
 
-            <!-- ГЛАВНЫЙ ВЕРДИКТ -->
             <div class="verdict-box">👉 РЕШЕНИЕ: ${c.best_choice}</div>
 
             <!-- 1. LONG NORMAL -->
