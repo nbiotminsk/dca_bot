@@ -320,7 +320,7 @@ if (isset($_GET['ajax'])) {
                 $card['best_choice'] = "⏳ {$nearestDesc}";
             } else {
                 $priorityScore = 999.0;
-                $card['best_choice'] = "💤 НЕТ АКТИВНЫХ ВОЛН (Вне позиции)";
+                $card['best_choice'] = "💤 Вне позиции";
             }
         }
 
