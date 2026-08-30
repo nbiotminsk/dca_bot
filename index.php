@@ -403,12 +403,17 @@ if (isset($_GET['ajax'])) {
         .coin-price { font-size: 24px; font-weight: 800; color: #fff; font-family: monospace; }
 
         .coin-blocks-row {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
+            display: flex;
             gap: 14px;
+            flex-wrap: wrap;
         }
-        @media (max-width: 1024px) {
-            .coin-blocks-row { grid-template-columns: 1fr; }
+        .coin-blocks-row .block {
+            flex: 1 1 320px;
+            min-width: 300px;
+        }
+        @media (max-width: 768px) {
+            .coin-blocks-row { flex-direction: column; }
+            .coin-blocks-row .block { flex: 1 1 100%; min-width: 0; }
         }
 
         .verdict-box { background: rgba(255,255,255,0.06); border-radius: 8px; padding: 8px 10px; margin-bottom: 14px; text-align: center; font-weight: 800; font-size: 13px; border: 1px solid var(--border); }
