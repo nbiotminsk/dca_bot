@@ -71,42 +71,51 @@ function detectLatestLongImpulse($candles, $min_pct) {
     for ($i = 1; $i < min(72, $n - 1); $i++) {
         $start_idx = $n - 1 - $i;
         $imp_low   = $candles[$start_idx]['low'];
-        $imp_high  = $candles[$start_idx + 1]['high'];
         
-        if ($candles[$start_idx + 1]['high'] <= $candles[$start_idx]['high']) {
-            continue;
-        }
-
-        $broken = false;
-        $max_high = $imp_high;
-        $max_idx  = $start_idx + 1;
-
-        for ($k = $start_idx + 1; $k < $n; $k++) {
-            $cur_05 = calcFibLongLog($max_high, $imp_low, 0.500);
-            if ($candles[$k]['low'] <= $cur_05) {
-                $broken = true;
-                break;
-            }
+        // Находим наивысшую точку после дна
+        $max_high = $imp_low;
+        $max_idx  = $start_idx;
+        for ($k = $start_idx; $k < $n; $k++) {
             if ($candles[$k]['high'] > $max_high) {
                 $max_high = $candles[$k]['high'];
                 $max_idx  = $k;
             }
         }
 
+        $pct = ($max_high - $imp_low) / $imp_low * 100.0;
+        if ($pct < $min_pct) {
+            continue;
+        }
+
+        // Проверяем, не было ли отката ниже 0.500 ПОСЛЕ достижения пика max_idx
+        $broken = false;
+        $fib_05 = calcFibLongLog($max_high, $imp_low, 0.500);
+        for ($step = $max_idx; $step < $n; $step++) {
+            if ($candles[$step]['low'] <= $fib_05) {
+                $broken = true;
+                break;
+            }
+        }
+
+        // И не пробивалось ли само дно до пика
+        for ($step = $start_idx; $step <= $max_idx; $step++) {
+            if ($candles[$step]['low'] < $imp_low) {
+                $broken = true;
+                break;
+            }
+        }
+
         if (!$broken) {
-            $pct = ($max_high - $imp_low) / $imp_low * 100.0;
-            if ($pct >= $min_pct) {
-                if ($best_impulse === null || $pct > $best_impulse['pct']) {
-                    $best_impulse = [
-                        'start_time' => $candles[$start_idx]['time'],
-                        'end_time'   => $candles[$max_idx]['time'],
-                        'end_idx'    => $max_idx,
-                        'high'       => $max_high,
-                        'low'        => $imp_low,
-                        'pct'        => $pct,
-                        'is_live'    => true
-                    ];
-                }
+            if ($best_impulse === null || $pct > $best_impulse['pct']) {
+                $best_impulse = [
+                    'start_time' => $candles[$start_idx]['time'],
+                    'end_time'   => $candles[$max_idx]['time'],
+                    'end_idx'    => $max_idx,
+                    'high'       => $max_high,
+                    'low'        => $imp_low,
+                    'pct'        => $pct,
+                    'is_live'    => true
+                ];
             }
         }
     }
@@ -121,42 +130,51 @@ function detectLatestShortImpulse($candles, $min_pct) {
     for ($i = 1; $i < min(72, $n - 1); $i++) {
         $start_idx = $n - 1 - $i;
         $imp_high  = $candles[$start_idx]['high'];
-        $imp_low   = $candles[$start_idx + 1]['low'];
         
-        if ($candles[$start_idx + 1]['low'] >= $candles[$start_idx]['low']) {
-            continue;
-        }
-
-        $broken = false;
-        $min_low = $imp_low;
-        $min_idx = $start_idx + 1;
-
-        for ($k = $start_idx + 1; $k < $n; $k++) {
-            $cur_05 = calcFibShortLog($imp_high, $min_low, 0.500);
-            if ($candles[$k]['high'] >= $cur_05) {
-                $broken = true;
-                break;
-            }
+        // Находим низшую точку после пика
+        $min_low = $imp_high;
+        $min_idx = $start_idx;
+        for ($k = $start_idx; $k < $n; $k++) {
             if ($candles[$k]['low'] < $min_low) {
                 $min_low = $candles[$k]['low'];
                 $min_idx = $k;
             }
         }
 
+        $pct = ($imp_high - $min_low) / $imp_high * 100.0;
+        if ($pct < $min_pct) {
+            continue;
+        }
+
+        // Проверяем, не было ли отскока выше 0.500 ПОСЛЕ достижения дна min_idx
+        $broken = false;
+        $fib_05 = calcFibShortLog($imp_high, $min_low, 0.500);
+        for ($step = $min_idx; $step < $n; $step++) {
+            if ($candles[$step]['high'] >= $fib_05) {
+                $broken = true;
+                break;
+            }
+        }
+
+        // И не пробивался ли сам пик до достижения дна
+        for ($step = $start_idx; $step <= $min_idx; $step++) {
+            if ($candles[$step]['high'] > $imp_high) {
+                $broken = true;
+                break;
+            }
+        }
+
         if (!$broken) {
-            $pct = ($imp_high - $min_low) / $imp_high * 100.0;
-            if ($pct >= $min_pct) {
-                if ($best_impulse === null || $pct > $best_impulse['pct']) {
-                    $best_impulse = [
-                        'start_time' => $candles[$start_idx]['time'],
-                        'end_time'   => $candles[$min_idx]['time'],
-                        'end_idx'    => $min_idx,
-                        'high'       => $imp_high,
-                        'low'        => $min_low,
-                        'pct'        => $pct,
-                        'is_live'    => true
-                    ];
-                }
+            if ($best_impulse === null || $pct > $best_impulse['pct']) {
+                $best_impulse = [
+                    'start_time' => $candles[$start_idx]['time'],
+                    'end_time'   => $candles[$min_idx]['time'],
+                    'end_idx'    => $min_idx,
+                    'high'       => $imp_high,
+                    'low'        => $min_low,
+                    'pct'        => $pct,
+                    'is_live'    => true
+                ];
             }
         }
     }
