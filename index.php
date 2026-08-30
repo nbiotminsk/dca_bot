@@ -2,7 +2,11 @@
 /**
  * Live Screener & Signal Scanner для стратегии "Манипуляция на часе (Mon 1H)"
  * Монеты: HYPEUSDT, NEARUSDT, UNIUSDT
- * Автоматический поиск ПОЛНОЙ МАКРО-ВОЛНЫ импульса от истинного дна.
+ * Автоматическое определение ДОМИНИРУЮЩЕГО СИГНАЛА с ручной кнопкой обновления.
+ * 
+ * В LONG ОБЫЧНЫЙ добавлены:
+ * - Вход 1 (0.500 Fib) + Вход 2 / Добор (0.618 Fib)
+ * - Тейк 1 (0.500 Fib) + Тейк 2 (0.382 Fib)
  */
 
 error_reporting(E_ALL & ~E_DEPRECATED);
@@ -11,7 +15,6 @@ date_default_timezone_set('Europe/Moscow'); // UTC+3
 $symbols = ['HYPEUSDT', 'NEARUSDT', 'UNIUSDT'];
 $MIN_IMP_MANIP  = 1.0;
 $MIN_IMP_NORMAL = 3.5;
-$MAX_IMPULSE_HOURS = 72; // До 72 часов для захвата полноценных волн
 
 function fetchBybitKlines($symbol, $interval = '60', $limit = 100) {
     $url = "https://api.bybit.com/v5/market/kline?category=linear&symbol={$symbol}&interval={$interval}&limit={$limit}";
@@ -54,31 +57,23 @@ function fmt3($val) {
     return number_format((float)$val, 3, '.', '');
 }
 
-/**
- * Алгоритм поиска ПОЛНОЙ МАКРО-ВОЛНЫ:
- * Сканирует историю от текущего бара назад в поиске истинного основания импульса,
- * пока ни одна промежуточная свеча не пробивала 0.500 Fib.
- */
 function detectLatestLongImpulse($candles, $min_pct) {
-    global $MAX_IMPULSE_HOURS;
     $n = count($candles);
     $best_impulse = null;
 
-    // Перебираем потенциальные точки старта от 1 до 72 баров назад
     for ($i = 1; $i < min(72, $n - 1); $i++) {
         $start_idx = $n - 1 - $i;
         $imp_low   = $candles[$start_idx]['low'];
         $imp_high  = $candles[$start_idx + 1]['high'];
         
         if ($candles[$start_idx + 1]['high'] <= $candles[$start_idx]['high']) {
-            continue; // Не было старта роста
+            continue;
         }
 
         $broken = false;
         $max_high = $imp_high;
         $max_idx  = $start_idx + 1;
 
-        // Протягиваем импульс вперед до текущего момента
         for ($k = $start_idx + 1; $k < $n; $k++) {
             $cur_05 = calcFibLongLog($max_high, $imp_low, 0.500);
             if ($candles[$k]['low'] <= $cur_05) {
@@ -94,7 +89,6 @@ function detectLatestLongImpulse($candles, $min_pct) {
         if (!$broken) {
             $pct = ($max_high - $imp_low) / $imp_low * 100.0;
             if ($pct >= $min_pct) {
-                // Нашли валидную макро-волну. Берем самую глубокую (наибольший размах)
                 if ($best_impulse === null || $pct > $best_impulse['pct']) {
                     $best_impulse = [
                         'start_time' => $candles[$start_idx]['time'],
@@ -113,11 +107,7 @@ function detectLatestLongImpulse($candles, $min_pct) {
     return $best_impulse;
 }
 
-/**
- * Алгоритм поиска ПОЛНОЙ МАКРО-ВОЛНЫ ДАМПА (SHORT)
- */
 function detectLatestShortImpulse($candles, $min_pct) {
-    global $MAX_IMPULSE_HOURS;
     $n = count($candles);
     $best_impulse = null;
 
@@ -187,30 +177,44 @@ if (isset($_GET['ajax'])) {
         $long_time = $impLN ? $impLN['end_time'] : 0;
         $short_time = $impSN ? $impSN['end_time'] : 0;
 
-        // Long Normal
+        // Long Normal с двумя входами (0.500 и 0.618) и двумя тейками (0.500 и 0.382)
         if ($impLN) {
-            $in = calcFibLongLog($impLN['high'], $impLN['low'], 0.618);
-            $tp = calcFibLongLog($impLN['high'], $impLN['low'], 0.500);
-            $sl = calcFibLongLog($impLN['high'], $impLN['low'], 0.764);
+            $in050  = calcFibLongLog($impLN['high'], $impLN['low'], 0.500);
+            $in0618 = calcFibLongLog($impLN['high'], $impLN['low'], 0.618);
+            $tp0500 = calcFibLongLog($impLN['high'], $impLN['low'], 0.500);
+            $tp0382 = calcFibLongLog($impLN['high'], $impLN['low'], 0.382);
+            $sl0764 = calcFibLongLog($impLN['high'], $impLN['low'], 0.764);
+
             $card['long_normal'] = [
-                'entry' => fmt3($in), 'tp' => fmt3($tp), 'sl' => fmt3($sl),
-                'pct' => number_format($impLN['pct'], 2),
-                'active' => ($curPrice <= $in && $curPrice > $sl),
-                'time' => date('d.m H:i', (int)($impLN['end_time'] / 1000)),
+                'entry_050'  => fmt3($in050),
+                'entry_0618' => fmt3($in0618),
+                'tp_0500'    => fmt3($tp0500),
+                'tp_0382'    => fmt3($tp0382),
+                'sl'         => fmt3($sl0764),
+                'pct'        => number_format($impLN['pct'], 2),
+                'active'     => ($curPrice <= $in050 && $curPrice > $sl0764),
+                'time'       => date('d.m H:i', (int)($impLN['end_time'] / 1000)),
                 'is_fresher' => ($long_time >= $short_time)
             ];
         }
 
         // Short Normal
         if ($impSN) {
-            $in = calcFibShortLog($impSN['high'], $impSN['low'], 0.618);
-            $tp = calcFibShortLog($impSN['high'], $impSN['low'], 0.500);
-            $sl = calcFibShortLog($impSN['high'], $impSN['low'], 0.764);
+            $in050  = calcFibShortLog($impSN['high'], $impSN['low'], 0.500);
+            $in0618 = calcFibShortLog($impSN['high'], $impSN['low'], 0.618);
+            $tp0500 = calcFibShortLog($impSN['high'], $impSN['low'], 0.500);
+            $tp0382 = calcFibShortLog($impSN['high'], $impSN['low'], 0.382);
+            $sl0764 = calcFibShortLog($impSN['high'], $impSN['low'], 0.764);
+
             $card['short_normal'] = [
-                'entry' => fmt3($in), 'tp' => fmt3($tp), 'sl' => fmt3($sl),
-                'pct' => number_format($impSN['pct'], 2),
-                'active' => ($curPrice >= $in && $curPrice < $sl),
-                'time' => date('d.m H:i', (int)($impSN['end_time'] / 1000)),
+                'entry_050'  => fmt3($in050),
+                'entry_0618' => fmt3($in0618),
+                'tp_0500'    => fmt3($tp0500),
+                'tp_0382'    => fmt3($tp0382),
+                'sl'         => fmt3($sl0764),
+                'pct'        => number_format($impSN['pct'], 2),
+                'active'     => ($curPrice >= $in050 && $curPrice < $sl0764),
+                'time'       => date('d.m H:i', (int)($impSN['end_time'] / 1000)),
                 'is_fresher' => ($short_time > $long_time)
             ];
         }
@@ -265,6 +269,7 @@ if (isset($_GET['ajax'])) {
             --orange: #ff9100;
             --red: #ff5252;
             --blue: #2979ff;
+            --cyan: #00e5ff;
         }
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
         body { background-color: var(--bg); color: var(--text); padding: 24px; }
@@ -312,6 +317,7 @@ if (isset($_GET['ajax'])) {
         .c-orange { color: var(--orange); }
         .c-red { color: var(--red); }
         .c-blue { color: var(--blue); }
+        .c-cyan { color: var(--cyan); }
     </style>
 </head>
 <body>
@@ -364,14 +370,16 @@ async function updateScreener() {
                 <!-- 1. LONG NORMAL -->
                 <div class="block" style="border-left: 3px solid var(--blue); opacity: ${c.long_normal && !c.long_normal.is_fresher ? '0.6' : '1.0'};">
                     <div class="block-title c-blue">
-                        🟢 LONG ОБЫЧНЫЙ (0.618 → 0.500) 
+                        🟢 LONG ОБЫЧНЫЙ (Сетка 0.500 / 0.618) 
                         <span style="font-size:10px; color:var(--text-dim);">${c.long_normal ? c.long_normal.time : ''}</span>
                     </div>
                     ${c.long_normal ? `
                     <table class="table-levels">
-                        <tr><td class="lbl">Вход (0.618)</td><td class="c-blue">${c.long_normal.entry} $</td></tr>
-                        <tr><td class="lbl">Тейк (0.500)</td><td class="c-green">${c.long_normal.tp} $</td></tr>
-                        <tr><td class="lbl">Стоп (0.764)</td><td class="c-red">${c.long_normal.sl} $</td></tr>
+                        <tr><td class="lbl">🔹 Вход-1 (0.500 Fib) 1x</td><td class="c-cyan">${c.long_normal.entry_050} $</td></tr>
+                        <tr><td class="lbl">🔹 Вход-2 / DCA (0.618 Fib) 2x</td><td class="c-blue">${c.long_normal.entry_0618} $</td></tr>
+                        <tr><td class="lbl">🎯 Тейк-1 (0.500 Fib)</td><td class="c-green">${c.long_normal.tp_0500} $</td></tr>
+                        <tr><td class="lbl">🎯 Тейк-2 (0.382 Fib)</td><td class="c-green">${c.long_normal.tp_0382} $</td></tr>
+                        <tr><td class="lbl">🛑 Стоп (0.764 Fib)</td><td class="c-red">${c.long_normal.sl} $</td></tr>
                     </table>
                     <div class="status-pill ${c.long_normal.active ? 'status-ready' : 'status-wait'}">
                         ${c.long_normal.active ? (c.long_normal.is_fresher ? '🟢 ВХОД В LONG (Актуальный импульс)' : '⚠️ Старый импульс') : '⏳ Ожидание отката'}
@@ -382,14 +390,16 @@ async function updateScreener() {
                 <!-- 2. SHORT NORMAL -->
                 <div class="block" style="border-left: 3px solid var(--red); opacity: ${c.short_normal && !c.short_normal.is_fresher ? '0.6' : '1.0'};">
                     <div class="block-title c-red">
-                        🔴 SHORT ОБЫЧНЫЙ (0.618 → 0.500)
+                        🔴 SHORT ОБЫЧНЫЙ (Сетка 0.500 / 0.618)
                         <span style="font-size:10px; color:var(--text-dim);">${c.short_normal ? c.short_normal.time : ''}</span>
                     </div>
                     ${c.short_normal ? `
                     <table class="table-levels">
-                        <tr><td class="lbl">Вход (0.618)</td><td class="c-red">${c.short_normal.entry} $</td></tr>
-                        <tr><td class="lbl">Тейк (0.500)</td><td class="c-green">${c.short_normal.tp} $</td></tr>
-                        <tr><td class="lbl">Стоп (0.764)</td><td class="c-red">${c.short_normal.sl} $</td></tr>
+                        <tr><td class="lbl">🔹 Вход-1 в Short (0.500)</td><td class="c-orange">${c.short_normal.entry_050} $</td></tr>
+                        <tr><td class="lbl">🔹 Вход-2 в Short (0.618)</td><td class="c-red">${c.short_normal.entry_0618} $</td></tr>
+                        <tr><td class="lbl">🎯 Тейк-1 (0.500 Fib)</td><td class="c-green">${c.short_normal.tp_0500} $</td></tr>
+                        <tr><td class="lbl">🎯 Тейк-2 (0.382 Fib)</td><td class="c-green">${c.short_normal.tp_0382} $</td></tr>
+                        <tr><td class="lbl">🛑 Стоп (0.764 Fib)</td><td class="c-red">${c.short_normal.sl} $</td></tr>
                     </table>
                     <div class="status-pill ${c.short_normal.active ? 'status-ready' : 'status-wait'}">
                         ${c.short_normal.active ? (c.short_normal.is_fresher ? '🔴 ВХОД В SHORT (Актуальный дамп)' : '⚠️ Старый дамп') : '⏳ Ожидание отскока вверх'}
@@ -407,8 +417,8 @@ async function updateScreener() {
                     <table class="table-levels">
                         <tr><td class="lbl">Вход (1.618) 1 лот</td><td class="c-purple">${c.long_manip.entry_1} $</td></tr>
                         <tr><td class="lbl">Добор (2.000) 2 лота</td><td class="c-orange">${c.long_manip.entry_2} $</td></tr>
-                        <tr><td class="lbl">Тейк-1 (0.618)</td><td class="c-green">${c.long_manip.tp_1} $</td></tr>
-                        <tr><td class="lbl">Тейк-2 (0.500)</td><td class="c-green">${c.long_manip.tp_2} $</td></tr>
+                        <tr><td class="lbl">Тейк-1 (0.618 Fib)</td><td class="c-green">${c.long_manip.tp_1} $</td></tr>
+                        <tr><td class="lbl">Тейк-2 (0.500 Fib)</td><td class="c-green">${c.long_manip.tp_2} $</td></tr>
                     </table>
                     <div class="status-pill ${c.long_manip.active ? 'status-ready' : 'status-wait'}">
                         ${c.long_manip.active ? '🟣 ВХОД В МАНИПУЛЯЦИЮ ПРЯМО СЕЙЧАС' : '⏳ Ожидание уровня 1.618'}
