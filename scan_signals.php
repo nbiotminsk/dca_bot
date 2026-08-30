@@ -12,7 +12,7 @@
 error_reporting(E_ALL & ~E_DEPRECATED);
 date_default_timezone_set('Europe/Moscow'); // UTC+3
 
-$symbols = ['HYPEUSDT', 'NEARUSDT', 'UNIUSDT', 'SUIUSDT', 'ICPUSDT', 'ENAUSDT', 'AVAXUSDT', 'XRPUSDT', 'LINKUSDT', 'DOGEUSDT', 'GRAMUSDT'];
+$symbols = ['CAKEUSDT', 'LINKUSDT', 'GRAMUSDT', 'DOGEUSDT', 'HYPEUSDT', 'XRPUSDT', 'NEARUSDT', 'UNIUSDT', 'SUIUSDT', 'ENAUSDT', 'AVAXUSDT', 'ICPUSDT'];
 $MIN_IMP_MANIP  = 1.0;
 $MIN_IMP_NORMAL = 2.0;
 
@@ -185,12 +185,12 @@ foreach ($symbols as $sym) {
         $in0618 = calcFibLongLog($h, $l, 0.618);
         $tp0500 = calcFibLongLog($h, $l, 0.500);
         $tp0382 = calcFibLongLog($h, $l, 0.382);
-        $sl0710 = calcFibLongLog($h, $l, 0.710);
+        $sl0860 = calcFibLongLog($h, $l, 0.860);
 
         $dist050 = (($curPrice - $in050) / $curPrice) * 100.0;
 
         $status = "";
-        if ($curPrice <= $in050 && $curPrice > $sl0710) $status = "🟢 ВХОД В LONG СЕЙЧАС!";
+        if ($curPrice <= $in050 && $curPrice > $sl0860) $status = "🟢 ВХОД В LONG СЕЙЧАС!";
         elseif ($curPrice > $in050) $status = "⏳ Ожидание отката к 0.500: осталось " . number_format($dist050, 2) . "%";
         else $status = "🛑 Ниже стопа";
 
@@ -203,7 +203,7 @@ foreach ($symbols as $sym) {
         echo "      • 🔹 Вход-2 / DCA (0.618) 2x  : " . fmtPrice($in0618, $sym) . " $\n";
         echo "      • 🎯 Тейк-1 (0.500 Fib)       : " . fmtPrice($tp0500, $sym) . " $\n";
         echo "      • 🎯 Тейк-2 (0.382 Fib)       : " . fmtPrice($tp0382, $sym) . " $\n";
-        echo "      • 🛑 Стоп (0.710 Fib)         : " . fmtPrice($sl0710, $sym) . " $\n";
+        echo "      • 🛑 Стоп (0.860 Fib)         : " . fmtPrice($sl0860, $sym) . " $\n";
         echo "      • 👉 Статус                   : {$status}\n";
     } else {
         echo "  [1] 🟢 LONG ОБЫЧНЫЙ (Импульс ≥ 2.0%):\n      • Нет импульса ≥ 2.0%\n";
@@ -218,12 +218,12 @@ foreach ($symbols as $sym) {
         $in0618 = calcFibShortLog($h, $l, 0.618);
         $tp0500 = calcFibShortLog($h, $l, 0.500);
         $tp0382 = calcFibShortLog($h, $l, 0.382);
-        $sl0710 = calcFibShortLog($h, $l, 0.710);
+        $sl0860 = calcFibShortLog($h, $l, 0.860);
 
         $dist050 = (($in050 - $curPrice) / $curPrice) * 100.0;
 
         $status = "";
-        if ($curPrice >= $in050 && $curPrice < $sl0710) $status = "🔴 ВХОД В SHORT СЕЙЧАС!";
+        if ($curPrice >= $in050 && $curPrice < $sl0860) $status = "🔴 ВХОД В SHORT СЕЙЧАС!";
         elseif ($curPrice < $in050) $status = "⏳ Ожидание отскока к 0.500: осталось " . number_format($dist050, 2) . "%";
         else $status = "🛑 Выше стопа";
 
@@ -236,7 +236,7 @@ foreach ($symbols as $sym) {
         echo "      • 🔹 Вход-2 в Short (0.618)   : " . fmtPrice($in0618, $sym) . " $\n";
         echo "      • 🎯 Тейк-1 (0.500 Fib)       : " . fmtPrice($tp0500, $sym) . " $\n";
         echo "      • 🎯 Тейк-2 (0.382 Fib)       : " . fmtPrice($tp0382, $sym) . " $\n";
-        echo "      • 🛑 Стоп (0.710 Fib)         : " . fmtPrice($sl0710, $sym) . " $\n";
+        echo "      • 🛑 Стоп (0.860 Fib)         : " . fmtPrice($sl0860, $sym) . " $\n";
         echo "      • 👉 Статус                   : {$status}\n";
     } else {
         echo "  [2] 🔴 SHORT ОБЫЧНЫЙ:\n      • Нет дамп-импульса ≥ 2.0%\n";

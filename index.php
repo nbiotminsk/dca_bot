@@ -11,7 +11,7 @@
 error_reporting(E_ALL & ~E_DEPRECATED);
 date_default_timezone_set('Europe/Moscow'); // UTC+3
 
-$all_symbols = ['HYPEUSDT', 'NEARUSDT', 'UNIUSDT', 'SUIUSDT', 'ICPUSDT', 'ENAUSDT', 'AVAXUSDT', 'XRPUSDT', 'LINKUSDT', 'DOGEUSDT', 'GRAMUSDT'];
+$all_symbols = ['CAKEUSDT', 'LINKUSDT', 'GRAMUSDT', 'DOGEUSDT', 'HYPEUSDT', 'XRPUSDT', 'NEARUSDT', 'UNIUSDT', 'SUIUSDT', 'ENAUSDT', 'AVAXUSDT', 'ICPUSDT'];
 $symbols = $all_symbols;
 if (isset($_GET['symbols']) && !empty($_GET['symbols'])) {
     $reqSyms = explode(',', trim($_GET['symbols']));
@@ -190,21 +190,22 @@ if (isset($_GET['ajax'])) {
         $short_time = $impSN ? $impSN['end_time'] : 0;
 
         // Long Normal
-        // Карта исторического винрейта (2 года истории)
+        // Карта исторического винрейта (90 дней со стопом 0.860 Fib)
         $coinStats = [
-            'UNIUSDT'  => ['wr_normal' => '76.0%', 'wr_manip' => '76.0%', 'sl_fib' => 2.395, 'rr' => '1:2.4'],
-            'NEARUSDT' => ['wr_normal' => '79.6%', 'wr_manip' => '77.3%', 'sl_fib' => 2.395, 'rr' => '1:2.4'],
-            'HYPEUSDT' => ['wr_normal' => '79.0%', 'wr_manip' => '79.0%', 'sl_fib' => 2.291, 'rr' => '1:3.0'],
-            'SUIUSDT'  => ['wr_normal' => '86.6%', 'wr_manip' => '74.8%', 'sl_fib' => 2.291, 'rr' => '1:3.0'],
+            'CAKEUSDT' => ['wr_normal' => '88.2%', 'wr_manip' => '83.3%', 'sl_fib' => 2.395, 'rr' => '1:2.4'],
+            'LINKUSDT' => ['wr_normal' => '86.8%', 'wr_manip' => '81.0%', 'sl_fib' => 2.395, 'rr' => '1:2.4'],
+            'XRPUSDT'  => ['wr_normal' => '89.6%', 'wr_manip' => '78.3%', 'sl_fib' => 2.500, 'rr' => '1:2.0'],
+            'HYPEUSDT' => ['wr_normal' => '87.9%', 'wr_manip' => '79.0%', 'sl_fib' => 2.291, 'rr' => '1:3.0'],
+            'SUIUSDT'  => ['wr_normal' => '87.8%', 'wr_manip' => '74.8%', 'sl_fib' => 2.291, 'rr' => '1:3.0'],
+            'UNIUSDT'  => ['wr_normal' => '87.0%', 'wr_manip' => '76.0%', 'sl_fib' => 2.395, 'rr' => '1:2.4'],
+            'NEARUSDT' => ['wr_normal' => '86.2%', 'wr_manip' => '77.3%', 'sl_fib' => 2.395, 'rr' => '1:2.4'],
+            'GRAMUSDT' => ['wr_normal' => '93.2%', 'wr_manip' => '80.0%', 'sl_fib' => 2.291, 'rr' => '1:3.0'],
+            'DOGEUSDT' => ['wr_normal' => '87.4%', 'wr_manip' => '79.0%', 'sl_fib' => 2.395, 'rr' => '1:2.4'],
             'ICPUSDT'  => ['wr_normal' => '86.5%', 'wr_manip' => '73.7%', 'sl_fib' => 2.337, 'rr' => '1:2.7'],
             'ENAUSDT'  => ['wr_normal' => '82.0%', 'wr_manip' => '74.8%', 'sl_fib' => 2.291, 'rr' => '1:3.0'],
-            'AVAXUSDT' => ['wr_normal' => '84.6%', 'wr_manip' => '74.6%', 'sl_fib' => 2.291, 'rr' => '1:3.0'],
-            'XRPUSDT'  => ['wr_normal' => '89.6%', 'wr_manip' => '78.3%', 'sl_fib' => 2.500, 'rr' => '1:2.0'],
-            'LINKUSDT' => ['wr_normal' => '86.4%', 'wr_manip' => '81.0%', 'sl_fib' => 2.395, 'rr' => '1:2.4'],
-            'DOGEUSDT' => ['wr_normal' => '87.4%', 'wr_manip' => '79.0%', 'sl_fib' => 2.395, 'rr' => '1:2.4'],
-            'GRAMUSDT' => ['wr_normal' => '93.2%', 'wr_manip' => '80.0%', 'sl_fib' => 2.291, 'rr' => '1:3.0']
+            'AVAXUSDT' => ['wr_normal' => '84.6%', 'wr_manip' => '74.6%', 'sl_fib' => 2.291, 'rr' => '1:3.0']
         ];
-        $stats = isset($coinStats[$sym]) ? $coinStats[$sym] : ['wr_normal' => '80%', 'wr_manip' => '75%', 'sl_fib' => 2.500, 'rr' => '1:2.0'];
+        $stats = isset($coinStats[$sym]) ? $coinStats[$sym] : ['wr_normal' => '85%', 'wr_manip' => '75%', 'sl_fib' => 2.500, 'rr' => '1:2.0'];
         $card['wr_normal'] = $stats['wr_normal'];
         $card['wr_manip']  = $stats['wr_manip'];
 
@@ -213,7 +214,7 @@ if (isset($_GET['ajax'])) {
             $in0618 = calcFibLongLog($impLN['high'], $impLN['low'], 0.618);
             $tp0500 = calcFibLongLog($impLN['high'], $impLN['low'], 0.500);
             $tp0382 = calcFibLongLog($impLN['high'], $impLN['low'], 0.382);
-            $sl0710 = calcFibLongLog($impLN['high'], $impLN['low'], 0.710);
+            $sl0860 = calcFibLongLog($impLN['high'], $impLN['low'], 0.860);
 
             $card['long_normal'] = [
                 'entry_050'    => fmtPrice($in050, $sym),
@@ -224,10 +225,10 @@ if (isset($_GET['ajax'])) {
                 'raw_tp0500'   => (float)$tp0500,
                 'tp_0382'      => fmtPrice($tp0382, $sym),
                 'raw_tp0382'   => (float)$tp0382,
-                'sl'           => fmtPrice($sl0710, $sym),
-                'raw_sl'       => (float)$sl0710,
+                'sl'           => fmtPrice($sl0860, $sym),
+                'raw_sl'       => (float)$sl0860,
                 'pct'          => number_format($impLN['pct'], 2),
-                'active'       => ($curPrice <= $in050 && $curPrice > $sl0710),
+                'active'       => ($curPrice <= $in050 && $curPrice > $sl0860),
                 'time'         => date('d.m H:i', (int)($impLN['end_time'] / 1000)),
                 'is_fresher'   => ($long_time >= $short_time),
                 'wr'           => $stats['wr_normal']
@@ -240,7 +241,7 @@ if (isset($_GET['ajax'])) {
             $in0618 = calcFibShortLog($impSN['high'], $impSN['low'], 0.618);
             $tp0500 = calcFibShortLog($impSN['high'], $impSN['low'], 0.500);
             $tp0382 = calcFibShortLog($impSN['high'], $impSN['low'], 0.382);
-            $sl0710 = calcFibShortLog($impSN['high'], $impSN['low'], 0.710);
+            $sl0860 = calcFibShortLog($impSN['high'], $impSN['low'], 0.860);
 
             $card['short_normal'] = [
                 'entry_050'    => fmtPrice($in050, $sym),
@@ -251,10 +252,10 @@ if (isset($_GET['ajax'])) {
                 'raw_tp0500'   => (float)$tp0500,
                 'tp_0382'      => fmtPrice($tp0382, $sym),
                 'raw_tp0382'   => (float)$tp0382,
-                'sl'           => fmtPrice($sl0710, $sym),
-                'raw_sl'       => (float)$sl0710,
+                'sl'           => fmtPrice($sl0860, $sym),
+                'raw_sl'       => (float)$sl0860,
                 'pct'          => number_format($impSN['pct'], 2),
-                'active'       => ($curPrice >= $in050 && $curPrice < $sl0710),
+                'active'       => ($curPrice >= $in050 && $curPrice < $sl0860),
                 'time'         => date('d.m H:i', (int)($impSN['end_time'] / 1000)),
                 'is_fresher'   => ($short_time > $long_time),
                 'wr'           => $stats['wr_normal']
@@ -996,7 +997,7 @@ function renderCards(data) {
                         </tr>
                         <tr><td class="lbl">🎯 Тейк-1 (0.500 Fib)</td><td class="c-green">${c.long_normal.tp_0500} $</td></tr>
                         <tr><td class="lbl">🎯 Тейк-2 (0.382 Fib)</td><td class="c-green">${c.long_normal.tp_0382} $</td></tr>
-                        <tr><td class="lbl">🛑 Стоп (0.710 Fib)</td><td class="c-red">${c.long_normal.sl} $ <span style="font-size:10px; color:var(--text-dim);">(-${ln_grid.stop_pct}%)</span></td></tr>
+                        <tr><td class="lbl">🛑 Стоп (0.860 Fib)</td><td class="c-red">${c.long_normal.sl} $ <span style="font-size:10px; color:var(--text-dim);">(-${ln_grid.stop_pct}%)</span></td></tr>
                     </table>
 
                     <div class="profit-payout-box">
@@ -1078,7 +1079,7 @@ function renderCards(data) {
                         </tr>
                         <tr><td class="lbl">🎯 Тейк-1 (0.500 Fib)</td><td class="c-green">${c.short_normal.tp_0500} $</td></tr>
                         <tr><td class="lbl">🎯 Тейк-2 (0.382 Fib)</td><td class="c-green">${c.short_normal.tp_0382} $</td></tr>
-                        <tr><td class="lbl">🛑 Стоп (0.710 Fib)</td><td class="c-red">${c.short_normal.sl} $ <span style="font-size:10px; color:var(--text-dim);">(-${sn_grid.stop_pct}%)</span></td></tr>
+                        <tr><td class="lbl">🛑 Стоп (0.860 Fib)</td><td class="c-red">${c.short_normal.sl} $ <span style="font-size:10px; color:var(--text-dim);">(-${sn_grid.stop_pct}%)</span></td></tr>
                     </table>
 
                     <div class="profit-payout-box">
@@ -1211,17 +1212,18 @@ function renderCards(data) {
 }
 
 const ALL_AVAILABLE_COINS = [
-    { sym: 'LINKUSDT', name: 'LINK', wr_n: '86.4%', wr_m: '81.0%' },
-    { sym: 'GRAMUSDT', name: 'GRAM', wr_n: '93.2%', wr_m: '80.0%' },
-    { sym: 'DOGEUSDT', name: 'DOGE', wr_n: '87.4%', wr_m: '79.0%' },
-    { sym: 'HYPEUSDT', name: 'HYPE', wr_n: '79.0%', wr_m: '79.0%' },
+    { sym: 'CAKEUSDT', name: 'CAKE', wr_n: '88.2%', wr_m: '83.3%' },
     { sym: 'XRPUSDT',  name: 'XRP',  wr_n: '89.6%', wr_m: '78.3%' },
-    { sym: 'NEARUSDT', name: 'NEAR', wr_n: '79.6%', wr_m: '77.3%' },
-    { sym: 'UNIUSDT',  name: 'UNI',  wr_n: '76.0%', wr_m: '76.0%' },
-    { sym: 'SUIUSDT',  name: 'SUI',  wr_n: '86.6%', wr_m: '74.8%' },
-    { sym: 'ENAUSDT',  name: 'ENA',  wr_n: '82.0%', wr_m: '74.8%' },
+    { sym: 'HYPEUSDT', name: 'HYPE', wr_n: '87.9%', wr_m: '79.0%' },
+    { sym: 'SUIUSDT',  name: 'SUI',  wr_n: '87.8%', wr_m: '74.8%' },
+    { sym: 'DOGEUSDT', name: 'DOGE', wr_n: '87.4%', wr_m: '79.0%' },
+    { sym: 'UNIUSDT',  name: 'UNI',  wr_n: '87.0%', wr_m: '76.0%' },
+    { sym: 'LINKUSDT', name: 'LINK', wr_n: '86.8%', wr_m: '81.0%' },
+    { sym: 'ICPUSDT',  name: 'ICP',  wr_n: '86.5%', wr_m: '73.7%' },
+    { sym: 'NEARUSDT', name: 'NEAR', wr_n: '86.2%', wr_m: '77.3%' },
     { sym: 'AVAXUSDT', name: 'AVAX', wr_n: '84.6%', wr_m: '74.6%' },
-    { sym: 'ICPUSDT',  name: 'ICP',  wr_n: '86.5%', wr_m: '73.7%' }
+    { sym: 'GRAMUSDT', name: 'GRAM', wr_n: '93.2%', wr_m: '80.0%' },
+    { sym: 'ENAUSDT',  name: 'ENA',  wr_n: '82.0%', wr_m: '74.8%' }
 ];
 
 let selectedCoins = JSON.parse(localStorage.getItem('dca_selected_coins') || 'null');
