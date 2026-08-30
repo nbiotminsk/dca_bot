@@ -2,7 +2,7 @@
 /**
  * Live Web Screener & Signal Scanner с Риск-Калькулятором Позиций
  * Монеты: HYPEUSDT, NEARUSDT, UNIUSDT
- * Адаптивный дизайн для мобильных устройств (красивый перенос объемов на новую строку).
+ * Автоматический расчет объемов входа (в монетах и $) и точной прибыли/убытка ($) по всем сценариям тейков и стопа.
  */
 
 error_reporting(E_ALL & ~E_DEPRECATED);
@@ -187,7 +187,9 @@ if (isset($_GET['ajax'])) {
                 'entry_0618'   => fmt3($in0618),
                 'raw_e0618'    => (float)$in0618,
                 'tp_0500'      => fmt3($tp0500),
+                'raw_tp0500'   => (float)$tp0500,
                 'tp_0382'      => fmt3($tp0382),
+                'raw_tp0382'   => (float)$tp0382,
                 'sl'           => fmt3($sl0710),
                 'raw_sl'       => (float)$sl0710,
                 'pct'          => number_format($impLN['pct'], 2),
@@ -211,7 +213,9 @@ if (isset($_GET['ajax'])) {
                 'entry_0618'   => fmt3($in0618),
                 'raw_e0618'    => (float)$in0618,
                 'tp_0500'      => fmt3($tp0500),
+                'raw_tp0500'   => (float)$tp0500,
                 'tp_0382'      => fmt3($tp0382),
+                'raw_tp0382'   => (float)$tp0382,
                 'sl'           => fmt3($sl0710),
                 'raw_sl'       => (float)$sl0710,
                 'pct'          => number_format($impSN['pct'], 2),
@@ -228,15 +232,17 @@ if (isset($_GET['ajax'])) {
             $tp1 = calcFibLongLog($impLM['high'], $impLM['low'], 0.618);
             $tp2 = calcFibLongLog($impLM['high'], $impLM['low'], 0.500);
             $card['long_manip'] = [
-                'entry_1'   => fmt3($m1),
-                'raw_e1'    => (float)$m1,
-                'entry_2'   => fmt3($m2),
-                'raw_e2'    => (float)$m2,
-                'tp_1'      => fmt3($tp1),
-                'tp_2'      => fmt3($tp2),
-                'pct'       => number_format($impLM['pct'], 2),
-                'active'    => ($curPrice <= $m1),
-                'time'      => date('d.m H:i', (int)($impLM['end_time'] / 1000))
+                'entry_1'      => fmt3($m1),
+                'raw_e1'       => (float)$m1,
+                'entry_2'      => fmt3($m2),
+                'raw_e2'       => (float)$m2,
+                'tp_1'         => fmt3($tp1),
+                'raw_tp1'      => (float)$tp1,
+                'tp_2'         => fmt3($tp2),
+                'raw_tp2'      => (float)$tp2,
+                'pct'          => number_format($impLM['pct'], 2),
+                'active'       => ($curPrice <= $m1),
+                'time'         => date('d.m H:i', (int)($impLM['end_time'] / 1000))
             ];
         }
 
@@ -335,43 +341,48 @@ if (isset($_GET['ajax'])) {
         .block-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; display: flex; justify-content: space-between; }
         
         .table-levels { width: 100%; border-collapse: collapse; font-size: 13px; font-family: monospace; }
-        .table-levels td { padding: 5px 0; vertical-align: top; }
+        .table-levels td { padding: 4px 0; vertical-align: middle; }
         .table-levels td:last-child { text-align: right; font-weight: 700; }
         .lbl { color: var(--text-dim); font-size: 12px; }
         
-        /* Компактный блок объема для мобильных */
+        /* Блок профитов и стопа в долларах */
+        .profit-payout-box {
+            background: rgba(0, 0, 0, 0.25);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 8px;
+            padding: 8px 10px;
+            margin-top: 10px;
+            font-family: monospace;
+            font-size: 11px;
+        }
+        .profit-payout-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 2px 0;
+        }
+        .payout-val-green { color: var(--green); font-weight: 800; }
+        .payout-val-red { color: var(--red); font-weight: 800; }
+
         .entry-val-box {
             display: flex;
             flex-direction: column;
             align-items: flex-end;
-            gap: 3px;
+            gap: 2px;
         }
-        .price-num {
-            font-size: 14px;
-            font-weight: 700;
-        }
-        .coins-badge-row {
-            display: flex;
-            align-items: center;
-            gap: 4px;
-            margin-top: 1px;
-        }
+        .price-num { font-size: 13px; font-weight: 700; }
+        .coins-badge-row { display: flex; align-items: center; gap: 4px; }
         .coins-tag {
             display: inline-block;
             background: #ffd600;
             color: #000;
-            padding: 1px 6px;
+            padding: 1px 5px;
             border-radius: 4px;
-            font-size: 11px;
+            font-size: 10px;
             font-weight: 800;
             letter-spacing: -0.2px;
-            box-shadow: 0 2px 6px rgba(255,214,0,0.25);
         }
-        .margin-subtext {
-            color: var(--text-dim);
-            font-size: 11px;
-            font-weight: 600;
-        }
+        .margin-subtext { color: var(--text-dim); font-size: 10px; font-weight: 600; }
 
         .status-pill { display: block; text-align: center; padding: 6px; border-radius: 6px; font-size: 11px; font-weight: 700; margin-top: 8px; }
         .status-ready { background: rgba(0,230,118,0.2); color: var(--green); border: 1px solid var(--green); }
@@ -487,16 +498,17 @@ function calculatePosition(entryPrice, stopPrice, isManip = false) {
         const qty1 = entryPrice > 0 ? (lot1Dollar / entryPrice) : 0;
         return {
             lot1_qty: fmtCoinQty(qty1),
+            lot1_raw_qty: qty1,
             lot1_usd: lot1Dollar.toFixed(1),
             lot2_usd: lot2Dollar.toFixed(1)
         };
     }
 
-    if (!entryPrice || !stopPrice) return { qty: "0", margin_usd: "0", stop_pct: "0" };
+    if (!entryPrice || !stopPrice) return { qty: "0", raw_qty: 0, margin_usd: "0", stop_pct: "0", raw_pos: 0 };
 
     const maxRiskDollar = dep * (rsk / 100.0);
     const stopDistancePct = Math.abs((entryPrice - stopPrice) / entryPrice);
-    if (stopDistancePct <= 0.0001) return { qty: "0", margin_usd: "0", stop_pct: "0" };
+    if (stopDistancePct <= 0.0001) return { qty: "0", raw_qty: 0, margin_usd: "0", stop_pct: "0", raw_pos: 0 };
 
     const totalPosDollar = maxRiskDollar / stopDistancePct;
     const coinQty = totalPosDollar / entryPrice;
@@ -504,39 +516,83 @@ function calculatePosition(entryPrice, stopPrice, isManip = false) {
 
     return {
         qty: fmtCoinQty(coinQty),
+        raw_qty: coinQty,
         margin_usd: marginDollar.toFixed(1),
-        stop_pct: (stopDistancePct * 100).toFixed(2)
+        raw_pos: totalPosDollar,
+        stop_pct: (stopDistancePct * 100).toFixed(2),
+        stop_dollar: maxRiskDollar.toFixed(2)
     };
 }
 
 function renderCards(data) {
     if (!data || !data.items) return;
+    const dep = parseFloat(document.getElementById('cfg-deposit').value) || 1000;
+    const rsk = parseFloat(document.getElementById('cfg-risk').value) || 2.0;
+    const maxRiskDollar = (dep * (rsk / 100.0)).toFixed(2);
+
     let html = '';
     data.items.forEach(c => {
         const coinTicker = c.symbol.replace('USDT', '');
 
-        // Расчет монет для Long Normal
-        let ln_calc_050 = { qty: "0", margin_usd: "0", stop_pct: "0" };
-        let ln_calc_0618 = { qty: "0", margin_usd: "0", stop_pct: "0" };
+        // Расчет монет и выплат для Long Normal
+        let ln_calc_050 = { qty: "0", raw_qty: 0, margin_usd: "0", stop_pct: "0" };
+        let ln_calc_0618 = { qty: "0", raw_qty: 0, margin_usd: "0", stop_pct: "0" };
+        let ln_pnl_050_to_0382 = "0.00";
+        let ln_pnl_0618_to_0500 = "0.00";
+        let ln_pnl_0618_to_0382 = "0.00";
+
         if (c.long_normal) {
             ln_calc_050 = calculatePosition(c.long_normal.raw_e050, c.long_normal.raw_sl);
             ln_calc_0618 = calculatePosition(c.long_normal.raw_e0618, c.long_normal.raw_sl);
+
+            // 1. От 0.500 до 0.382
+            const move_050_382 = (c.long_normal.raw_tp0382 - c.long_normal.raw_e050) / c.long_normal.raw_e050;
+            ln_pnl_050_to_0382 = (ln_calc_050.raw_pos * move_050_382).toFixed(2);
+
+            // 2. От 0.618 до 0.500
+            const move_618_500 = (c.long_normal.raw_tp0500 - c.long_normal.raw_e0618) / c.long_normal.raw_e0618;
+            ln_pnl_0618_to_0500 = (ln_calc_0618.raw_pos * move_618_500).toFixed(2);
+
+            // 3. От 0.618 до 0.382
+            const move_618_382 = (c.long_normal.raw_tp0382 - c.long_normal.raw_e0618) / c.long_normal.raw_e0618;
+            ln_pnl_0618_to_0382 = (ln_calc_0618.raw_pos * move_618_382).toFixed(2);
         }
 
-        // Расчет монет для Short Normal
-        let sn_calc_050 = { qty: "0", margin_usd: "0", stop_pct: "0" };
-        let sn_calc_0618 = { qty: "0", margin_usd: "0", stop_pct: "0" };
+        // Расчет монет и выплат для Short Normal
+        let sn_calc_050 = { qty: "0", raw_qty: 0, margin_usd: "0", stop_pct: "0" };
+        let sn_calc_0618 = { qty: "0", raw_qty: 0, margin_usd: "0", stop_pct: "0" };
+        let sn_pnl_050_to_0382 = "0.00";
+        let sn_pnl_0618_to_0500 = "0.00";
+        let sn_pnl_0618_to_0382 = "0.00";
+
         if (c.short_normal) {
             sn_calc_050 = calculatePosition(c.short_normal.raw_e050, c.short_normal.raw_sl);
             sn_calc_0618 = calculatePosition(c.short_normal.raw_e0618, c.short_normal.raw_sl);
+
+            const move_050_382 = (c.short_normal.raw_e050 - c.short_normal.raw_tp0382) / c.short_normal.raw_e050;
+            sn_pnl_050_to_0382 = (sn_calc_050.raw_pos * move_050_382).toFixed(2);
+
+            const move_618_500 = (c.short_normal.raw_e0618 - c.short_normal.raw_tp0500) / c.short_normal.raw_e0618;
+            sn_pnl_0618_to_0500 = (sn_calc_0618.raw_pos * move_618_500).toFixed(2);
+
+            const move_618_382 = (c.short_normal.raw_e0618 - c.short_normal.raw_tp0382) / c.short_normal.raw_e0618;
+            sn_pnl_0618_to_0382 = (sn_calc_0618.raw_pos * move_618_382).toFixed(2);
         }
 
         // Расчет монет для Long Manip
         let lm_calc = { lot1_qty: "0", lot1_usd: "0", lot2_usd: "0" };
         let lm_calc_2 = { lot1_qty: "0" };
+        let lm_pnl_tp1 = "0.00";
+        let lm_pnl_tp2 = "0.00";
+
         if (c.long_manip) {
             lm_calc = calculatePosition(c.long_manip.raw_e1, 0, true);
             lm_calc_2 = calculatePosition(c.long_manip.raw_e2, 0, true);
+
+            const move_m_tp1 = (c.long_manip.raw_tp1 - c.long_manip.raw_e1) / c.long_manip.raw_e1;
+            const move_m_tp2 = (c.long_manip.raw_tp2 - c.long_manip.raw_e1) / c.long_manip.raw_e1;
+            lm_pnl_tp1 = (parseFloat(lm_calc.lot1_usd) * move_m_tp1).toFixed(2);
+            lm_pnl_tp2 = (parseFloat(lm_calc.lot1_usd) * move_m_tp2).toFixed(2);
         }
 
         html += `
@@ -584,6 +640,27 @@ function renderCards(data) {
                     <tr><td class="lbl">🎯 Тейк-2 (0.382 Fib)</td><td class="c-green">${c.long_normal.tp_0382} $</td></tr>
                     <tr><td class="lbl">🛑 Стоп (0.710 Fib)</td><td class="c-red">${c.long_normal.sl} $ <span style="font-size:10px; color:var(--text-dim);">(-${ln_calc_050.stop_pct}%)</span></td></tr>
                 </table>
+
+                <!-- БЛОК ВЫПЛАТ И СТОПА В ДОЛЛАРАХ -->
+                <div class="profit-payout-box">
+                    <div class="profit-payout-row">
+                        <span class="lbl">💰 Тейк (0.618 → 0.500):</span>
+                        <span class="payout-val-green">+$${ln_pnl_0618_to_0500}</span>
+                    </div>
+                    <div class="profit-payout-row">
+                        <span class="lbl">💰 Тейк (0.500 → 0.382):</span>
+                        <span class="payout-val-green">+$${ln_pnl_050_to_0382}</span>
+                    </div>
+                    <div class="profit-payout-row">
+                        <span class="lbl">🚀 Тейк (0.618 → 0.382):</span>
+                        <span class="payout-val-green">+$${ln_pnl_0618_to_0382}</span>
+                    </div>
+                    <div class="profit-payout-row" style="border-top:1px solid rgba(255,255,255,0.08); margin-top:3px; padding-top:3px;">
+                        <span class="lbl">🛑 Убыток при Стопе:</span>
+                        <span class="payout-val-red">-$${maxRiskDollar}</span>
+                    </div>
+                </div>
+
                 <div class="status-pill ${c.long_normal.active ? 'status-ready' : 'status-wait'}">
                     ${c.long_normal.active ? (c.long_normal.is_fresher ? '🟢 ВХОД В LONG (Актуальный импульс)' : '⚠️ Старый импульс') : '⏳ Ожидание отката'}
                 </div>
@@ -626,6 +703,27 @@ function renderCards(data) {
                     <tr><td class="lbl">🎯 Тейк-2 (0.382 Fib)</td><td class="c-green">${c.short_normal.tp_0382} $</td></tr>
                     <tr><td class="lbl">🛑 Стоп (0.710 Fib)</td><td class="c-red">${c.short_normal.sl} $ <span style="font-size:10px; color:var(--text-dim);">(-${sn_calc_050.stop_pct}%)</span></td></tr>
                 </table>
+
+                <!-- БЛОК ВЫПЛАТ И СТОПА В ДОЛЛАРАХ -->
+                <div class="profit-payout-box">
+                    <div class="profit-payout-row">
+                        <span class="lbl">💰 Тейк (0.618 → 0.500):</span>
+                        <span class="payout-val-green">+$${sn_pnl_0618_to_0500}</span>
+                    </div>
+                    <div class="profit-payout-row">
+                        <span class="lbl">💰 Тейк (0.500 → 0.382):</span>
+                        <span class="payout-val-green">+$${sn_pnl_050_to_0382}</span>
+                    </div>
+                    <div class="profit-payout-row">
+                        <span class="lbl">🚀 Тейк (0.618 → 0.382):</span>
+                        <span class="payout-val-green">+$${sn_pnl_0618_to_0382}</span>
+                    </div>
+                    <div class="profit-payout-row" style="border-top:1px solid rgba(255,255,255,0.08); margin-top:3px; padding-top:3px;">
+                        <span class="lbl">🛑 Убыток при Стопе:</span>
+                        <span class="payout-val-red">-$${maxRiskDollar}</span>
+                    </div>
+                </div>
+
                 <div class="status-pill ${c.short_normal.active ? 'status-ready' : 'status-wait'}">
                     ${c.short_normal.active ? (c.short_normal.is_fresher ? '🔴 ВХОД В SHORT (Актуальный дамп)' : '⚠️ Старый дамп') : '⏳ Ожидание отскока вверх'}
                 </div>
@@ -667,6 +765,18 @@ function renderCards(data) {
                     <tr><td class="lbl">🎯 Тейк-1 (0.618 Fib)</td><td class="c-green">${c.long_manip.tp_1} $</td></tr>
                     <tr><td class="lbl">🎯 Тейк-2 (0.500 Fib)</td><td class="c-green">${c.long_manip.tp_2} $</td></tr>
                 </table>
+
+                <div class="profit-payout-box">
+                    <div class="profit-payout-row">
+                        <span class="lbl">💰 Профит Тейк-1 (0.618):</span>
+                        <span class="payout-val-green">+$${lm_pnl_tp1}</span>
+                    </div>
+                    <div class="profit-payout-row">
+                        <span class="lbl">🚀 Профит Тейк-2 (0.500):</span>
+                        <span class="payout-val-green">+$${lm_pnl_tp2}</span>
+                    </div>
+                </div>
+
                 <div class="status-pill ${c.long_manip.active ? 'status-ready' : 'status-wait'}">
                     ${c.long_manip.active ? '🟣 ВХОД В МАНИПУЛЯЦИЮ ПРЯМО СЕЙЧАС' : '⏳ Ожидание уровня 1.618'}
                 </div>
