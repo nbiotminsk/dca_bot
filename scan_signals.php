@@ -64,6 +64,7 @@ function fmt3($val) {
 
 function detectLatestLongImpulse($candles, $min_pct) {
     $n = count($candles);
+    $best = null;
 
     for ($i = 1; $i < min(72, $n - 1); $i++) {
         $start_idx = $n - 1 - $i;
@@ -102,25 +103,28 @@ function detectLatestLongImpulse($candles, $min_pct) {
             }
         }
 
-        // Возвращаем самый свежий (локальный) валидный импульс
+        // Выбираем полноценный импульс с максимальным чистым развитием тренда
         if (!$broken) {
-            return [
-                'start_time' => $candles[$start_idx]['time'],
-                'end_time'   => $candles[$max_idx]['time'],
-                'end_idx'    => $max_idx,
-                'high'       => $max_high,
-                'low'        => $imp_low,
-                'pct'        => $pct,
-                'is_live'    => true
-            ];
+            if ($best === null || $pct > $best['pct']) {
+                $best = [
+                    'start_time' => $candles[$start_idx]['time'],
+                    'end_time'   => $candles[$max_idx]['time'],
+                    'end_idx'    => $max_idx,
+                    'high'       => $max_high,
+                    'low'        => $imp_low,
+                    'pct'        => $pct,
+                    'is_live'    => true
+                ];
+            }
         }
     }
 
-    return null;
+    return $best;
 }
 
 function detectLatestShortImpulse($candles, $min_pct) {
     $n = count($candles);
+    $best = null;
 
     for ($i = 1; $i < min(72, $n - 1); $i++) {
         $start_idx = $n - 1 - $i;
@@ -159,21 +163,23 @@ function detectLatestShortImpulse($candles, $min_pct) {
             }
         }
 
-        // Возвращаем самый свежий (локальный) валидный дамп-импульс
+        // Выбираем полноценный дамп-импульс тренда
         if (!$broken) {
-            return [
-                'start_time' => $candles[$start_idx]['time'],
-                'end_time'   => $candles[$min_idx]['time'],
-                'end_idx'    => $min_idx,
-                'high'       => $imp_high,
-                'low'        => $min_low,
-                'pct'        => $pct,
-                'is_live'    => true
-            ];
+            if ($best === null || $pct > $best['pct']) {
+                $best = [
+                    'start_time' => $candles[$start_idx]['time'],
+                    'end_time'   => $candles[$min_idx]['time'],
+                    'end_idx'    => $min_idx,
+                    'high'       => $imp_high,
+                    'low'        => $min_low,
+                    'pct'        => $pct,
+                    'is_live'    => true
+                ];
+            }
         }
     }
 
-    return null;
+    return $best;
 }
 
 echo "\n========================================================================================\n";
