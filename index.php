@@ -11,7 +11,7 @@
 error_reporting(E_ALL & ~E_DEPRECATED);
 date_default_timezone_set('Europe/Moscow'); // UTC+3
 
-$symbols = ['HYPEUSDT', 'NEARUSDT', 'UNIUSDT', 'SUIUSDT', 'ICPUSDT', 'ENAUSDT', 'AVAXUSDT', 'XRPUSDT', 'LINKUSDT', 'DOGEUSDT'];
+$symbols = ['HYPEUSDT', 'NEARUSDT', 'UNIUSDT', 'SUIUSDT', 'ICPUSDT', 'ENAUSDT', 'AVAXUSDT', 'XRPUSDT', 'LINKUSDT', 'DOGEUSDT', 'GRAMUSDT'];
 $MIN_IMP_MANIP  = 1.0;
 $MIN_IMP_NORMAL = 3.5;
 
@@ -188,7 +188,8 @@ if (isset($_GET['ajax'])) {
             'AVAXUSDT' => ['wr_normal' => '84.6%', 'wr_manip' => '74.6%', 'sl_fib' => 2.291, 'rr' => '1:3.0'],
             'XRPUSDT'  => ['wr_normal' => '89.6%', 'wr_manip' => '78.3%', 'sl_fib' => 2.500, 'rr' => '1:2.0'],
             'LINKUSDT' => ['wr_normal' => '86.4%', 'wr_manip' => '81.0%', 'sl_fib' => 2.395, 'rr' => '1:2.4'],
-            'DOGEUSDT' => ['wr_normal' => '87.4%', 'wr_manip' => '79.0%', 'sl_fib' => 2.395, 'rr' => '1:2.4']
+            'DOGEUSDT' => ['wr_normal' => '87.4%', 'wr_manip' => '79.0%', 'sl_fib' => 2.395, 'rr' => '1:2.4'],
+            'GRAMUSDT' => ['wr_normal' => '93.2%', 'wr_manip' => '80.0%', 'sl_fib' => 2.291, 'rr' => '1:3.0']
         ];
         $stats = isset($coinStats[$sym]) ? $coinStats[$sym] : ['wr_normal' => '80%', 'wr_manip' => '75%', 'sl_fib' => 2.500, 'rr' => '1:2.0'];
         $card['wr_normal'] = $stats['wr_normal'];
