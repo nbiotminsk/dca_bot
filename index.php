@@ -2,7 +2,10 @@
 /**
  * Live Web Screener & Signal Scanner с Риск-Калькулятором Позиций
  * Монеты: HYPEUSDT, NEARUSDT, UNIUSDT
- * Автоматический расчет сетки DCA (1/3 на Вход-1 + 2/3 на Вход-2), гарантирующий РОВНО заданный риск на стопе.
+ * Автоматический расчет сетки DCA (1x + 2x) с детализированным расчетом прибыли:
+ * - Сценарий А: Зацепило только Вход-1 (0.500 -> 0.382)
+ * - Сценарий Б: Зацепило оба входа (0.500 + 0.618 -> выход на 0.500)
+ * - Сценарий В: Зацепило оба входа (0.500 + 0.618 -> выход на 0.382)
  */
 
 error_reporting(E_ALL & ~E_DEPRECATED);
@@ -358,7 +361,7 @@ if (isset($_GET['ajax'])) {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 2px 0;
+            padding: 3px 0;
         }
         .payout-val-green { color: var(--green); font-weight: 800; }
         .payout-val-red { color: var(--red); font-weight: 800; }
@@ -485,7 +488,6 @@ function fmtCoinQty(qty) {
     return qty.toFixed(3);
 }
 
-// Расчет СЕТКИ DCA (Вход 1 [1 доля] + Вход 2 [2 доли]), где СУММАРНЫЙ убыток на стопе = maxRiskDollar
 function calculateDcaGrid(e1, e2, sl, isShort = false) {
     const dep = parseFloat(document.getElementById('cfg-deposit').value) || 1000;
     const rsk = parseFloat(document.getElementById('cfg-risk').value) || 2.0;
@@ -494,13 +496,11 @@ function calculateDcaGrid(e1, e2, sl, isShort = false) {
 
     if (!e1 || !e2 || !sl) return null;
 
-    // Дистанция убытка на 1 монету
     const d1 = isShort ? (sl - e1) : (e1 - sl);
     const d2 = isShort ? (sl - e2) : (e2 - sl);
 
     if (d1 <= 0.0001 || d2 <= 0.0001) return null;
 
-    // Уравнение: 1 * Q * d1 + 2 * Q * d2 = maxRiskDollar => Q = maxRiskDollar / (d1 + 2*d2)
     const q1 = maxRiskDollar / (d1 + 2 * d2);
     const q2 = 2 * q1;
 
@@ -515,6 +515,7 @@ function calculateDcaGrid(e1, e2, sl, isShort = false) {
     return {
         q1: q1,
         q2: q2,
+        q_total: (q1 + q2),
         q1_fmt: fmtCoinQty(q1),
         q2_fmt: fmtCoinQty(q2),
         margin1: margin1Usd.toFixed(1),
@@ -555,44 +556,50 @@ function renderCards(data) {
 
         // Расчет сетки DCA для Long Normal
         let ln_grid = null;
-        let ln_pnl_0618_to_0500 = "0.00";
-        let ln_pnl_050_to_0382 = "0.00";
-        let ln_pnl_0618_to_0382 = "0.00";
+        let ln_pnl_only1_to_382 = "0.00";
+        let ln_pnl_both_to_500 = "0.00";
+        let ln_pnl_both_to_382 = "0.00";
 
         if (c.long_normal) {
             ln_grid = calculateDcaGrid(c.long_normal.raw_e050, c.long_normal.raw_e0618, c.long_normal.raw_sl, false);
             if (ln_grid) {
-                // 1. Вход-1 (0.500) -> Тейк (0.382)
-                const move_050_382 = (c.long_normal.raw_tp0382 - c.long_normal.raw_e050);
-                ln_pnl_050_to_0382 = (ln_grid.q1 * move_050_382).toFixed(2);
+                // Сценарий 1: Зацепило ТОЛЬКО Вход-1 (0.500) -> Тейк на 0.382
+                ln_pnl_only1_to_382 = (ln_grid.q1 * (c.long_normal.raw_tp0382 - c.long_normal.raw_e050)).toFixed(2);
 
-                // 2. Вход-2 (0.618) -> Тейк (0.500)
-                const move_618_500 = (c.long_normal.raw_tp0500 - c.long_normal.raw_e0618);
-                ln_pnl_0618_to_0500 = (ln_grid.q2 * move_618_500).toFixed(2);
+                // Сценарий 2: Зацепило ОБА входа (0.500 + 0.618) -> Выход ВСЕЙ позиции на 0.500
+                // Вход-1 закрывается в безубыток (+0$), Вход-2 дает чистый профит от 0.618 до 0.500
+                const pnl2_to_500 = ln_grid.q2 * (c.long_normal.raw_tp0500 - c.long_normal.raw_e0618);
+                const pnl1_to_500 = ln_grid.q1 * (c.long_normal.raw_tp0500 - c.long_normal.raw_e050); // = 0$
+                ln_pnl_both_to_500 = (pnl2_to_500 + pnl1_to_500).toFixed(2);
 
-                // 3. Вход-2 (0.618) -> Тейк (0.382)
-                const move_618_382 = (c.long_normal.raw_tp0382 - c.long_normal.raw_e0618);
-                ln_pnl_0618_to_0382 = (ln_grid.q2 * move_618_382).toFixed(2);
+                // Сценарий 3: Зацепило ОБА входа (0.500 + 0.618) -> Выход ВСЕЙ позиции на 0.382
+                const pnl1_to_382 = ln_grid.q1 * (c.long_normal.raw_tp0382 - c.long_normal.raw_e050);
+                const pnl2_to_382 = ln_grid.q2 * (c.long_normal.raw_tp0382 - c.long_normal.raw_e0618);
+                ln_pnl_both_to_382 = (pnl1_to_382 + pnl2_to_382).toFixed(2);
             }
         }
 
         // Расчет сетки DCA для Short Normal
         let sn_grid = null;
-        let sn_pnl_0618_to_0500 = "0.00";
-        let sn_pnl_050_to_0382 = "0.00";
-        let sn_pnl_0618_to_0382 = "0.00";
+        let sn_pnl_only1_to_382 = "0.00";
+        let sn_pnl_both_to_500 = "0.00";
+        let sn_pnl_both_to_382 = "0.00";
 
         if (c.short_normal) {
             sn_grid = calculateDcaGrid(c.short_normal.raw_e050, c.short_normal.raw_e0618, c.short_normal.raw_sl, true);
             if (sn_grid) {
-                const move_050_382 = (c.short_normal.raw_e050 - c.short_normal.raw_tp0382);
-                sn_pnl_050_to_0382 = (sn_grid.q1 * move_050_382).toFixed(2);
+                // Сценарий 1: Только Вход-1 -> 0.382
+                sn_pnl_only1_to_382 = (sn_grid.q1 * (c.short_normal.raw_e050 - c.short_normal.raw_tp0382)).toFixed(2);
 
-                const move_618_500 = (c.short_normal.raw_e0618 - c.short_normal.raw_tp0500);
-                sn_pnl_0618_to_0500 = (sn_grid.q2 * move_618_500).toFixed(2);
+                // Сценарий 2: Оба входа -> выход на 0.500
+                const pnl2_to_500 = sn_grid.q2 * (c.short_normal.raw_e0618 - c.short_normal.raw_tp0500);
+                const pnl1_to_500 = sn_grid.q1 * (c.short_normal.raw_e050 - c.short_normal.raw_tp0500);
+                sn_pnl_both_to_500 = (pnl2_to_500 + pnl1_to_500).toFixed(2);
 
-                const move_618_382 = (c.short_normal.raw_e0618 - c.short_normal.raw_tp0382);
-                sn_pnl_0618_to_0382 = (sn_grid.q2 * move_618_382).toFixed(2);
+                // Сценарий 3: Оба входа -> выход на 0.382
+                const pnl1_to_382 = sn_grid.q1 * (c.short_normal.raw_e050 - c.short_normal.raw_tp0382);
+                const pnl2_to_382 = sn_grid.q2 * (c.short_normal.raw_e0618 - c.short_normal.raw_tp0382);
+                sn_pnl_both_to_382 = (pnl1_to_382 + pnl2_to_382).toFixed(2);
             }
         }
 
@@ -655,26 +662,26 @@ function renderCards(data) {
                     <tr><td class="lbl">🛑 Стоп (0.710 Fib)</td><td class="c-red">${c.long_normal.sl} $ <span style="font-size:10px; color:var(--text-dim);">(-${ln_grid.stop_pct}%)</span></td></tr>
                 </table>
 
-                <!-- БЛОК ВЫПЛАТ И ТОЧНОГО СТОПА СЕТКИ -->
+                <!-- БЛОК РАСЧЕТА СЦЕНАРИЕВ ТЕЙКОВ И СТОПОВ -->
                 <div class="profit-payout-box">
                     <div class="profit-payout-row">
-                        <span class="lbl">💰 Тейк (0.618 → 0.500):</span>
-                        <span class="payout-val-green">+$${ln_pnl_0618_to_0500}</span>
+                        <span class="lbl">💰 Тейк (только Вход-1 → 0.382):</span>
+                        <span class="payout-val-green">+$${ln_pnl_only1_to_382}</span>
                     </div>
                     <div class="profit-payout-row">
-                        <span class="lbl">💰 Тейк (0.500 → 0.382):</span>
-                        <span class="payout-val-green">+$${ln_pnl_050_to_0382}</span>
+                        <span class="lbl">💰 Тейк (ОБА входа → выход на 0.500):</span>
+                        <span class="payout-val-green">+$${ln_pnl_both_to_500}</span>
                     </div>
                     <div class="profit-payout-row">
-                        <span class="lbl">🚀 Тейк (0.618 → 0.382):</span>
-                        <span class="payout-val-green">+$${ln_pnl_0618_to_0382}</span>
+                        <span class="lbl">🚀 Тейк (ОБА входа → выход на 0.382):</span>
+                        <span class="payout-val-green">+$${ln_pnl_both_to_382}</span>
                     </div>
                     <div class="profit-payout-row" style="border-top:1px solid rgba(255,255,255,0.08); margin-top:3px; padding-top:3px;">
                         <span class="lbl">🛑 Стоп (если только Вход-1):</span>
                         <span class="payout-val-red">-$${ln_grid.loss_if_only_1}</span>
                     </div>
                     <div class="profit-payout-row">
-                        <span class="lbl">🛑 Стоп (Сумма за ВСЮ сетку 1+2):</span>
+                        <span class="lbl">🛑 Стоп (если ОБА входа 1+2):</span>
                         <span class="payout-val-red">-$${ln_grid.loss_total}</span>
                     </div>
                 </div>
@@ -724,23 +731,23 @@ function renderCards(data) {
 
                 <div class="profit-payout-box">
                     <div class="profit-payout-row">
-                        <span class="lbl">💰 Тейк (0.618 → 0.500):</span>
-                        <span class="payout-val-green">+$${sn_pnl_0618_to_0500}</span>
+                        <span class="lbl">💰 Тейк (только Вход-1 → 0.382):</span>
+                        <span class="payout-val-green">+$${sn_pnl_only1_to_382}</span>
                     </div>
                     <div class="profit-payout-row">
-                        <span class="lbl">💰 Тейк (0.500 → 0.382):</span>
-                        <span class="payout-val-green">+$${sn_pnl_050_to_0382}</span>
+                        <span class="lbl">💰 Тейк (ОБА входа → выход на 0.500):</span>
+                        <span class="payout-val-green">+$${sn_pnl_both_to_500}</span>
                     </div>
                     <div class="profit-payout-row">
-                        <span class="lbl">🚀 Тейк (0.618 → 0.382):</span>
-                        <span class="payout-val-green">+$${sn_pnl_0618_to_0382}</span>
+                        <span class="lbl">🚀 Тейк (ОБА входа → выход на 0.382):</span>
+                        <span class="payout-val-green">+$${sn_pnl_both_to_382}</span>
                     </div>
                     <div class="profit-payout-row" style="border-top:1px solid rgba(255,255,255,0.08); margin-top:3px; padding-top:3px;">
                         <span class="lbl">🛑 Стоп (если только Вход-1):</span>
                         <span class="payout-val-red">-$${sn_grid.loss_if_only_1}</span>
                     </div>
                     <div class="profit-payout-row">
-                        <span class="lbl">🛑 Стоп (Сумма за ВСЮ сетку 1+2):</span>
+                        <span class="lbl">🛑 Стоп (если ОБА входа 1+2):</span>
                         <span class="payout-val-red">-$${sn_grid.loss_total}</span>
                     </div>
                 </div>
