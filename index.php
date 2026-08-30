@@ -541,7 +541,7 @@ if (isset($_GET['ajax'])) {
             border-color: rgba(255,214,0,0.3);
         }
         .coin-title { font-size: 22px; font-weight: 800; transition: color 0.2s; }
-        .coin-price { font-size: 22px; font-weight: 800; color: #fff; font-family: monospace; }
+        .coin-price { font-size: 22px; font-weight: 800; color: #fff; font-family: monospace; white-space: nowrap; }
         .coin-quick-summary {
             font-size: 13px;
             color: var(--text-dim);
@@ -652,6 +652,12 @@ if (isset($_GET['ajax'])) {
             .payout-val-green, .payout-val-cyan, .payout-val-red { font-size: 11.5px; font-weight: 800; }
             .status-pill { font-size: 11px; padding: 5px; margin-top: 7px; }
             .coin-card { padding: 12px; }
+            .coin-title { font-size: 17px; }
+            .coin-price { font-size: 15px; font-weight: 800; }
+            .coin-header-right { gap: 8px; }
+            .coin-header-left { gap: 8px; }
+            .badge-wr { font-size: 9.5px; padding: 1px 4px; }
+            .toggle-icon { width: 24px; height: 24px; font-size: 11px; }
         }
         .status-ready { background: rgba(0,230,118,0.2); color: var(--green); border: 1px solid var(--green); }
         .status-wait { background: rgba(255,255,255,0.05); color: var(--text-dim); }
