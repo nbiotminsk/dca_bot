@@ -11,7 +11,15 @@
 error_reporting(E_ALL & ~E_DEPRECATED);
 date_default_timezone_set('Europe/Moscow'); // UTC+3
 
-$symbols = ['HYPEUSDT', 'NEARUSDT', 'UNIUSDT', 'SUIUSDT', 'ICPUSDT', 'ENAUSDT', 'AVAXUSDT', 'XRPUSDT', 'LINKUSDT', 'DOGEUSDT', 'GRAMUSDT'];
+$all_symbols = ['HYPEUSDT', 'NEARUSDT', 'UNIUSDT', 'SUIUSDT', 'ICPUSDT', 'ENAUSDT', 'AVAXUSDT', 'XRPUSDT', 'LINKUSDT', 'DOGEUSDT', 'GRAMUSDT'];
+$symbols = $all_symbols;
+if (isset($_GET['symbols']) && !empty($_GET['symbols'])) {
+    $reqSyms = explode(',', trim($_GET['symbols']));
+    $filtered = array_intersect($reqSyms, $all_symbols);
+    if (!empty($filtered)) {
+        $symbols = array_values($filtered);
+    }
+}
 $MIN_IMP_MANIP  = 1.0;
 $MIN_IMP_NORMAL = 3.5;
 
@@ -396,6 +404,82 @@ if (isset($_GET['ajax'])) {
         .calc-input-wrap span { color: var(--text-dim); font-size: 12px; font-weight: 700; margin-left: 2px; }
         .calc-info-badge { width: 100%; background: rgba(255,214,0,0.12); border: 1px solid rgba(255,214,0,0.3); color: var(--yellow); padding: 8px 12px; border-radius: 8px; font-size: 12px; font-weight: 700; font-family: monospace; text-align: center; margin-top: 4px; }
         
+        .coin-filter-panel {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 12px 16px;
+            margin-bottom: 20px;
+        }
+        .coin-filter-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--text-dim);
+        }
+        .coin-filter-actions {
+            display: flex;
+            gap: 10px;
+            font-size: 12px;
+        }
+        .coin-filter-btn {
+            background: rgba(255,255,255,0.06);
+            border: 1px solid var(--border);
+            color: #fff;
+            padding: 2px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background 0.2s;
+        }
+        .coin-filter-btn:hover {
+            background: rgba(255,255,255,0.12);
+        }
+        .coin-chips-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .coin-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: rgba(255,255,255,0.03);
+            border: 1px solid var(--border);
+            padding: 6px 10px;
+            border-radius: 8px;
+            cursor: pointer;
+            user-select: none;
+            font-size: 13px;
+            font-weight: 700;
+            transition: all 0.15s ease;
+        }
+        .coin-chip input[type="checkbox"] {
+            cursor: pointer;
+            accent-color: var(--yellow);
+            width: 15px;
+            height: 15px;
+        }
+        .coin-chip.active {
+            background: rgba(255, 214, 0, 0.12);
+            border-color: rgba(255, 214, 0, 0.35);
+            color: #fff;
+        }
+        .coin-chip:hover {
+            border-color: var(--yellow);
+        }
+        .chip-wr {
+            font-size: 10px;
+            color: var(--green);
+            background: rgba(0, 230, 118, 0.12);
+            padding: 1px 4px;
+            border-radius: 3px;
+            font-family: monospace;
+        }
+        
         .grid { 
             display: flex;
             flex-direction: column;
@@ -630,6 +714,20 @@ if (isset($_GET['ajax'])) {
     </div>
 </div>
 
+<!-- 🪙 ПАНЕЛЬ ВЫБОРА МОНЕТ ДЛЯ ОПРОСА АПИ -->
+<div class="coin-filter-panel">
+    <div class="coin-filter-header">
+        <span>🪙 Опрашивать по API только выбранные монеты:</span>
+        <div class="coin-filter-actions">
+            <button type="button" class="coin-filter-btn" onclick="selectAllCoins(true)">Выбрать все</button>
+            <button type="button" class="coin-filter-btn" onclick="selectAllCoins(false)">Снять все</button>
+        </div>
+    </div>
+    <div class="coin-chips-list" id="coin-selector-container">
+        <!-- Генерируется из JS -->
+    </div>
+</div>
+
 <div class="grid" id="coins-container">
     <div style="color:var(--text-dim); font-size:16px;">Загрузка котировок и импульсов...</div>
 </div>
@@ -806,6 +904,10 @@ function renderCards(data) {
             <div class="coin-header" onclick="toggleCard('${c.symbol}')">
                 <div class="coin-header-left">
                     <div class="coin-title">${coinTicker}<span style="color:var(--text-dim); font-size:13px;"> / USDT</span></div>
+                    <div style="display:flex; gap:6px; align-items:center;">
+                        <span class="badge-wr" title="Исторический Win Rate обычного Long/Short">Норм: ${c.wr_normal}</span>
+                        <span class="badge-wr" style="color:var(--purple); background:rgba(213,0,249,0.12); border-color:rgba(213,0,249,0.3);" title="Исторический Win Rate Манипуляции">Манип: ${c.wr_manip}</span>
+                    </div>
                     <div class="coin-quick-summary">${c.best_choice}</div>
                 </div>
                 <div class="coin-header-right">
@@ -1042,6 +1144,64 @@ function renderCards(data) {
     document.getElementById('coins-container').innerHTML = html;
 }
 
+const ALL_AVAILABLE_COINS = [
+    { sym: 'LINKUSDT', name: 'LINK', wr_n: '86.4%', wr_m: '81.0%' },
+    { sym: 'GRAMUSDT', name: 'GRAM', wr_n: '93.2%', wr_m: '80.0%' },
+    { sym: 'DOGEUSDT', name: 'DOGE', wr_n: '87.4%', wr_m: '79.0%' },
+    { sym: 'HYPEUSDT', name: 'HYPE', wr_n: '79.0%', wr_m: '79.0%' },
+    { sym: 'XRPUSDT',  name: 'XRP',  wr_n: '89.6%', wr_m: '78.3%' },
+    { sym: 'NEARUSDT', name: 'NEAR', wr_n: '79.6%', wr_m: '77.3%' },
+    { sym: 'UNIUSDT',  name: 'UNI',  wr_n: '76.0%', wr_m: '76.0%' },
+    { sym: 'SUIUSDT',  name: 'SUI',  wr_n: '86.6%', wr_m: '74.8%' },
+    { sym: 'ENAUSDT',  name: 'ENA',  wr_n: '82.0%', wr_m: '74.8%' },
+    { sym: 'AVAXUSDT', name: 'AVAX', wr_n: '84.6%', wr_m: '74.6%' },
+    { sym: 'ICPUSDT',  name: 'ICP',  wr_n: '86.5%', wr_m: '73.7%' }
+];
+
+let selectedCoins = JSON.parse(localStorage.getItem('dca_selected_coins') || 'null');
+if (!selectedCoins || !Array.isArray(selectedCoins)) {
+    selectedCoins = ALL_AVAILABLE_COINS.map(c => c.sym); // По умолчанию выбраны все
+}
+
+function renderCoinSelector() {
+    const container = document.getElementById('coin-selector-container');
+    if (!container) return;
+    let html = '';
+    ALL_AVAILABLE_COINS.forEach(c => {
+        const isChecked = selectedCoins.includes(c.sym);
+        html += `
+        <label class="coin-chip ${isChecked ? 'active' : ''}">
+            <input type="checkbox" value="${c.sym}" ${isChecked ? 'checked' : ''} onchange="toggleCoinSelection('${c.sym}')">
+            <span>${c.name}</span>
+            <span class="chip-wr">WR ${c.wr_n}</span>
+        </label>
+        `;
+    });
+    container.innerHTML = html;
+}
+
+function toggleCoinSelection(sym) {
+    if (selectedCoins.includes(sym)) {
+        selectedCoins = selectedCoins.filter(s => s !== sym);
+    } else {
+        selectedCoins.push(sym);
+    }
+    localStorage.setItem('dca_selected_coins', JSON.stringify(selectedCoins));
+    renderCoinSelector();
+    updateScreener();
+}
+
+function selectAllCoins(selectAll) {
+    if (selectAll) {
+        selectedCoins = ALL_AVAILABLE_COINS.map(c => c.sym);
+    } else {
+        selectedCoins = [];
+    }
+    localStorage.setItem('dca_selected_coins', JSON.stringify(selectedCoins));
+    renderCoinSelector();
+    updateScreener();
+}
+
 let openedCards = JSON.parse(localStorage.getItem('dca_opened_cards') || '{}');
 
 function toggleCard(symbol) {
@@ -1065,10 +1225,19 @@ async function updateScreener() {
     if (btn) btn.classList.add('loading');
 
     try {
+        if (selectedCoins.length === 0) {
+            document.getElementById('coins-container').innerHTML = `
+            <div style="background:rgba(255,255,255,0.02); border:1px dashed var(--border); border-radius:12px; padding:30px; text-align:center; color:var(--text-dim);">
+                ⚠️ Не выбрана ни одна монета для опроса API. Отметьте галочками нужные монеты в панели выше.
+            </div>`;
+            return;
+        }
+
         const currentUrl = window.location.pathname;
-        const res = await fetch(currentUrl + '?ajax=1&t=' + new Date().getTime());
+        const querySyms = selectedCoins.join(',');
+        const res = await fetch(currentUrl + '?ajax=1&symbols=' + encodeURIComponent(querySyms) + '&t=' + new Date().getTime());
         globalData = await res.json();
-        document.getElementById('update-time').innerText = 'UTC+3: ' + globalData.time;
+        document.getElementById('update-time').innerText = 'UTC+3: ' + globalData.time + ' (' + globalData.items.length + ' монет)';
         renderCards(globalData);
     } catch (e) {
         console.error("Ошибка загрузки данных", e);
@@ -1081,6 +1250,7 @@ async function updateScreener() {
 document.addEventListener('DOMContentLoaded', () => {
     loadSavedSettings();
     saveAndRecalc();
+    renderCoinSelector();
 
     const btn = document.getElementById('refresh-btn');
     if (btn) {
