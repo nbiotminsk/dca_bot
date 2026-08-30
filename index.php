@@ -1,12 +1,8 @@
 <?php
 /**
- * Live Screener & Signal Scanner для стратегии "Манипуляция на часе (Mon 1H)"
+ * Live Web Screener & Signal Scanner с Риск-Калькулятором Позиций
  * Монеты: HYPEUSDT, NEARUSDT, UNIUSDT
- * Автоматическое определение ДОМИНИРУЮЩЕГО СИГНАЛА с ручной кнопкой обновления.
- * 
- * В LONG ОБЫЧНЫЙ добавлены:
- * - Вход 1 (0.500 Fib) + Вход 2 / Добор (0.618 Fib)
- * - Тейк 1 (0.500 Fib) + Тейк 2 (0.382 Fib)
+ * Автоматический расчет объемов входа ($ и монеты) на основе депозита, риска в % и плеча.
  */
 
 error_reporting(E_ALL & ~E_DEPRECATED);
@@ -172,12 +168,12 @@ if (isset($_GET['ajax'])) {
         $impLM = detectLatestLongImpulse($candles, $MIN_IMP_MANIP);
         $impSN = detectLatestShortImpulse($candles, $MIN_IMP_NORMAL);
 
-        $card = ['symbol' => $sym, 'price' => fmt3($curPrice)];
+        $card = ['symbol' => $sym, 'price' => fmt3($curPrice), 'raw_price' => $curPrice];
 
         $long_time = $impLN ? $impLN['end_time'] : 0;
         $short_time = $impSN ? $impSN['end_time'] : 0;
 
-        // Long Normal с двумя входами (0.500 и 0.618) и двумя тейками (0.500 и 0.382)
+        // Long Normal
         if ($impLN) {
             $in050  = calcFibLongLog($impLN['high'], $impLN['low'], 0.500);
             $in0618 = calcFibLongLog($impLN['high'], $impLN['low'], 0.618);
@@ -186,15 +182,18 @@ if (isset($_GET['ajax'])) {
             $sl0710 = calcFibLongLog($impLN['high'], $impLN['low'], 0.710);
 
             $card['long_normal'] = [
-                'entry_050'  => fmt3($in050),
-                'entry_0618' => fmt3($in0618),
-                'tp_0500'    => fmt3($tp0500),
-                'tp_0382'    => fmt3($tp0382),
-                'sl'         => fmt3($sl0710),
-                'pct'        => number_format($impLN['pct'], 2),
-                'active'     => ($curPrice <= $in050 && $curPrice > $sl0710),
-                'time'       => date('d.m H:i', (int)($impLN['end_time'] / 1000)),
-                'is_fresher' => ($long_time >= $short_time)
+                'entry_050'    => fmt3($in050),
+                'raw_e050'     => $in050,
+                'entry_0618'   => fmt3($in0618),
+                'raw_e0618'    => $in0618,
+                'tp_0500'      => fmt3($tp0500),
+                'tp_0382'      => fmt3($tp0382),
+                'sl'           => fmt3($sl0710),
+                'raw_sl'       => $sl0710,
+                'pct'          => number_format($impLN['pct'], 2),
+                'active'       => ($curPrice <= $in050 && $curPrice > $sl0710),
+                'time'         => date('d.m H:i', (int)($impLN['end_time'] / 1000)),
+                'is_fresher'   => ($long_time >= $short_time)
             ];
         }
 
@@ -207,15 +206,18 @@ if (isset($_GET['ajax'])) {
             $sl0710 = calcFibShortLog($impSN['high'], $impSN['low'], 0.710);
 
             $card['short_normal'] = [
-                'entry_050'  => fmt3($in050),
-                'entry_0618' => fmt3($in0618),
-                'tp_0500'    => fmt3($tp0500),
-                'tp_0382'    => fmt3($tp0382),
-                'sl'         => fmt3($sl0710),
-                'pct'        => number_format($impSN['pct'], 2),
-                'active'     => ($curPrice >= $in050 && $curPrice < $sl0710),
-                'time'       => date('d.m H:i', (int)($impSN['end_time'] / 1000)),
-                'is_fresher' => ($short_time > $long_time)
+                'entry_050'    => fmt3($in050),
+                'raw_e050'     => $in050,
+                'entry_0618'   => fmt3($in0618),
+                'raw_e0618'    => $in0618,
+                'tp_0500'      => fmt3($tp0500),
+                'tp_0382'      => fmt3($tp0382),
+                'sl'           => fmt3($sl0710),
+                'raw_sl'       => $sl0710,
+                'pct'          => number_format($impSN['pct'], 2),
+                'active'       => ($curPrice >= $in050 && $curPrice < $sl0710),
+                'time'         => date('d.m H:i', (int)($impSN['end_time'] / 1000)),
+                'is_fresher'   => ($short_time > $long_time)
             ];
         }
 
@@ -226,11 +228,15 @@ if (isset($_GET['ajax'])) {
             $tp1 = calcFibLongLog($impLM['high'], $impLM['low'], 0.618);
             $tp2 = calcFibLongLog($impLM['high'], $impLM['low'], 0.500);
             $card['long_manip'] = [
-                'entry_1' => fmt3($m1), 'entry_2' => fmt3($m2),
-                'tp_1' => fmt3($tp1), 'tp_2' => fmt3($tp2),
-                'pct' => number_format($impLM['pct'], 2),
-                'active' => ($curPrice <= $m1),
-                'time' => date('d.m H:i', (int)($impLM['end_time'] / 1000))
+                'entry_1'   => fmt3($m1),
+                'raw_e1'    => $m1,
+                'entry_2'   => fmt3($m2),
+                'raw_e2'    => $m2,
+                'tp_1'      => fmt3($tp1),
+                'tp_2'      => fmt3($tp2),
+                'pct'       => number_format($impLM['pct'], 2),
+                'active'    => ($curPrice <= $m1),
+                'time'      => date('d.m H:i', (int)($impLM['end_time'] / 1000))
             ];
         }
 
@@ -256,7 +262,7 @@ if (isset($_GET['ajax'])) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mon 1H Terminal — Live Screener</title>
+    <title>Mon 1H Terminal & Risk Calculator</title>
     <style>
         :root {
             --bg: #0d0e12;
@@ -270,17 +276,19 @@ if (isset($_GET['ajax'])) {
             --red: #ff5252;
             --blue: #2979ff;
             --cyan: #00e5ff;
+            --yellow: #ffd600;
         }
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-        body { background-color: var(--bg); color: var(--text); padding: 24px; }
-        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid var(--border); }
-        .header h1 { font-size: 22px; font-weight: 700; display: flex; align-items: center; gap: 10px; }
+        body { background-color: var(--bg); color: var(--text); padding: 20px; }
         
-        .header-actions { display: flex; align-items: center; gap: 12px; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 14px; border-bottom: 1px solid var(--border); flex-wrap: wrap; gap: 10px; }
+        .header h1 { font-size: 20px; font-weight: 800; display: flex; align-items: center; gap: 8px; }
+        
+        .header-actions { display: flex; align-items: center; gap: 10px; }
         .btn-refresh { 
-            display: inline-flex; align-items: center; gap: 8px; 
+            display: inline-flex; align-items: center; gap: 6px; 
             background: #252836; color: #fff; border: 1px solid #3b4054; 
-            padding: 8px 16px; border-radius: 8px; font-size: 14px; font-weight: 700; 
+            padding: 8px 14px; border-radius: 8px; font-size: 13px; font-weight: 700; 
             cursor: pointer; transition: all 0.2s ease; 
         }
         .btn-refresh:hover { background: #32374a; border-color: var(--blue); }
@@ -288,9 +296,32 @@ if (isset($_GET['ajax'])) {
         .btn-refresh.loading svg { animation: spin 0.8s linear infinite; }
         @keyframes spin { 100% { transform: rotate(360deg); } }
 
-        .badge-live { display: inline-flex; align-items: center; gap: 6px; background: rgba(0,230,118,0.15); color: var(--green); padding: 6px 12px; border-radius: 8px; font-size: 12px; font-weight: 700; }
+        .badge-live { display: inline-flex; align-items: center; gap: 6px; background: rgba(0,230,118,0.15); color: var(--green); padding: 6px 10px; border-radius: 8px; font-size: 12px; font-weight: 700; }
         .badge-live::before { content: ""; width: 8px; height: 8px; background: var(--green); border-radius: 50%; animation: pulse 1.5s infinite; }
         @keyframes pulse { 0% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(1.2); } 100% { opacity: 1; transform: scale(1); } }
+
+        /* Калькулятор Риска */
+        .calc-panel {
+            background: #1a1d26;
+            border: 1px solid #2e3447;
+            border-radius: 12px;
+            padding: 16px 20px;
+            margin-bottom: 24px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.25);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 16px;
+        }
+        .calc-title { font-size: 14px; font-weight: 800; text-transform: uppercase; color: var(--yellow); letter-spacing: 0.5px; display: flex; align-items: center; gap: 8px; }
+        .calc-inputs { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+        .calc-field { display: flex; flex-direction: column; gap: 4px; }
+        .calc-field label { font-size: 11px; font-weight: 700; color: var(--text-dim); text-transform: uppercase; }
+        .calc-input-wrap { display: flex; align-items: center; background: #101218; border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; }
+        .calc-input-wrap input { background: transparent; border: none; color: #fff; font-family: monospace; font-size: 15px; font-weight: 700; width: 80px; outline: none; }
+        .calc-input-wrap span { color: var(--text-dim); font-size: 12px; font-weight: 700; margin-left: 4px; }
+        .calc-info-badge { background: rgba(255,214,0,0.12); border: 1px solid rgba(255,214,0,0.3); color: var(--yellow); padding: 8px 14px; border-radius: 8px; font-size: 12px; font-weight: 700; font-family: monospace; }
         
         .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 20px; }
         .coin-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; padding: 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); }
@@ -298,7 +329,7 @@ if (isset($_GET['ajax'])) {
         .coin-title { font-size: 20px; font-weight: 800; }
         .coin-price { font-size: 22px; font-weight: 800; color: #fff; font-family: monospace; }
 
-        .verdict-box { background: rgba(255,255,255,0.06); border-radius: 8px; padding: 10px; margin-bottom: 16px; text-align: center; font-weight: 800; font-size: 14px; border: 1px solid var(--border); }
+        .verdict-box { background: rgba(255,255,255,0.06); border-radius: 8px; padding: 10px; margin-bottom: 16px; text-align: center; font-weight: 800; font-size: 13px; border: 1px solid var(--border); }
 
         .block { background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 12px; }
         .block-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; display: flex; justify-content: space-between; }
@@ -306,7 +337,20 @@ if (isset($_GET['ajax'])) {
         .table-levels { width: 100%; border-collapse: collapse; font-size: 13px; font-family: monospace; }
         .table-levels td { padding: 3px 0; }
         .table-levels td:last-child { text-align: right; font-weight: 700; }
-        .lbl { color: var(--text-dim); }
+        .lbl { color: var(--text-dim); font-size: 12px; }
+        
+        /* Выделение рассчитанных денег входа */
+        .money-tag {
+            display: inline-block;
+            background: rgba(255, 214, 0, 0.15);
+            color: var(--yellow);
+            padding: 1px 6px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 800;
+            margin-left: 6px;
+            border: 1px solid rgba(255, 214, 0, 0.3);
+        }
 
         .status-pill { display: block; text-align: center; padding: 5px; border-radius: 6px; font-size: 11px; font-weight: 700; margin-top: 8px; }
         .status-ready { background: rgba(0,230,118,0.2); color: var(--green); border: 1px solid var(--green); }
@@ -318,6 +362,7 @@ if (isset($_GET['ajax'])) {
         .c-red { color: var(--red); }
         .c-blue { color: var(--blue); }
         .c-cyan { color: var(--cyan); }
+        .c-yellow { color: var(--yellow); }
     </style>
 </head>
 <body>
@@ -336,12 +381,245 @@ if (isset($_GET['ajax'])) {
     </div>
 </div>
 
+<!-- 🧮 ПАНЕЛЬ РИСК-КАЛЬКУЛЯТОРА -->
+<div class="calc-panel">
+    <div class="calc-title">
+        <span>🧮 Риск-Калькулятор Позиций</span>
+    </div>
+    <div class="calc-inputs">
+        <div class="calc-field">
+            <label>Депозит</label>
+            <div class="calc-input-wrap">
+                <input type="number" id="cfg-deposit" value="1000" min="10" step="50" oninput="saveAndRecalc()">
+                <span>$</span>
+            </div>
+        </div>
+        <div class="calc-field">
+            <label>Риск на Стоп</label>
+            <div class="calc-input-wrap">
+                <input type="number" id="cfg-risk" value="2.0" min="0.1" max="50" step="0.5" oninput="saveAndRecalc()">
+                <span>%</span>
+            </div>
+        </div>
+        <div class="calc-field">
+            <label>Кредитное Плечо</label>
+            <div class="calc-input-wrap">
+                <input type="number" id="cfg-leverage" value="1" min="1" max="50" step="1" oninput="saveAndRecalc()">
+                <span>x</span>
+            </div>
+        </div>
+        <div class="calc-info-badge" id="calc-summary">
+            Макс. риск на сделку: $20.00
+        </div>
+    </div>
+</div>
+
 <div class="grid" id="coins-container">
     <div style="color:var(--text-dim); font-size:16px;">Загрузка котировок и импульсов...</div>
 </div>
 
 <script>
 let isRefreshing = false;
+let globalData = null;
+
+// Загрузка настроек из LocalStorage
+function loadSavedSettings() {
+    const dep = localStorage.getItem('mon1h_deposit');
+    const rsk = localStorage.getItem('mon1h_risk');
+    const lev = localStorage.getItem('mon1h_leverage');
+    if (dep) document.getElementById('cfg-deposit').value = dep;
+    if (rsk) document.getElementById('cfg-risk').value = rsk;
+    if (lev) document.getElementById('cfg-leverage').value = lev;
+}
+
+function saveAndRecalc() {
+    const dep = parseFloat(document.getElementById('cfg-deposit').value) || 1000;
+    const rsk = parseFloat(document.getElementById('cfg-risk').value) || 2.0;
+    const lev = parseFloat(document.getElementById('cfg-leverage').value) || 1;
+
+    localStorage.setItem('mon1h_deposit', dep);
+    localStorage.setItem('mon1h_risk', rsk);
+    localStorage.setItem('mon1h_leverage', lev);
+
+    const maxRiskDollar = (dep * (rsk / 100)).toFixed(2);
+    document.getElementById('calc-summary').innerText = `Макс. риск на сделку: $${maxRiskDollar} (${rsk}%)`;
+
+    if (globalData) {
+        renderCards(globalData);
+    }
+}
+
+// Расчет размера позиции исходя из % расстояния до стопа
+function calculatePosition(entryPrice, stopPrice, isManip = false) {
+    const dep = parseFloat(document.getElementById('cfg-deposit').value) || 1000;
+    const rsk = parseFloat(document.getElementById('cfg-risk').value) || 2.0;
+    const lev = parseFloat(document.getElementById('cfg-leverage').value) || 1;
+
+    const maxRiskDollar = dep * (rsk / 100.0);
+    
+    if (isManip) {
+        // Для манипуляции (1 лот на 1.618 + 2 лота на 2.000):
+        // Сетка манипуляции выделяет долю депозита (например, 10-20%) под 3 доли
+        const totalPosDollar = (dep * 0.15) * lev;
+        const lot1Dollar = totalPosDollar * (1 / 3);
+        const lot2Dollar = totalPosDollar * (2 / 3);
+        return {
+            lot1_usd: lot1Dollar.toFixed(1),
+            lot2_usd: lot2Dollar.toFixed(1),
+            margin_usd: (totalPosDollar / lev).toFixed(1)
+        };
+    }
+
+    // Для Обычного входа (Long / Short со стопом 0.710):
+    const stopDistancePct = Math.abs((entryPrice - stopPrice) / entryPrice);
+    if (stopDistancePct <= 0.0001) return { total_pos: "0", margin: "0" };
+
+    // Размер позиции, при котором потеря на стопе = ровно maxRiskDollar
+    const totalPosDollar = maxRiskDollar / stopDistancePct;
+    const marginDollar = totalPosDollar / lev;
+
+    return {
+        pos_usd: totalPosDollar.toFixed(1),
+        margin_usd: marginDollar.toFixed(1),
+        stop_pct: (stopDistancePct * 100).toFixed(2)
+    };
+}
+
+function renderCards(data) {
+    let html = '';
+    data.items.forEach(c => {
+        // Расчет денег для Long Normal
+        let ln_calc_050 = null;
+        let ln_calc_0618 = null;
+        if (c.long_normal) {
+            ln_calc_050 = calculatePosition(c.long_normal.raw_e050, c.long_normal.raw_sl);
+            ln_calc_0618 = calculatePosition(c.long_normal.raw_e0618, c.long_normal.raw_sl);
+        }
+
+        // Расчет денег для Short Normal
+        let sn_calc_050 = null;
+        let sn_calc_0618 = null;
+        if (c.short_normal) {
+            sn_calc_050 = calculatePosition(c.short_normal.raw_e050, c.short_normal.raw_sl);
+            sn_calc_0618 = calculatePosition(c.short_normal.raw_e0618, c.short_normal.raw_sl);
+        }
+
+        // Расчет денег для Long Manip
+        let lm_calc = null;
+        if (c.long_manip) {
+            lm_calc = calculatePosition(c.long_manip.raw_e1, 0, true);
+        }
+
+        html += `
+        <div class="coin-card">
+            <div class="coin-header">
+                <div class="coin-title">${c.symbol.replace('USDT', '')}<span style="color:var(--text-dim); font-size:13px;"> / USDT</span></div>
+                <div class="coin-price">${c.price} $</div>
+            </div>
+
+            <!-- ГЛАВНЫЙ ВЕРДИКТ -->
+            <div class="verdict-box">👉 РЕШЕНИЕ: ${c.best_choice}</div>
+
+            <!-- 1. LONG NORMAL -->
+            <div class="block" style="border-left: 3px solid var(--blue); opacity: ${c.long_normal && !c.long_normal.is_fresher ? '0.6' : '1.0'};">
+                <div class="block-title c-blue">
+                    🟢 LONG ОБЫЧНЫЙ (Сетка 0.500 / 0.618) 
+                    <span style="font-size:10px; color:var(--text-dim);">${c.long_normal ? c.long_normal.time : ''}</span>
+                </div>
+                ${c.long_normal ? `
+                <table class="table-levels">
+                    <tr>
+                        <td class="lbl">🔹 Вход-1 (0.500 Fib) 1x</td>
+                        <td>
+                            <span class="c-cyan">${c.long_normal.entry_050} $</span>
+                            <span class="money-tag">$${ln_calc_050.margin_usd}</span>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td class="lbl">🔹 Вход-2 / DCA (0.618 Fib) 2x</td>
+                        <td>
+                            <span class="c-blue">${c.long_normal.entry_0618} $</span>
+                            <span class="money-tag">$${ln_calc_0618.margin_usd}</span>
+                        </td>
+                    </tr>
+                    <tr><td class="lbl">🎯 Тейк-1 (0.500 Fib)</td><td class="c-green">${c.long_normal.tp_0500} $</td></tr>
+                    <tr><td class="lbl">🎯 Тейк-2 (0.382 Fib)</td><td class="c-green">${c.long_normal.tp_0382} $</td></tr>
+                    <tr><td class="lbl">🛑 Стоп (0.710 Fib)</td><td class="c-red">${c.long_normal.sl} $ <span style="font-size:10px; color:var(--text-dim);">(-${ln_calc_050.stop_pct}%)</span></td></tr>
+                </table>
+                <div class="status-pill ${c.long_normal.active ? 'status-ready' : 'status-wait'}">
+                    ${c.long_normal.active ? (c.long_normal.is_fresher ? '🟢 ВХОД В LONG (Актуальный импульс)' : '⚠️ Старый импульс') : '⏳ Ожидание отката'}
+                </div>
+                ` : '<div style="color:var(--text-dim); font-size:12px;">Нет импульса ≥ 3.5%</div>'}
+            </div>
+
+            <!-- 2. SHORT NORMAL -->
+            <div class="block" style="border-left: 3px solid var(--red); opacity: ${c.short_normal && !c.short_normal.is_fresher ? '0.6' : '1.0'};">
+                <div class="block-title c-red">
+                    🔴 SHORT ОБЫЧНЫЙ (Сетка 0.500 / 0.618)
+                    <span style="font-size:10px; color:var(--text-dim);">${c.short_normal ? c.short_normal.time : ''}</span>
+                </div>
+                ${c.short_normal ? `
+                <table class="table-levels">
+                    <tr>
+                        <td class="lbl">🔹 Вход-1 в Short (0.500)</td>
+                        <td>
+                            <span class="c-orange">${c.short_normal.entry_050} $</span>
+                            <span class="money-tag">$${sn_calc_050.margin_usd}</span>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td class="lbl">🔹 Вход-2 в Short (0.618)</td>
+                        <td>
+                            <span class="c-red">${c.short_normal.entry_0618} $</span>
+                            <span class="money-tag">$${sn_calc_0618.margin_usd}</span>
+                        </td>
+                    </tr>
+                    <tr><td class="lbl">🎯 Тейк-1 (0.500 Fib)</td><td class="c-green">${c.short_normal.tp_0500} $</td></tr>
+                    <tr><td class="lbl">🎯 Тейк-2 (0.382 Fib)</td><td class="c-green">${c.short_normal.tp_0382} $</td></tr>
+                    <tr><td class="lbl">🛑 Стоп (0.710 Fib)</td><td class="c-red">${c.short_normal.sl} $ <span style="font-size:10px; color:var(--text-dim);">(-${sn_calc_050.stop_pct}%)</span></td></tr>
+                </table>
+                <div class="status-pill ${c.short_normal.active ? 'status-ready' : 'status-wait'}">
+                    ${c.short_normal.active ? (c.short_normal.is_fresher ? '🔴 ВХОД В SHORT (Актуальный дамп)' : '⚠️ Старый дамп') : '⏳ Ожидание отскока вверх'}
+                </div>
+                ` : '<div style="color:var(--text-dim); font-size:12px;">Нет дамп-импульса ≥ 3.5%</div>'}
+            </div>
+
+            <!-- 3. LONG MANIPULATION -->
+            <div class="block" style="border-left: 3px solid var(--purple);">
+                <div class="block-title c-purple">
+                    🟣 МАНИПУЛЯЦИЯ (1.618 + 2.0 DCA)
+                    <span style="font-size:10px; color:var(--text-dim);">${c.long_manip ? c.long_manip.time : ''}</span>
+                </div>
+                ${c.long_manip ? `
+                <table class="table-levels">
+                    <tr>
+                        <td class="lbl">Вход (1.618) 1 лот</td>
+                        <td>
+                            <span class="c-purple">${c.long_manip.entry_1} $</span>
+                            <span class="money-tag">$${lm_calc.lot1_usd}</span>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td class="lbl">Добор (2.000) 2 лота</td>
+                        <td>
+                            <span class="c-orange">${c.long_manip.entry_2} $</span>
+                            <span class="money-tag">$${lm_calc.lot2_usd}</span>
+                        </td>
+                    </tr>
+                    <tr><td class="lbl">🎯 Тейк-1 (0.618 Fib)</td><td class="c-green">${c.long_manip.tp_1} $</td></tr>
+                    <tr><td class="lbl">🎯 Тейк-2 (0.500 Fib)</td><td class="c-green">${c.long_manip.tp_2} $</td></tr>
+                </table>
+                <div class="status-pill ${c.long_manip.active ? 'status-ready' : 'status-wait'}">
+                    ${c.long_manip.active ? '🟣 ВХОД В МАНИПУЛЯЦИЮ ПРЯМО СЕЙЧАС' : '⏳ Ожидание уровня 1.618'}
+                </div>
+                ` : '<div style="color:var(--text-dim); font-size:12px;">Нет импульса ≥ 1.0%</div>'}
+            </div>
+
+        </div>
+        `;
+    });
+    document.getElementById('coins-container').innerHTML = html;
+}
 
 async function updateScreener() {
     if (isRefreshing) return;
@@ -352,84 +630,9 @@ async function updateScreener() {
     try {
         const currentUrl = window.location.pathname;
         const res = await fetch(currentUrl + '?ajax=1&t=' + new Date().getTime());
-        const data = await res.json();
-        document.getElementById('update-time').innerText = 'UTC+3: ' + data.time;
-        
-        let html = '';
-        data.items.forEach(c => {
-            html += `
-            <div class="coin-card">
-                <div class="coin-header">
-                    <div class="coin-title">${c.symbol.replace('USDT', '')}<span style="color:var(--text-dim); font-size:13px;"> / USDT</span></div>
-                    <div class="coin-price">${c.price} $</div>
-                </div>
-
-                <!-- ГЛАВНЫЙ ВЕРДИКТ -->
-                <div class="verdict-box">👉 РЕШЕНИЕ: ${c.best_choice}</div>
-
-                <!-- 1. LONG NORMAL -->
-                <div class="block" style="border-left: 3px solid var(--blue); opacity: ${c.long_normal && !c.long_normal.is_fresher ? '0.6' : '1.0'};">
-                    <div class="block-title c-blue">
-                        🟢 LONG ОБЫЧНЫЙ (Сетка 0.500 / 0.618) 
-                        <span style="font-size:10px; color:var(--text-dim);">${c.long_normal ? c.long_normal.time : ''}</span>
-                    </div>
-                    ${c.long_normal ? `
-                    <table class="table-levels">
-                        <tr><td class="lbl">🔹 Вход-1 (0.500 Fib) 1x</td><td class="c-cyan">${c.long_normal.entry_050} $</td></tr>
-                        <tr><td class="lbl">🔹 Вход-2 / DCA (0.618 Fib) 2x</td><td class="c-blue">${c.long_normal.entry_0618} $</td></tr>
-                        <tr><td class="lbl">🎯 Тейк-1 (0.500 Fib)</td><td class="c-green">${c.long_normal.tp_0500} $</td></tr>
-                        <tr><td class="lbl">🎯 Тейк-2 (0.382 Fib)</td><td class="c-green">${c.long_normal.tp_0382} $</td></tr>
-                        <tr><td class="lbl">🛑 Стоп (0.710 Fib)</td><td class="c-red">${c.long_normal.sl} $</td></tr>
-                    </table>
-                    <div class="status-pill ${c.long_normal.active ? 'status-ready' : 'status-wait'}">
-                        ${c.long_normal.active ? (c.long_normal.is_fresher ? '🟢 ВХОД В LONG (Актуальный импульс)' : '⚠️ Старый импульс') : '⏳ Ожидание отката'}
-                    </div>
-                    ` : '<div style="color:var(--text-dim); font-size:12px;">Нет импульса ≥ 3.5%</div>'}
-                </div>
-
-                <!-- 2. SHORT NORMAL -->
-                <div class="block" style="border-left: 3px solid var(--red); opacity: ${c.short_normal && !c.short_normal.is_fresher ? '0.6' : '1.0'};">
-                    <div class="block-title c-red">
-                        🔴 SHORT ОБЫЧНЫЙ (Сетка 0.500 / 0.618)
-                        <span style="font-size:10px; color:var(--text-dim);">${c.short_normal ? c.short_normal.time : ''}</span>
-                    </div>
-                    ${c.short_normal ? `
-                    <table class="table-levels">
-                        <tr><td class="lbl">🔹 Вход-1 в Short (0.500)</td><td class="c-orange">${c.short_normal.entry_050} $</td></tr>
-                        <tr><td class="lbl">🔹 Вход-2 в Short (0.618)</td><td class="c-red">${c.short_normal.entry_0618} $</td></tr>
-                        <tr><td class="lbl">🎯 Тейк-1 (0.500 Fib)</td><td class="c-green">${c.short_normal.tp_0500} $</td></tr>
-                        <tr><td class="lbl">🎯 Тейк-2 (0.382 Fib)</td><td class="c-green">${c.short_normal.tp_0382} $</td></tr>
-                        <tr><td class="lbl">🛑 Стоп (0.710 Fib)</td><td class="c-red">${c.short_normal.sl} $</td></tr>
-                    </table>
-                    <div class="status-pill ${c.short_normal.active ? 'status-ready' : 'status-wait'}">
-                        ${c.short_normal.active ? (c.short_normal.is_fresher ? '🔴 ВХОД В SHORT (Актуальный дамп)' : '⚠️ Старый дамп') : '⏳ Ожидание отскока вверх'}
-                    </div>
-                    ` : '<div style="color:var(--text-dim); font-size:12px;">Нет дамп-импульса ≥ 3.5%</div>'}
-                </div>
-
-                <!-- 3. LONG MANIPULATION -->
-                <div class="block" style="border-left: 3px solid var(--purple);">
-                    <div class="block-title c-purple">
-                        🟣 МАНИПУЛЯЦИЯ (1.618 + 2.0 DCA)
-                        <span style="font-size:10px; color:var(--text-dim);">${c.long_manip ? c.long_manip.time : ''}</span>
-                    </div>
-                    ${c.long_manip ? `
-                    <table class="table-levels">
-                        <tr><td class="lbl">Вход (1.618) 1 лот</td><td class="c-purple">${c.long_manip.entry_1} $</td></tr>
-                        <tr><td class="lbl">Добор (2.000) 2 лота</td><td class="c-orange">${c.long_manip.entry_2} $</td></tr>
-                        <tr><td class="lbl">Тейк-1 (0.618 Fib)</td><td class="c-green">${c.long_manip.tp_1} $</td></tr>
-                        <tr><td class="lbl">Тейк-2 (0.500 Fib)</td><td class="c-green">${c.long_manip.tp_2} $</td></tr>
-                    </table>
-                    <div class="status-pill ${c.long_manip.active ? 'status-ready' : 'status-wait'}">
-                        ${c.long_manip.active ? '🟣 ВХОД В МАНИПУЛЯЦИЮ ПРЯМО СЕЙЧАС' : '⏳ Ожидание уровня 1.618'}
-                    </div>
-                    ` : '<div style="color:var(--text-dim); font-size:12px;">Нет импульса ≥ 1.0%</div>'}
-                </div>
-
-            </div>
-            `;
-        });
-        document.getElementById('coins-container').innerHTML = html;
+        globalData = await res.json();
+        document.getElementById('update-time').innerText = 'UTC+3: ' + globalData.time;
+        renderCards(globalData);
     } catch (e) {
         console.error("Ошибка загрузки данных", e);
     } finally {
@@ -439,6 +642,9 @@ async function updateScreener() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+    loadSavedSettings();
+    saveAndRecalc();
+
     const btn = document.getElementById('refresh-btn');
     if (btn) {
         btn.addEventListener('click', (e) => {
