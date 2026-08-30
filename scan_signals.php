@@ -53,6 +53,11 @@ function calcFibShortLog($high, $low, $level) {
     return exp(log($low) + $level * (log($high) - log($low)));
 }
 
+function fmtPrice($val, $sym = '') {
+    $decimals = ($sym === 'ENAUSDT' || $sym === 'ENA') ? 4 : 3;
+    return number_format((float)$val, $decimals, '.', '');
+}
+
 function fmt3($val) {
     return number_format((float)$val, 3, '.', '');
 }
@@ -188,7 +193,7 @@ foreach ($symbols as $sym) {
     $impLongManip   = detectLatestLongImpulse($candles, $MIN_IMP_MANIP);
     $impShortNormal = detectLatestShortImpulse($candles, $MIN_IMP_NORMAL);
 
-    echo "🪙 МОНЕТА: {$sym} | Текущая цена: " . fmt3($curPrice) . " $\n";
+    echo "🪙 МОНЕТА: {$sym} | Текущая цена: " . fmtPrice($curPrice, $sym) . " $\n";
     echo "========================================================================================\n";
 
     // LONG NORMAL
@@ -211,12 +216,12 @@ foreach ($symbols as $sym) {
         $tE = date('d.m H:i', (int)($impLongNormal['end_time'] / 1000));
 
         echo "  [1] 🟢 LONG ОБЫЧНЫЙ (Сетка 0.500 / 0.618) [Импульс ≥ 3.5%]:\n";
-        echo "      • Волна: {$tS} → {$tE} (Дно: " . fmt3($l) . "$ | Пик: " . fmt3($h) . "$ | Рост: +" . number_format($impLongNormal['pct'], 2) . "%)\n";
-        echo "      • 🔹 Вход-1 (0.500 Fib) 1x    : " . fmt3($in050) . " $\n";
-        echo "      • 🔹 Вход-2 / DCA (0.618) 2x  : " . fmt3($in0618) . " $\n";
-        echo "      • 🎯 Тейк-1 (0.500 Fib)       : " . fmt3($tp0500) . " $\n";
-        echo "      • 🎯 Тейк-2 (0.382 Fib)       : " . fmt3($tp0382) . " $\n";
-        echo "      • 🛑 Стоп (0.710 Fib)         : " . fmt3($sl0710) . " $\n";
+        echo "      • Волна: {$tS} → {$tE} (Дно: " . fmtPrice($l, $sym) . "$ | Пик: " . fmtPrice($h, $sym) . "$ | Рост: +" . number_format($impLongNormal['pct'], 2) . "%)\n";
+        echo "      • 🔹 Вход-1 (0.500 Fib) 1x    : " . fmtPrice($in050, $sym) . " $\n";
+        echo "      • 🔹 Вход-2 / DCA (0.618) 2x  : " . fmtPrice($in0618, $sym) . " $\n";
+        echo "      • 🎯 Тейк-1 (0.500 Fib)       : " . fmtPrice($tp0500, $sym) . " $\n";
+        echo "      • 🎯 Тейк-2 (0.382 Fib)       : " . fmtPrice($tp0382, $sym) . " $\n";
+        echo "      • 🛑 Стоп (0.710 Fib)         : " . fmtPrice($sl0710, $sym) . " $\n";
         echo "      • 👉 Статус                   : {$status}\n";
     } else {
         echo "  [1] 🟢 LONG ОБЫЧНЫЙ (Импульс ≥ 3.5%):\n      • Нет импульса ≥ 3.5%\n";
@@ -244,12 +249,12 @@ foreach ($symbols as $sym) {
         $tE = date('d.m H:i', (int)($impShortNormal['end_time'] / 1000));
 
         echo "  [2] 🔴 SHORT ОБЫЧНЫЙ (Сетка 0.500 / 0.618) [Дамп-импульс ≥ 3.5%]:\n";
-        echo "      • Волна: {$tS} → {$tE} (Пик: " . fmt3($h) . "$ | Дно: " . fmt3($l) . "$ | Падение: -" . number_format($impShortNormal['pct'], 2) . "%)\n";
-        echo "      • 🔹 Вход-1 в Short (0.500)   : " . fmt3($in050) . " $\n";
-        echo "      • 🔹 Вход-2 в Short (0.618)   : " . fmt3($in0618) . " $\n";
-        echo "      • 🎯 Тейк-1 (0.500 Fib)       : " . fmt3($tp0500) . " $\n";
-        echo "      • 🎯 Тейк-2 (0.382 Fib)       : " . fmt3($tp0382) . " $\n";
-        echo "      • 🛑 Стоп (0.710 Fib)         : " . fmt3($sl0710) . " $\n";
+        echo "      • Волна: {$tS} → {$tE} (Пик: " . fmtPrice($h, $sym) . "$ | Дно: " . fmtPrice($l, $sym) . "$ | Падение: -" . number_format($impShortNormal['pct'], 2) . "%)\n";
+        echo "      • 🔹 Вход-1 в Short (0.500)   : " . fmtPrice($in050, $sym) . " $\n";
+        echo "      • 🔹 Вход-2 в Short (0.618)   : " . fmtPrice($in0618, $sym) . " $\n";
+        echo "      • 🎯 Тейк-1 (0.500 Fib)       : " . fmtPrice($tp0500, $sym) . " $\n";
+        echo "      • 🎯 Тейк-2 (0.382 Fib)       : " . fmtPrice($tp0382, $sym) . " $\n";
+        echo "      • 🛑 Стоп (0.710 Fib)         : " . fmtPrice($sl0710, $sym) . " $\n";
         echo "      • 👉 Статус                   : {$status}\n";
     } else {
         echo "  [2] 🔴 SHORT ОБЫЧНЫЙ:\n      • Нет дамп-импульса ≥ 3.5%\n";
@@ -295,12 +300,12 @@ foreach ($symbols as $sym) {
         $tE = date('d.m H:i', (int)($impLongManip['end_time'] / 1000));
 
         echo "  [3] 🟣 LONG МАНИПУЛЯЦИЯ 1.618 + 2.0 DCA (Импульс ≥ 1.0%):\n";
-        echo "      • Волна: {$tS} → {$tE} (Дно: " . fmt3($l) . "$ | Пик: " . fmt3($h) . "$ | Рост: +" . number_format($impLongManip['pct'], 2) . "%)\n";
-        echo "      • 🟣 ВХОД-1 (1.618 Fib) 1x    : " . fmt3($m1) . " $\n";
-        echo "      • 🟠 ВХОД-2 (2.000 Fib) 2x    : " . fmt3($m2) . " $\n";
-        echo "      • 🎯 ТЕЙК-1 (0.618 Fib) [R:R {$rr_label_opt}]: " . fmt3($tp1) . " $ (Ход: +" . number_format($pctGain1, 2) . "%)\n";
-        echo "      • 🎯 ТЕЙК-2 (0.500 Fib)       : " . fmt3($tp2) . " $ (Ход: +" . number_format($pctGain2, 2) . "%)\n";
-        echo "      • 🛑 СТОП   ({$sl_fib_opt} Fib) [R:R {$rr_label_opt}]: " . fmt3($sl_opt) . " $\n";
+        echo "      • Волна: {$tS} → {$tE} (Дно: " . fmtPrice($l, $sym) . "$ | Пик: " . fmtPrice($h, $sym) . "$ | Рост: +" . number_format($impLongManip['pct'], 2) . "%)\n";
+        echo "      • 🟣 ВХОД-1 (1.618 Fib) 1x    : " . fmtPrice($m1, $sym) . " $\n";
+        echo "      • 🟠 ВХОД-2 (2.000 Fib) 2x    : " . fmtPrice($m2, $sym) . " $\n";
+        echo "      • 🎯 ТЕЙК-1 (0.618 Fib) [R:R {$rr_label_opt}]: " . fmtPrice($tp1, $sym) . " $ (Ход: +" . number_format($pctGain1, 2) . "%)\n";
+        echo "      • 🎯 ТЕЙК-2 (0.500 Fib)       : " . fmtPrice($tp2, $sym) . " $ (Ход: +" . number_format($pctGain2, 2) . "%)\n";
+        echo "      • 🛑 СТОП   ({$sl_fib_opt} Fib) [R:R {$rr_label_opt}]: " . fmtPrice($sl_opt, $sym) . " $\n";
         echo "      • 👉 Статус                   : {$status}\n";
     } else {
         echo "  [3] 🟣 LONG МАНИПУЛЯЦИЯ:\n      • Нет импульса ≥ 1.0%\n";

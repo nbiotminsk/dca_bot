@@ -60,6 +60,11 @@ function calcFibShortLog($high, $low, $level) {
     return exp(log($low) + $level * (log($high) - log($low)));
 }
 
+function fmtPrice($val, $sym = '') {
+    $decimals = ($sym === 'ENAUSDT' || $sym === 'ENA') ? 4 : 3;
+    return number_format((float)$val, $decimals, '.', '');
+}
+
 function fmt3($val) {
     return number_format((float)$val, 3, '.', '');
 }
@@ -197,7 +202,7 @@ if (isset($_GET['ajax'])) {
         $impLM = detectLatestLongImpulse($candles, $MIN_IMP_MANIP);
         $impSN = detectLatestShortImpulse($candles, $MIN_IMP_NORMAL);
 
-        $card = ['symbol' => $sym, 'price' => fmt3($curPrice), 'raw_price' => $curPrice];
+        $card = ['symbol' => $sym, 'price' => fmtPrice($curPrice, $sym), 'raw_price' => $curPrice];
 
         $long_time = $impLN ? $impLN['end_time'] : 0;
         $short_time = $impSN ? $impSN['end_time'] : 0;
@@ -229,15 +234,15 @@ if (isset($_GET['ajax'])) {
             $sl0710 = calcFibLongLog($impLN['high'], $impLN['low'], 0.710);
 
             $card['long_normal'] = [
-                'entry_050'    => fmt3($in050),
+                'entry_050'    => fmtPrice($in050, $sym),
                 'raw_e050'     => (float)$in050,
-                'entry_0618'   => fmt3($in0618),
+                'entry_0618'   => fmtPrice($in0618, $sym),
                 'raw_e0618'    => (float)$in0618,
-                'tp_0500'      => fmt3($tp0500),
+                'tp_0500'      => fmtPrice($tp0500, $sym),
                 'raw_tp0500'   => (float)$tp0500,
-                'tp_0382'      => fmt3($tp0382),
+                'tp_0382'      => fmtPrice($tp0382, $sym),
                 'raw_tp0382'   => (float)$tp0382,
-                'sl'           => fmt3($sl0710),
+                'sl'           => fmtPrice($sl0710, $sym),
                 'raw_sl'       => (float)$sl0710,
                 'pct'          => number_format($impLN['pct'], 2),
                 'active'       => ($curPrice <= $in050 && $curPrice > $sl0710),
@@ -256,15 +261,15 @@ if (isset($_GET['ajax'])) {
             $sl0710 = calcFibShortLog($impSN['high'], $impSN['low'], 0.710);
 
             $card['short_normal'] = [
-                'entry_050'    => fmt3($in050),
+                'entry_050'    => fmtPrice($in050, $sym),
                 'raw_e050'     => (float)$in050,
-                'entry_0618'   => fmt3($in0618),
+                'entry_0618'   => fmtPrice($in0618, $sym),
                 'raw_e0618'    => (float)$in0618,
-                'tp_0500'      => fmt3($tp0500),
+                'tp_0500'      => fmtPrice($tp0500, $sym),
                 'raw_tp0500'   => (float)$tp0500,
-                'tp_0382'      => fmt3($tp0382),
+                'tp_0382'      => fmtPrice($tp0382, $sym),
                 'raw_tp0382'   => (float)$tp0382,
-                'sl'           => fmt3($sl0710),
+                'sl'           => fmtPrice($sl0710, $sym),
                 'raw_sl'       => (float)$sl0710,
                 'pct'          => number_format($impSN['pct'], 2),
                 'active'       => ($curPrice >= $in050 && $curPrice < $sl0710),
@@ -283,15 +288,15 @@ if (isset($_GET['ajax'])) {
             $sl_opt = calcFibLongLog($impLM['high'], $impLM['low'], $stats['sl_fib']);
 
             $card['long_manip'] = [
-                'entry_1'      => fmt3($m1),
+                'entry_1'      => fmtPrice($m1, $sym),
                 'raw_e1'       => (float)$m1,
-                'entry_2'      => fmt3($m2),
+                'entry_2'      => fmtPrice($m2, $sym),
                 'raw_e2'       => (float)$m2,
-                'tp_1'         => fmt3($tp1),
+                'tp_1'         => fmtPrice($tp1, $sym),
                 'raw_tp1'      => (float)$tp1,
-                'tp_2'         => fmt3($tp2),
+                'tp_2'         => fmtPrice($tp2, $sym),
                 'raw_tp2'      => (float)$tp2,
-                'sl'           => fmt3($sl_opt),
+                'sl'           => fmtPrice($sl_opt, $sym),
                 'raw_sl'       => (float)$sl_opt,
                 'sl_fib'       => $stats['sl_fib'],
                 'rr_label'     => $stats['rr'],
