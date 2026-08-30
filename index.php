@@ -848,6 +848,12 @@ function calculateDcaGrid(e1, e2, sl, isShort = false) {
     const margin1Usd = pos1Usd / lev;
     const margin2Usd = pos2Usd / lev;
 
+    // Автономные входы (когда входим ТОЛЬКО на 0.500 или ТОЛЬКО на 0.618 на ВЕСЬ риск депозита)
+    const q_solo1 = maxRiskDollar / d1;
+    const q_solo2 = maxRiskDollar / d2;
+    const margin_solo1 = (q_solo1 * e1) / lev;
+    const margin_solo2 = (q_solo2 * e2) / lev;
+
     const stopPct = (Math.abs(e1 - sl) / e1 * 100).toFixed(2);
 
     return {
@@ -860,6 +866,15 @@ function calculateDcaGrid(e1, e2, sl, isShort = false) {
         margin2: margin2Usd.toFixed(1),
         pos1_usd: pos1Usd,
         pos2_usd: pos2Usd,
+        
+        // Полноразмерные одиночные входы (на 100% риска)
+        q_solo1: q_solo1,
+        q_solo2: q_solo2,
+        q_solo1_fmt: fmtCoinQty(q_solo1),
+        q_solo2_fmt: fmtCoinQty(q_solo2),
+        margin_solo1: margin_solo1.toFixed(1),
+        margin_solo2: margin_solo2.toFixed(1),
+
         stop_pct: stopPct,
         loss_if_only_1: (q1 * d1).toFixed(2),
         loss_if_only_2: (q2 * d2).toFixed(2),
@@ -885,19 +900,22 @@ function renderCards(data) {
         if (c.long_normal) {
             ln_grid = calculateDcaGrid(c.long_normal.raw_e050, c.long_normal.raw_e0618, c.long_normal.raw_sl, false);
             if (ln_grid) {
-                ln_pnl_only1_to_382 = (ln_grid.q1 * (c.long_normal.raw_tp0382 - c.long_normal.raw_e050)).toFixed(2);
-                const pnl2_to_500 = ln_grid.q2 * (c.long_normal.raw_tp0500 - c.long_normal.raw_e0618);
-                const pnl2_to_382 = ln_grid.q2 * (c.long_normal.raw_tp0382 - c.long_normal.raw_e0618);
-                ln_pnl_only2_to_500 = pnl2_to_500.toFixed(2);
-                ln_pnl_only2_to_382 = pnl2_to_382.toFixed(2);
-                ln_pnl_both_to_500 = pnl2_to_500.toFixed(2);
+                // Если входим ТОЛЬКО на 0.500 (на 100% риска)
+                ln_pnl_only1_to_382 = (ln_grid.q_solo1 * (c.long_normal.raw_tp0382 - c.long_normal.raw_e050)).toFixed(2);
+                
+                // Если входим ТОЛЬКО на 0.618 (на 100% риска)
+                ln_pnl_only2_to_500 = (ln_grid.q_solo2 * (c.long_normal.raw_tp0500 - c.long_normal.raw_e0618)).toFixed(2);
+                ln_pnl_only2_to_382 = (ln_grid.q_solo2 * (c.long_normal.raw_tp0382 - c.long_normal.raw_e0618)).toFixed(2);
+                
+                // Если входим СЕТКОЙ (0.5 1x + 0.618 2x)
+                const pnl2_to_500_dca = ln_grid.q2 * (c.long_normal.raw_tp0500 - c.long_normal.raw_e0618);
+                const pnl2_to_382_dca = ln_grid.q2 * (c.long_normal.raw_tp0382 - c.long_normal.raw_e0618);
+                const pnl1_to_382_dca = ln_grid.q1 * (c.long_normal.raw_tp0382 - c.long_normal.raw_e050);
+                const full_pnl_382_dca = pnl1_to_382_dca + pnl2_to_382_dca;
 
-                const pnl1_to_382 = ln_grid.q1 * (c.long_normal.raw_tp0382 - c.long_normal.raw_e050);
-                const full_pnl_382 = pnl1_to_382 + pnl2_to_382;
-
-                const split_pnl = (0.50 * pnl2_to_500) + (0.50 * full_pnl_382);
-                ln_pnl_split_50_382 = split_pnl.toFixed(2);
-                ln_pnl_both_to_382 = full_pnl_382.toFixed(2);
+                ln_pnl_both_to_500 = pnl2_to_500_dca.toFixed(2);
+                ln_pnl_split_50_382 = ((0.50 * pnl2_to_500_dca) + (0.50 * full_pnl_382_dca)).toFixed(2);
+                ln_pnl_both_to_382 = full_pnl_382_dca.toFixed(2);
             }
         }
 
@@ -913,19 +931,22 @@ function renderCards(data) {
         if (c.short_normal) {
             sn_grid = calculateDcaGrid(c.short_normal.raw_e050, c.short_normal.raw_e0618, c.short_normal.raw_sl, true);
             if (sn_grid) {
-                sn_pnl_only1_to_382 = (sn_grid.q1 * (c.short_normal.raw_e050 - c.short_normal.raw_tp0382)).toFixed(2);
-                const pnl2_to_500 = sn_grid.q2 * (c.short_normal.raw_e0618 - c.short_normal.raw_tp0500);
-                const pnl2_to_382 = sn_grid.q2 * (c.short_normal.raw_e0618 - c.short_normal.raw_tp0382);
-                sn_pnl_only2_to_500 = pnl2_to_500.toFixed(2);
-                sn_pnl_only2_to_382 = pnl2_to_382.toFixed(2);
-                sn_pnl_both_to_500 = pnl2_to_500.toFixed(2);
+                // Если входим ТОЛЬКО на 0.500 (на 100% риска)
+                sn_pnl_only1_to_382 = (sn_grid.q_solo1 * (c.short_normal.raw_e050 - c.short_normal.raw_tp0382)).toFixed(2);
+                
+                // Если входим ТОЛЬКО на 0.618 (на 100% риска)
+                sn_pnl_only2_to_500 = (sn_grid.q_solo2 * (c.short_normal.raw_e0618 - c.short_normal.raw_tp0500)).toFixed(2);
+                sn_pnl_only2_to_382 = (sn_grid.q_solo2 * (c.short_normal.raw_e0618 - c.short_normal.raw_tp0382)).toFixed(2);
+                
+                // Если входим СЕТКОЙ (0.5 1x + 0.618 2x)
+                const pnl2_to_500_dca = sn_grid.q2 * (c.short_normal.raw_e0618 - c.short_normal.raw_tp0500);
+                const pnl2_to_382_dca = sn_grid.q2 * (c.short_normal.raw_e0618 - c.short_normal.raw_tp0382);
+                const pnl1_to_382_dca = sn_grid.q1 * (c.short_normal.raw_e050 - c.short_normal.raw_tp0382);
+                const full_pnl_382_dca = pnl1_to_382_dca + pnl2_to_382_dca;
 
-                const pnl1_to_382 = sn_grid.q1 * (c.short_normal.raw_e050 - c.short_normal.raw_tp0382);
-                const full_pnl_382 = pnl1_to_382 + pnl2_to_382;
-
-                const split_pnl = (0.50 * pnl2_to_500) + (0.50 * full_pnl_382);
-                sn_pnl_split_50_382 = split_pnl.toFixed(2);
-                sn_pnl_both_to_382 = full_pnl_382.toFixed(2);
+                sn_pnl_both_to_500 = pnl2_to_500_dca.toFixed(2);
+                sn_pnl_split_50_382 = ((0.50 * pnl2_to_500_dca) + (0.50 * full_pnl_382_dca)).toFixed(2);
+                sn_pnl_both_to_382 = full_pnl_382_dca.toFixed(2);
             }
         }
 
@@ -939,18 +960,15 @@ function renderCards(data) {
         if (c.long_manip) {
             lm_grid = calculateDcaGrid(c.long_manip.raw_e1, c.long_manip.raw_e2, c.long_manip.raw_sl, false);
             if (lm_grid) {
-                // 1. Только Вход-1 (1.618) -> Тейк-1 (0.618)
-                lm_pnl_only1_tp1 = (lm_grid.q1 * (c.long_manip.raw_tp1 - c.long_manip.raw_e1)).toFixed(2);
+                // Если входим ТОЛЬКО на 1.618 (на 100% риска)
+                lm_pnl_only1_tp1 = (lm_grid.q_solo1 * (c.long_manip.raw_tp1 - c.long_manip.raw_e1)).toFixed(2);
+                lm_pnl_only1_tp2 = (lm_grid.q_solo1 * (c.long_manip.raw_tp2 - c.long_manip.raw_e1)).toFixed(2);
 
-                // 2. Только Вход-1 (1.618) -> Тейк-2 (0.500)
-                lm_pnl_only1_tp2 = (lm_grid.q1 * (c.long_manip.raw_tp2 - c.long_manip.raw_e1)).toFixed(2);
-
-                // 3. Оба входа -> Тейк-1 (0.618)
+                // Если входим СЕТКОЙ (1.618 1x + 2.000 2x)
                 const pnl1_tp1 = lm_grid.q1 * (c.long_manip.raw_tp1 - c.long_manip.raw_e1);
                 const pnl2_tp1 = lm_grid.q2 * (c.long_manip.raw_tp1 - c.long_manip.raw_e2);
                 lm_pnl_both_tp1 = (pnl1_tp1 + pnl2_tp1).toFixed(2);
 
-                // 4. Оба входа -> Тейк-2 (0.500)
                 const pnl1_tp2 = lm_grid.q1 * (c.long_manip.raw_tp2 - c.long_manip.raw_e1);
                 const pnl2_tp2 = lm_grid.q2 * (c.long_manip.raw_tp2 - c.long_manip.raw_e2);
                 lm_pnl_both_tp2 = (pnl1_tp2 + pnl2_tp2).toFixed(2);
@@ -998,13 +1016,13 @@ function renderCards(data) {
                     <!-- 1. ВХОД ОТ 0.5 -->
                     <div class="scenario-box" style="border-left: 3px solid var(--cyan);">
                         <div class="scenario-header">
-                            <div class="scenario-title c-cyan">🔹 Вход от 0.5 (1x)</div>
-                            <div class="scenario-coins"><span class="coins-tag">${ln_grid.q1_fmt} ${coinTicker}</span> <span class="margin-subtext">($${ln_grid.margin1})</span></div>
+                            <div class="scenario-title c-cyan">🔹 Вход только от 0.5</div>
+                            <div class="scenario-coins"><span class="coins-tag">${ln_grid.q_solo1_fmt} ${coinTicker}</span> <span class="margin-subtext">($${ln_grid.margin_solo1})</span></div>
                         </div>
                         <div class="scenario-grid">
                             <div class="scenario-row"><span class="scenario-lbl">🔹 Вход (0.500):</span><span class="scenario-val c-cyan">${c.long_normal.entry_050} $</span></div>
                             <div class="scenario-row"><span class="scenario-lbl">🎯 Тейк (0.382):</span><span class="scenario-val c-green">${c.long_normal.tp_0382} $ <span class="payout-val-green">(+$${ln_pnl_only1_to_382})</span></span></div>
-                            <div class="scenario-row"><span class="scenario-lbl">🛑 Стоп (0.860):</span><span class="scenario-val c-red">${c.long_normal.sl} $ <span class="payout-val-red">(-$${ln_grid.loss_if_only_1})</span></span></div>
+                            <div class="scenario-row"><span class="scenario-lbl">🛑 Стоп (0.860):</span><span class="scenario-val c-red">${c.long_normal.sl} $ <span class="payout-val-red">(-$${ln_grid.loss_total})</span></span></div>
                         </div>
                     </div>
 
@@ -1027,14 +1045,14 @@ function renderCards(data) {
                     <!-- 3. ВХОД ОТ 0.618 -->
                     <div class="scenario-box" style="border-left: 3px solid var(--blue);">
                         <div class="scenario-header">
-                            <div class="scenario-title c-blue">🔹 Вход от 0.618 (2x)</div>
-                            <div class="scenario-coins"><span class="coins-tag">${ln_grid.q2_fmt} ${coinTicker}</span> <span class="margin-subtext">($${ln_grid.margin2})</span></div>
+                            <div class="scenario-title c-blue">🔹 Вход только от 0.618</div>
+                            <div class="scenario-coins"><span class="coins-tag">${ln_grid.q_solo2_fmt} ${coinTicker}</span> <span class="margin-subtext">($${ln_grid.margin_solo2})</span></div>
                         </div>
                         <div class="scenario-grid">
                             <div class="scenario-row"><span class="scenario-lbl">🔹 Вход (0.618):</span><span class="scenario-val c-blue">${c.long_normal.entry_0618} $</span></div>
                             <div class="scenario-row"><span class="scenario-lbl">🎯 Тейк (0.500):</span><span class="scenario-val c-green">${c.long_normal.tp_0500} $ <span class="payout-val-green">(+$${ln_pnl_only2_to_500})</span></span></div>
                             <div class="scenario-row"><span class="scenario-lbl">🎯 Тейк (0.382):</span><span class="scenario-val c-green">${c.long_normal.tp_0382} $ <span class="payout-val-green">(+$${ln_pnl_only2_to_382})</span></span></div>
-                            <div class="scenario-row"><span class="scenario-lbl">🛑 Стоп (0.860):</span><span class="scenario-val c-red">${c.long_normal.sl} $ <span class="payout-val-red">(-$${ln_grid.loss_if_only_2})</span></span></div>
+                            <div class="scenario-row"><span class="scenario-lbl">🛑 Стоп (0.860):</span><span class="scenario-val c-red">${c.long_normal.sl} $ <span class="payout-val-red">(-$${ln_grid.loss_total})</span></span></div>
                         </div>
                     </div>
 
@@ -1055,13 +1073,13 @@ function renderCards(data) {
                     <!-- 1. ВХОД ОТ 0.5 -->
                     <div class="scenario-box" style="border-left: 3px solid var(--orange);">
                         <div class="scenario-header">
-                            <div class="scenario-title c-orange">🔹 Вход в Short от 0.5 (1x)</div>
-                            <div class="scenario-coins"><span class="coins-tag">${sn_grid.q1_fmt} ${coinTicker}</span> <span class="margin-subtext">($${sn_grid.margin1})</span></div>
+                            <div class="scenario-title c-orange">🔹 Вход в Short только от 0.5</div>
+                            <div class="scenario-coins"><span class="coins-tag">${sn_grid.q_solo1_fmt} ${coinTicker}</span> <span class="margin-subtext">($${sn_grid.margin_solo1})</span></div>
                         </div>
                         <div class="scenario-grid">
                             <div class="scenario-row"><span class="scenario-lbl">🔹 Вход (0.500):</span><span class="scenario-val c-orange">${c.short_normal.entry_050} $</span></div>
                             <div class="scenario-row"><span class="scenario-lbl">🎯 Тейк (0.382):</span><span class="scenario-val c-green">${c.short_normal.tp_0382} $ <span class="payout-val-green">(+$${sn_pnl_only1_to_382})</span></span></div>
-                            <div class="scenario-row"><span class="scenario-lbl">🛑 Стоп (0.860):</span><span class="scenario-val c-red">${c.short_normal.sl} $ <span class="payout-val-red">(-$${sn_grid.loss_if_only_1})</span></span></div>
+                            <div class="scenario-row"><span class="scenario-lbl">🛑 Стоп (0.860):</span><span class="scenario-val c-red">${c.short_normal.sl} $ <span class="payout-val-red">(-$${sn_grid.loss_total})</span></span></div>
                         </div>
                     </div>
 
@@ -1084,14 +1102,14 @@ function renderCards(data) {
                     <!-- 3. ВХОД ОТ 0.618 -->
                     <div class="scenario-box" style="border-left: 3px solid var(--red);">
                         <div class="scenario-header">
-                            <div class="scenario-title c-red">🔹 Вход в Short от 0.618 (2x)</div>
-                            <div class="scenario-coins"><span class="coins-tag">${sn_grid.q2_fmt} ${coinTicker}</span> <span class="margin-subtext">($${sn_grid.margin2})</span></div>
+                            <div class="scenario-title c-red">🔹 Вход в Short только от 0.618</div>
+                            <div class="scenario-coins"><span class="coins-tag">${sn_grid.q_solo2_fmt} ${coinTicker}</span> <span class="margin-subtext">($${sn_grid.margin_solo2})</span></div>
                         </div>
                         <div class="scenario-grid">
                             <div class="scenario-row"><span class="scenario-lbl">🔹 Вход (0.618):</span><span class="scenario-val c-red">${c.short_normal.entry_0618} $</span></div>
                             <div class="scenario-row"><span class="scenario-lbl">🎯 Тейк (0.500):</span><span class="scenario-val c-green">${c.short_normal.tp_0500} $ <span class="payout-val-green">(+$${sn_pnl_only2_to_500})</span></span></div>
                             <div class="scenario-row"><span class="scenario-lbl">🎯 Тейк (0.382):</span><span class="scenario-val c-green">${c.short_normal.tp_0382} $ <span class="payout-val-green">(+$${sn_pnl_only2_to_382})</span></span></div>
-                            <div class="scenario-row"><span class="scenario-lbl">🛑 Стоп (0.860):</span><span class="scenario-val c-red">${c.short_normal.sl} $ <span class="payout-val-red">(-$${sn_grid.loss_if_only_2})</span></span></div>
+                            <div class="scenario-row"><span class="scenario-lbl">🛑 Стоп (0.860):</span><span class="scenario-val c-red">${c.short_normal.sl} $ <span class="payout-val-red">(-$${sn_grid.loss_total})</span></span></div>
                         </div>
                     </div>
 
@@ -1112,14 +1130,14 @@ function renderCards(data) {
                     <!-- 1. ВХОД ОТ 1.618 -->
                     <div class="scenario-box" style="border-left: 3px solid var(--purple);">
                         <div class="scenario-header">
-                            <div class="scenario-title c-purple">🟣 Вход от 1.618 (1x)</div>
-                            <div class="scenario-coins"><span class="coins-tag">${lm_grid.q1_fmt} ${coinTicker}</span> <span class="margin-subtext">($${lm_grid.margin1})</span></div>
+                            <div class="scenario-title c-purple">🟣 Вход только от 1.618</div>
+                            <div class="scenario-coins"><span class="coins-tag">${lm_grid.q_solo1_fmt} ${coinTicker}</span> <span class="margin-subtext">($${lm_grid.margin_solo1})</span></div>
                         </div>
                         <div class="scenario-grid">
                             <div class="scenario-row"><span class="scenario-lbl">🔹 Вход (1.618):</span><span class="scenario-val c-purple">${c.long_manip.entry_1} $</span></div>
                             <div class="scenario-row"><span class="scenario-lbl">🎯 Тейк-1 (0.618):</span><span class="scenario-val c-green">${c.long_manip.tp_1} $ <span class="payout-val-green">(+$${lm_pnl_only1_tp1})</span></span></div>
                             <div class="scenario-row"><span class="scenario-lbl">🎯 Тейк-2 (0.500):</span><span class="scenario-val c-cyan">${c.long_manip.tp_2} $ <span class="payout-val-cyan">(+$${lm_pnl_only1_tp2})</span></span></div>
-                            <div class="scenario-row"><span class="scenario-lbl">🛑 Стоп (${c.long_manip.sl_fib} Fib):</span><span class="scenario-val c-red">${c.long_manip.sl} $ <span class="payout-val-red">(-$${lm_grid.loss_if_only_1})</span></span></div>
+                            <div class="scenario-row"><span class="scenario-lbl">🛑 Стоп (${c.long_manip.sl_fib} Fib):</span><span class="scenario-val c-red">${c.long_manip.sl} $ <span class="payout-val-red">(-$${lm_grid.loss_total})</span></span></div>
                         </div>
                     </div>
 
