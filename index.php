@@ -190,20 +190,20 @@ if (isset($_GET['ajax'])) {
         $short_time = $impSN ? $impSN['end_time'] : 0;
 
         // Long Normal
-        // Карта исторического винрейта (90 дней со стопом 0.860 Fib)
+        // Карта исторического винрейта на 18-месячной истории (13 000 свечей 1H)
         $coinStats = [
-            'CAKEUSDT' => ['wr_normal' => '88.2%', 'wr_manip' => '83.3%', 'sl_fib' => 2.395, 'rr' => '1:2.4'],
-            'LINKUSDT' => ['wr_normal' => '86.8%', 'wr_manip' => '81.0%', 'sl_fib' => 2.395, 'rr' => '1:2.4'],
-            'XRPUSDT'  => ['wr_normal' => '89.6%', 'wr_manip' => '78.3%', 'sl_fib' => 2.500, 'rr' => '1:2.0'],
-            'HYPEUSDT' => ['wr_normal' => '87.9%', 'wr_manip' => '79.0%', 'sl_fib' => 2.291, 'rr' => '1:3.0'],
-            'SUIUSDT'  => ['wr_normal' => '87.8%', 'wr_manip' => '74.8%', 'sl_fib' => 2.291, 'rr' => '1:3.0'],
-            'UNIUSDT'  => ['wr_normal' => '87.0%', 'wr_manip' => '76.0%', 'sl_fib' => 2.395, 'rr' => '1:2.4'],
-            'NEARUSDT' => ['wr_normal' => '86.2%', 'wr_manip' => '77.3%', 'sl_fib' => 2.395, 'rr' => '1:2.4'],
+            'CAKEUSDT' => ['wr_normal' => '89.7%', 'wr_manip' => '65.5%', 'sl_fib' => 2.618, 'rr' => '1:2.4'],
+            'XRPUSDT'  => ['wr_normal' => '89.4%', 'wr_manip' => '64.2%', 'sl_fib' => 2.618, 'rr' => '1:2.0'],
+            'SUIUSDT'  => ['wr_normal' => '88.2%', 'wr_manip' => '65.5%', 'sl_fib' => 2.618, 'rr' => '1:3.0'],
+            'UNIUSDT'  => ['wr_normal' => '87.9%', 'wr_manip' => '63.3%', 'sl_fib' => 2.618, 'rr' => '1:2.4'],
+            'LINKUSDT' => ['wr_normal' => '87.7%', 'wr_manip' => '70.6%', 'sl_fib' => 2.618, 'rr' => '1:2.4'],
+            'DOGEUSDT' => ['wr_normal' => '87.5%', 'wr_manip' => '69.8%', 'sl_fib' => 2.618, 'rr' => '1:2.4'],
+            'AVAXUSDT' => ['wr_normal' => '86.6%', 'wr_manip' => '57.9%', 'sl_fib' => 2.618, 'rr' => '1:3.0'],
+            'NEARUSDT' => ['wr_normal' => '85.4%', 'wr_manip' => '63.0%', 'sl_fib' => 2.618, 'rr' => '1:2.4'],
+            'HYPEUSDT' => ['wr_normal' => '87.9%', 'wr_manip' => '62.5%', 'sl_fib' => 2.291, 'rr' => '1:3.0'],
+            'ICPUSDT'  => ['wr_normal' => '86.5%', 'wr_manip' => '63.2%', 'sl_fib' => 2.337, 'rr' => '1:2.7'],
             'GRAMUSDT' => ['wr_normal' => '93.2%', 'wr_manip' => '80.0%', 'sl_fib' => 2.291, 'rr' => '1:3.0'],
-            'DOGEUSDT' => ['wr_normal' => '87.4%', 'wr_manip' => '79.0%', 'sl_fib' => 2.395, 'rr' => '1:2.4'],
-            'ICPUSDT'  => ['wr_normal' => '86.5%', 'wr_manip' => '73.7%', 'sl_fib' => 2.337, 'rr' => '1:2.7'],
-            'ENAUSDT'  => ['wr_normal' => '82.0%', 'wr_manip' => '74.8%', 'sl_fib' => 2.291, 'rr' => '1:3.0'],
-            'AVAXUSDT' => ['wr_normal' => '84.6%', 'wr_manip' => '74.6%', 'sl_fib' => 2.291, 'rr' => '1:3.0']
+            'ENAUSDT'  => ['wr_normal' => '82.0%', 'wr_manip' => '66.7%', 'sl_fib' => 2.291, 'rr' => '1:3.0']
         ];
         $stats = isset($coinStats[$sym]) ? $coinStats[$sym] : ['wr_normal' => '85%', 'wr_manip' => '75%', 'sl_fib' => 2.500, 'rr' => '1:2.0'];
         $card['wr_normal'] = $stats['wr_normal'];
@@ -1212,18 +1212,18 @@ function renderCards(data) {
 }
 
 const ALL_AVAILABLE_COINS = [
-    { sym: 'CAKEUSDT', name: 'CAKE', wr_n: '88.2%', wr_m: '83.3%' },
-    { sym: 'XRPUSDT',  name: 'XRP',  wr_n: '89.6%', wr_m: '78.3%' },
-    { sym: 'HYPEUSDT', name: 'HYPE', wr_n: '87.9%', wr_m: '79.0%' },
-    { sym: 'SUIUSDT',  name: 'SUI',  wr_n: '87.8%', wr_m: '74.8%' },
-    { sym: 'DOGEUSDT', name: 'DOGE', wr_n: '87.4%', wr_m: '79.0%' },
-    { sym: 'UNIUSDT',  name: 'UNI',  wr_n: '87.0%', wr_m: '76.0%' },
-    { sym: 'LINKUSDT', name: 'LINK', wr_n: '86.8%', wr_m: '81.0%' },
-    { sym: 'ICPUSDT',  name: 'ICP',  wr_n: '86.5%', wr_m: '73.7%' },
-    { sym: 'NEARUSDT', name: 'NEAR', wr_n: '86.2%', wr_m: '77.3%' },
-    { sym: 'AVAXUSDT', name: 'AVAX', wr_n: '84.6%', wr_m: '74.6%' },
+    { sym: 'CAKEUSDT', name: 'CAKE', wr_n: '89.7%', wr_m: '65.5%' },
+    { sym: 'XRPUSDT',  name: 'XRP',  wr_n: '89.4%', wr_m: '64.2%' },
+    { sym: 'SUIUSDT',  name: 'SUI',  wr_n: '88.2%', wr_m: '65.5%' },
+    { sym: 'UNIUSDT',  name: 'UNI',  wr_n: '87.9%', wr_m: '63.3%' },
+    { sym: 'HYPEUSDT', name: 'HYPE', wr_n: '87.9%', wr_m: '62.5%' },
+    { sym: 'LINKUSDT', name: 'LINK', wr_n: '87.7%', wr_m: '70.6%' },
+    { sym: 'DOGEUSDT', name: 'DOGE', wr_n: '87.5%', wr_m: '69.8%' },
+    { sym: 'AVAXUSDT', name: 'AVAX', wr_n: '86.6%', wr_m: '57.9%' },
+    { sym: 'ICPUSDT',  name: 'ICP',  wr_n: '86.5%', wr_m: '63.2%' },
+    { sym: 'NEARUSDT', name: 'NEAR', wr_n: '85.4%', wr_m: '63.0%' },
     { sym: 'GRAMUSDT', name: 'GRAM', wr_n: '93.2%', wr_m: '80.0%' },
-    { sym: 'ENAUSDT',  name: 'ENA',  wr_n: '82.0%', wr_m: '74.8%' }
+    { sym: 'ENAUSDT',  name: 'ENA',  wr_n: '82.0%', wr_m: '66.7%' }
 ];
 
 let selectedCoins = JSON.parse(localStorage.getItem('dca_selected_coins') || 'null');
