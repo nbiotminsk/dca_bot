@@ -11,7 +11,7 @@
 error_reporting(E_ALL & ~E_DEPRECATED);
 date_default_timezone_set('Europe/Moscow'); // UTC+3
 
-$symbols = ['HYPEUSDT', 'NEARUSDT', 'UNIUSDT'];
+$symbols = ['HYPEUSDT', 'NEARUSDT', 'UNIUSDT', 'SUIUSDT'];
 $MIN_IMP_MANIP  = 1.0;
 $MIN_IMP_NORMAL = 3.5;
 
@@ -232,7 +232,8 @@ if (isset($_GET['ajax'])) {
         $coinManipConfig = [
             'UNIUSDT'  => ['sl_fib' => 2.395, 'rr' => '1:2.4'],
             'NEARUSDT' => ['sl_fib' => 2.395, 'rr' => '1:2.4'],
-            'HYPEUSDT' => ['sl_fib' => 2.291, 'rr' => '1:3.0']
+            'HYPEUSDT' => ['sl_fib' => 2.291, 'rr' => '1:3.0'],
+            'SUIUSDT'  => ['sl_fib' => 2.291, 'rr' => '1:3.0']
         ];
         $sl_fib_opt = isset($coinManipConfig[$sym]) ? $coinManipConfig[$sym]['sl_fib'] : 2.500;
         $rr_label_opt = isset($coinManipConfig[$sym]) ? $coinManipConfig[$sym]['rr'] : '1:2.0';
