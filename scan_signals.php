@@ -14,7 +14,7 @@ date_default_timezone_set('Europe/Moscow'); // UTC+3
 
 $symbols = ['HYPEUSDT', 'NEARUSDT', 'UNIUSDT', 'SUIUSDT', 'ICPUSDT', 'ENAUSDT', 'AVAXUSDT', 'XRPUSDT', 'LINKUSDT', 'DOGEUSDT', 'GRAMUSDT'];
 $MIN_IMP_MANIP  = 1.0;
-$MIN_IMP_NORMAL = 3.5;
+$MIN_IMP_NORMAL = 2.0;
 
 function fetchBybitKlines($symbol, $interval = '60', $limit = 100) {
     $url = "https://api.bybit.com/v5/market/kline?category=linear&symbol={$symbol}&interval={$interval}&limit={$limit}";
@@ -211,7 +211,7 @@ foreach ($symbols as $sym) {
         $tS = date('d.m H:i', (int)($impLongNormal['start_time'] / 1000));
         $tE = date('d.m H:i', (int)($impLongNormal['end_time'] / 1000));
 
-        echo "  [1] 🟢 LONG ОБЫЧНЫЙ (Сетка 0.500 / 0.618) [Импульс ≥ 3.5%]:\n";
+        echo "  [1] 🟢 LONG ОБЫЧНЫЙ (Сетка 0.500 / 0.618) [Импульс ≥ 2.0%]:\n";
         echo "      • Волна: {$tS} → {$tE} (Дно: " . fmtPrice($l, $sym) . "$ | Пик: " . fmtPrice($h, $sym) . "$ | Рост: +" . number_format($impLongNormal['pct'], 2) . "%)\n";
         echo "      • 🔹 Вход-1 (0.500 Fib) 1x    : " . fmtPrice($in050, $sym) . " $\n";
         echo "      • 🔹 Вход-2 / DCA (0.618) 2x  : " . fmtPrice($in0618, $sym) . " $\n";
@@ -220,7 +220,7 @@ foreach ($symbols as $sym) {
         echo "      • 🛑 Стоп (0.710 Fib)         : " . fmtPrice($sl0710, $sym) . " $\n";
         echo "      • 👉 Статус                   : {$status}\n";
     } else {
-        echo "  [1] 🟢 LONG ОБЫЧНЫЙ (Импульс ≥ 3.5%):\n      • Нет импульса ≥ 3.5%\n";
+        echo "  [1] 🟢 LONG ОБЫЧНЫЙ (Импульс ≥ 2.0%):\n      • Нет импульса ≥ 2.0%\n";
     }
 
     echo "  --------------------------------------------------------------------------------------\n";
@@ -244,7 +244,7 @@ foreach ($symbols as $sym) {
         $tS = date('d.m H:i', (int)($impShortNormal['start_time'] / 1000));
         $tE = date('d.m H:i', (int)($impShortNormal['end_time'] / 1000));
 
-        echo "  [2] 🔴 SHORT ОБЫЧНЫЙ (Сетка 0.500 / 0.618) [Дамп-импульс ≥ 3.5%]:\n";
+        echo "  [2] 🔴 SHORT ОБЫЧНЫЙ (Сетка 0.500 / 0.618) [Дамп-импульс ≥ 2.0%]:\n";
         echo "      • Волна: {$tS} → {$tE} (Пик: " . fmtPrice($h, $sym) . "$ | Дно: " . fmtPrice($l, $sym) . "$ | Падение: -" . number_format($impShortNormal['pct'], 2) . "%)\n";
         echo "      • 🔹 Вход-1 в Short (0.500)   : " . fmtPrice($in050, $sym) . " $\n";
         echo "      • 🔹 Вход-2 в Short (0.618)   : " . fmtPrice($in0618, $sym) . " $\n";
@@ -253,7 +253,7 @@ foreach ($symbols as $sym) {
         echo "      • 🛑 Стоп (0.710 Fib)         : " . fmtPrice($sl0710, $sym) . " $\n";
         echo "      • 👉 Статус                   : {$status}\n";
     } else {
-        echo "  [2] 🔴 SHORT ОБЫЧНЫЙ:\n      • Нет дамп-импульса ≥ 3.5%\n";
+        echo "  [2] 🔴 SHORT ОБЫЧНЫЙ:\n      • Нет дамп-импульса ≥ 2.0%\n";
     }
 
     echo "  --------------------------------------------------------------------------------------\n";

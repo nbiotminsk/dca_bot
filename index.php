@@ -21,7 +21,7 @@ if (isset($_GET['symbols']) && !empty($_GET['symbols'])) {
     }
 }
 $MIN_IMP_MANIP  = 1.0;
-$MIN_IMP_NORMAL = 3.5;
+$MIN_IMP_NORMAL = 2.0;
 
 function fetchBybitKlines($symbol, $interval = '60', $limit = 100) {
     $url = "https://api.bybit.com/v5/market/kline?category=linear&symbol={$symbol}&interval={$interval}&limit={$limit}";
