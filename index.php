@@ -177,6 +177,21 @@ if (isset($_GET['ajax'])) {
         $short_time = $impSN ? $impSN['end_time'] : 0;
 
         // Long Normal
+        // Карта исторического винрейта (2 года истории)
+        $coinStats = [
+            'UNIUSDT'  => ['wr_normal' => '76.0%', 'wr_manip' => '76.0%', 'sl_fib' => 2.395, 'rr' => '1:2.4'],
+            'NEARUSDT' => ['wr_normal' => '79.6%', 'wr_manip' => '77.3%', 'sl_fib' => 2.395, 'rr' => '1:2.4'],
+            'HYPEUSDT' => ['wr_normal' => '79.0%', 'wr_manip' => '79.0%', 'sl_fib' => 2.291, 'rr' => '1:3.0'],
+            'SUIUSDT'  => ['wr_normal' => '86.6%', 'wr_manip' => '74.8%', 'sl_fib' => 2.291, 'rr' => '1:3.0'],
+            'ICPUSDT'  => ['wr_normal' => '86.5%', 'wr_manip' => '73.7%', 'sl_fib' => 2.337, 'rr' => '1:2.7'],
+            'ENAUSDT'  => ['wr_normal' => '82.0%', 'wr_manip' => '74.8%', 'sl_fib' => 2.291, 'rr' => '1:3.0'],
+            'AVAXUSDT' => ['wr_normal' => '84.6%', 'wr_manip' => '74.6%', 'sl_fib' => 2.291, 'rr' => '1:3.0'],
+            'XRPUSDT'  => ['wr_normal' => '89.6%', 'wr_manip' => '78.3%', 'sl_fib' => 2.500, 'rr' => '1:2.0']
+        ];
+        $stats = isset($coinStats[$sym]) ? $coinStats[$sym] : ['wr_normal' => '80%', 'wr_manip' => '75%', 'sl_fib' => 2.500, 'rr' => '1:2.0'];
+        $card['wr_normal'] = $stats['wr_normal'];
+        $card['wr_manip']  = $stats['wr_manip'];
+
         if ($impLN) {
             $in050  = calcFibLongLog($impLN['high'], $impLN['low'], 0.500);
             $in0618 = calcFibLongLog($impLN['high'], $impLN['low'], 0.618);
@@ -198,7 +213,8 @@ if (isset($_GET['ajax'])) {
                 'pct'          => number_format($impLN['pct'], 2),
                 'active'       => ($curPrice <= $in050 && $curPrice > $sl0710),
                 'time'         => date('d.m H:i', (int)($impLN['end_time'] / 1000)),
-                'is_fresher'   => ($long_time >= $short_time)
+                'is_fresher'   => ($long_time >= $short_time),
+                'wr'           => $stats['wr_normal']
             ];
         }
 
@@ -224,30 +240,18 @@ if (isset($_GET['ajax'])) {
                 'pct'          => number_format($impSN['pct'], 2),
                 'active'       => ($curPrice >= $in050 && $curPrice < $sl0710),
                 'time'         => date('d.m H:i', (int)($impSN['end_time'] / 1000)),
-                'is_fresher'   => ($short_time > $long_time)
+                'is_fresher'   => ($short_time > $long_time),
+                'wr'           => $stats['wr_normal']
             ];
         }
 
-        // Long Manip (Индивидуальный оптимальный стоп и R:R под характер каждой монеты на 2-летней истории)
-        $coinManipConfig = [
-            'UNIUSDT'  => ['sl_fib' => 2.395, 'rr' => '1:2.4'],
-            'NEARUSDT' => ['sl_fib' => 2.395, 'rr' => '1:2.4'],
-            'HYPEUSDT' => ['sl_fib' => 2.291, 'rr' => '1:3.0'],
-            'SUIUSDT'  => ['sl_fib' => 2.291, 'rr' => '1:3.0'],
-            'ICPUSDT'  => ['sl_fib' => 2.337, 'rr' => '1:2.7'],
-            'ENAUSDT'  => ['sl_fib' => 2.291, 'rr' => '1:3.0'],
-            'AVAXUSDT' => ['sl_fib' => 2.291, 'rr' => '1:3.0'],
-            'XRPUSDT'  => ['sl_fib' => 2.500, 'rr' => '1:2.0']
-        ];
-        $sl_fib_opt = isset($coinManipConfig[$sym]) ? $coinManipConfig[$sym]['sl_fib'] : 2.500;
-        $rr_label_opt = isset($coinManipConfig[$sym]) ? $coinManipConfig[$sym]['rr'] : '1:2.0';
-
+        // Long Manip
         if ($impLM) {
             $m1 = calcFibLongLog($impLM['high'], $impLM['low'], 1.618);
             $m2 = calcFibLongLog($impLM['high'], $impLM['low'], 2.000);
             $tp1 = calcFibLongLog($impLM['high'], $impLM['low'], 0.618);
             $tp2 = calcFibLongLog($impLM['high'], $impLM['low'], 0.500);
-            $sl_opt = calcFibLongLog($impLM['high'], $impLM['low'], $sl_fib_opt);
+            $sl_opt = calcFibLongLog($impLM['high'], $impLM['low'], $stats['sl_fib']);
 
             $card['long_manip'] = [
                 'entry_1'      => fmt3($m1),
@@ -260,11 +264,12 @@ if (isset($_GET['ajax'])) {
                 'raw_tp2'      => (float)$tp2,
                 'sl'           => fmt3($sl_opt),
                 'raw_sl'       => (float)$sl_opt,
-                'sl_fib'       => $sl_fib_opt,
-                'rr_label'     => $rr_label_opt,
+                'sl_fib'       => $stats['sl_fib'],
+                'rr_label'     => $stats['rr'],
                 'pct'          => number_format($impLM['pct'], 2),
                 'active'       => ($curPrice <= $m1 && $curPrice > $sl_opt),
-                'time'         => date('d.m H:i', (int)($impLM['end_time'] / 1000))
+                'time'         => date('d.m H:i', (int)($impLM['end_time'] / 1000)),
+                'wr'           => $stats['wr_manip']
             ];
         }
 
@@ -423,7 +428,8 @@ if (isset($_GET['ajax'])) {
         .verdict-box { background: rgba(255,255,255,0.06); border-radius: 8px; padding: 8px 10px; margin-bottom: 14px; text-align: center; font-weight: 800; font-size: 13px; border: 1px solid var(--border); }
 
         .block { background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 0; display: flex; flex-direction: column; justify-content: space-between; }
-        .block-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; display: flex; justify-content: space-between; }
+        .block-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }
+        .badge-wr { background: rgba(0, 230, 118, 0.15); color: var(--green); border: 1px solid rgba(0, 230, 118, 0.3); padding: 1px 6px; border-radius: 4px; font-size: 11px; font-weight: 800; letter-spacing: 0; }
         
         .table-levels { width: 100%; border-collapse: collapse; font-size: 14.5px; font-family: monospace; }
         .table-levels td { padding: 5px 0; vertical-align: middle; }
@@ -724,7 +730,7 @@ function renderCards(data) {
             <!-- 1. LONG NORMAL -->
             <div class="block" style="border-left: 3px solid var(--blue); opacity: ${!c.long_normal.is_fresher ? '0.6' : '1.0'};">
                 <div class="block-title c-blue">
-                    🟢 LONG ОБЫЧНЫЙ (Сетка 0.500 / 0.618) 
+                    <span>🟢 LONG ОБЫЧНЫЙ (0.5 / 0.618) <span class="badge-wr">WR ${c.long_normal.wr}</span></span>
                     <span style="font-size:10px; color:var(--text-dim);">${c.long_normal.time}</span>
                 </div>
                 <table class="table-levels">
@@ -794,7 +800,7 @@ function renderCards(data) {
             <!-- 2. SHORT NORMAL -->
             <div class="block" style="border-left: 3px solid var(--red); opacity: ${!c.short_normal.is_fresher ? '0.6' : '1.0'};">
                 <div class="block-title c-red">
-                    🔴 SHORT ОБЫЧНЫЙ (Сетка 0.500 / 0.618)
+                    <span>🔴 SHORT ОБЫЧНЫЙ (0.5 / 0.618) <span class="badge-wr">WR ${c.short_normal.wr}</span></span>
                     <span style="font-size:10px; color:var(--text-dim);">${c.short_normal.time}</span>
                 </div>
                 <table class="table-levels">
@@ -864,7 +870,7 @@ function renderCards(data) {
             <!-- 3. LONG MANIPULATION -->
             <div class="block" style="border-left: 3px solid var(--purple);">
                 <div class="block-title c-purple">
-                    🟣 МАНИПУЛЯЦИЯ (1.618 + 2.0 DCA)
+                    <span>🟣 МАНИПУЛЯЦИЯ (1.618+2.0) <span class="badge-wr">WR ${c.long_manip.wr}</span></span>
                     <span style="font-size:10px; color:var(--text-dim);">${c.long_manip.time}</span>
                 </div>
                 <table class="table-levels">
