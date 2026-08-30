@@ -2,7 +2,7 @@
 /**
  * Live Web Screener & Signal Scanner с Риск-Калькулятором Позиций
  * Монеты: HYPEUSDT, NEARUSDT, UNIUSDT
- * Автоматический расчет объемов входа ($ и монеты) на основе депозита, риска в % и плеча.
+ * Автоматический расчет объемов входа (в КОЛИЧЕСТВЕ МОНЕТ и $) на основе депозита, риска в % и плеча.
  */
 
 error_reporting(E_ALL & ~E_DEPRECATED);
@@ -262,7 +262,7 @@ if (isset($_GET['ajax'])) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mon 1H Terminal & Risk Calculator</title>
+    <title>Mon 1H Terminal & Coin Calculator</title>
     <style>
         :root {
             --bg: #0d0e12;
@@ -300,7 +300,7 @@ if (isset($_GET['ajax'])) {
         .badge-live::before { content: ""; width: 8px; height: 8px; background: var(--green); border-radius: 50%; animation: pulse 1.5s infinite; }
         @keyframes pulse { 0% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(1.2); } 100% { opacity: 1; transform: scale(1); } }
 
-        /* Калькулятор Риска */
+        /* Панель Калькулятора */
         .calc-panel {
             background: #1a1d26;
             border: 1px solid #2e3447;
@@ -335,20 +335,28 @@ if (isset($_GET['ajax'])) {
         .block-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; display: flex; justify-content: space-between; }
         
         .table-levels { width: 100%; border-collapse: collapse; font-size: 13px; font-family: monospace; }
-        .table-levels td { padding: 3px 0; }
+        .table-levels td { padding: 4px 0; }
         .table-levels td:last-child { text-align: right; font-weight: 700; }
         .lbl { color: var(--text-dim); font-size: 12px; }
         
-        .money-tag {
+        /* Бейдж точного количества монет для ввода на бирже */
+        .coins-tag {
             display: inline-block;
-            background: rgba(255, 214, 0, 0.15);
-            color: var(--yellow);
-            padding: 1px 6px;
-            border-radius: 4px;
-            font-size: 11px;
+            background: #ffd600;
+            color: #000;
+            padding: 2px 7px;
+            border-radius: 5px;
+            font-size: 12px;
             font-weight: 800;
             margin-left: 6px;
-            border: 1px solid rgba(255, 214, 0, 0.3);
+            box-shadow: 0 2px 8px rgba(255,214,0,0.25);
+        }
+        .margin-subtext {
+            display: inline-block;
+            color: var(--text-dim);
+            font-size: 11px;
+            font-weight: 600;
+            margin-left: 4px;
         }
 
         .status-pill { display: block; text-align: center; padding: 5px; border-radius: 6px; font-size: 11px; font-weight: 700; margin-top: 8px; }
@@ -383,7 +391,7 @@ if (isset($_GET['ajax'])) {
 <!-- 🧮 ПАНЕЛЬ РИСК-КАЛЬКУЛЯТОРА -->
 <div class="calc-panel">
     <div class="calc-title">
-        <span>🧮 Риск-Калькулятор Позиций</span>
+        <span>🧮 Риск-Калькулятор (Расчет в монетах и $)</span>
     </div>
     <div class="calc-inputs">
         <div class="calc-field">
@@ -447,33 +455,45 @@ function saveAndRecalc() {
     }
 }
 
+// Форматирование количества монет (целое или дробное)
+function fmtCoinQty(qty) {
+    if (qty >= 100) return qty.toFixed(1);
+    if (qty >= 10) return qty.toFixed(2);
+    return qty.toFixed(3);
+}
+
+// Расчет точного количества монет и маржи позиции
 function calculatePosition(entryPrice, stopPrice, isManip = false) {
     const dep = parseFloat(document.getElementById('cfg-deposit').value) || 1000;
     const rsk = parseFloat(document.getElementById('cfg-risk').value) || 2.0;
     const lev = parseFloat(document.getElementById('cfg-leverage').value) || 1;
 
     if (isManip) {
+        // Для манипуляции выделяем долю от депозита
         const totalPosDollar = (dep * 0.15) * lev;
         const lot1Dollar = totalPosDollar * (1 / 3);
         const lot2Dollar = totalPosDollar * (2 / 3);
+        const qty1 = entryPrice > 0 ? (lot1Dollar / entryPrice) : 0;
         return {
+            lot1_qty: fmtCoinQty(qty1),
             lot1_usd: lot1Dollar.toFixed(1),
-            lot2_usd: lot2Dollar.toFixed(1),
-            margin_usd: (totalPosDollar / lev).toFixed(1)
+            lot2_usd: lot2Dollar.toFixed(1)
         };
     }
 
-    if (!entryPrice || !stopPrice) return { margin_usd: "0", stop_pct: "0" };
+    if (!entryPrice || !stopPrice) return { qty: "0", margin_usd: "0", stop_pct: "0" };
 
     const maxRiskDollar = dep * (rsk / 100.0);
     const stopDistancePct = Math.abs((entryPrice - stopPrice) / entryPrice);
-    if (stopDistancePct <= 0.0001) return { margin_usd: "0", stop_pct: "0" };
+    if (stopDistancePct <= 0.0001) return { qty: "0", margin_usd: "0", stop_pct: "0" };
 
+    // Размер позиции в $ и в монетах
     const totalPosDollar = maxRiskDollar / stopDistancePct;
+    const coinQty = totalPosDollar / entryPrice;
     const marginDollar = totalPosDollar / lev;
 
     return {
-        pos_usd: totalPosDollar.toFixed(1),
+        qty: fmtCoinQty(coinQty),
         margin_usd: marginDollar.toFixed(1),
         stop_pct: (stopDistancePct * 100).toFixed(2)
     };
@@ -483,29 +503,36 @@ function renderCards(data) {
     if (!data || !data.items) return;
     let html = '';
     data.items.forEach(c => {
-        let ln_calc_050 = { margin_usd: "0", stop_pct: "0" };
-        let ln_calc_0618 = { margin_usd: "0", stop_pct: "0" };
+        const coinTicker = c.symbol.replace('USDT', '');
+
+        // Расчет монет для Long Normal
+        let ln_calc_050 = { qty: "0", margin_usd: "0", stop_pct: "0" };
+        let ln_calc_0618 = { qty: "0", margin_usd: "0", stop_pct: "0" };
         if (c.long_normal) {
             ln_calc_050 = calculatePosition(c.long_normal.raw_e050, c.long_normal.raw_sl);
             ln_calc_0618 = calculatePosition(c.long_normal.raw_e0618, c.long_normal.raw_sl);
         }
 
-        let sn_calc_050 = { margin_usd: "0", stop_pct: "0" };
-        let sn_calc_0618 = { margin_usd: "0", stop_pct: "0" };
+        // Расчет монет для Short Normal
+        let sn_calc_050 = { qty: "0", margin_usd: "0", stop_pct: "0" };
+        let sn_calc_0618 = { qty: "0", margin_usd: "0", stop_pct: "0" };
         if (c.short_normal) {
             sn_calc_050 = calculatePosition(c.short_normal.raw_e050, c.short_normal.raw_sl);
             sn_calc_0618 = calculatePosition(c.short_normal.raw_e0618, c.short_normal.raw_sl);
         }
 
-        let lm_calc = { lot1_usd: "0", lot2_usd: "0" };
+        // Расчет монет для Long Manip
+        let lm_calc = { lot1_qty: "0", lot1_usd: "0", lot2_usd: "0" };
+        let lm_calc_2 = { lot1_qty: "0" };
         if (c.long_manip) {
             lm_calc = calculatePosition(c.long_manip.raw_e1, 0, true);
+            lm_calc_2 = calculatePosition(c.long_manip.raw_e2, 0, true);
         }
 
         html += `
         <div class="coin-card">
             <div class="coin-header">
-                <div class="coin-title">${c.symbol.replace('USDT', '')}<span style="color:var(--text-dim); font-size:13px;"> / USDT</span></div>
+                <div class="coin-title">${coinTicker}<span style="color:var(--text-dim); font-size:13px;"> / USDT</span></div>
                 <div class="coin-price">${c.price} $</div>
             </div>
 
@@ -523,14 +550,16 @@ function renderCards(data) {
                         <td class="lbl">🔹 Вход-1 (0.500 Fib) 1x</td>
                         <td>
                             <span class="c-cyan">${c.long_normal.entry_050} $</span>
-                            <span class="money-tag">$${ln_calc_050.margin_usd}</span>
+                            <span class="coins-tag">${ln_calc_050.qty} ${coinTicker}</span>
+                            <span class="margin-subtext">($${ln_calc_050.margin_usd})</span>
                         </td>
                     </tr>
                     <tr>
                         <td class="lbl">🔹 Вход-2 / DCA (0.618 Fib) 2x</td>
                         <td>
                             <span class="c-blue">${c.long_normal.entry_0618} $</span>
-                            <span class="money-tag">$${ln_calc_0618.margin_usd}</span>
+                            <span class="coins-tag">${ln_calc_0618.qty} ${coinTicker}</span>
+                            <span class="margin-subtext">($${ln_calc_0618.margin_usd})</span>
                         </td>
                     </tr>
                     <tr><td class="lbl">🎯 Тейк-1 (0.500 Fib)</td><td class="c-green">${c.long_normal.tp_0500} $</td></tr>
@@ -555,14 +584,16 @@ function renderCards(data) {
                         <td class="lbl">🔹 Вход-1 в Short (0.500)</td>
                         <td>
                             <span class="c-orange">${c.short_normal.entry_050} $</span>
-                            <span class="money-tag">$${sn_calc_050.margin_usd}</span>
+                            <span class="coins-tag">${sn_calc_050.qty} ${coinTicker}</span>
+                            <span class="margin-subtext">($${sn_calc_050.margin_usd})</span>
                         </td>
                     </tr>
                     <tr>
                         <td class="lbl">🔹 Вход-2 в Short (0.618)</td>
                         <td>
                             <span class="c-red">${c.short_normal.entry_0618} $</span>
-                            <span class="money-tag">$${sn_calc_0618.margin_usd}</span>
+                            <span class="coins-tag">${sn_calc_0618.qty} ${coinTicker}</span>
+                            <span class="margin-subtext">($${sn_calc_0618.margin_usd})</span>
                         </td>
                     </tr>
                     <tr><td class="lbl">🎯 Тейк-1 (0.500 Fib)</td><td class="c-green">${c.short_normal.tp_0500} $</td></tr>
@@ -587,14 +618,16 @@ function renderCards(data) {
                         <td class="lbl">Вход (1.618) 1 лот</td>
                         <td>
                             <span class="c-purple">${c.long_manip.entry_1} $</span>
-                            <span class="money-tag">$${lm_calc.lot1_usd}</span>
+                            <span class="coins-tag">${lm_calc.lot1_qty} ${coinTicker}</span>
+                            <span class="margin-subtext">($${lm_calc.lot1_usd})</span>
                         </td>
                     </tr>
                     <tr>
                         <td class="lbl">Добор (2.000) 2 лота</td>
                         <td>
                             <span class="c-orange">${c.long_manip.entry_2} $</span>
-                            <span class="money-tag">$${lm_calc.lot2_usd}</span>
+                            <span class="coins-tag">${(parseFloat(lm_calc_2.lot1_qty) * 2).toFixed(1)} ${coinTicker}</span>
+                            <span class="margin-subtext">($${lm_calc.lot2_usd})</span>
                         </td>
                     </tr>
                     <tr><td class="lbl">🎯 Тейк-1 (0.618 Fib)</td><td class="c-green">${c.long_manip.tp_1} $</td></tr>
