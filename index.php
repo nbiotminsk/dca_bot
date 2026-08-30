@@ -617,24 +617,48 @@ if (isset($_GET['ajax'])) {
         .table-levels td:last-child { text-align: right; font-weight: 800; font-size: 15px; }
         .lbl { color: var(--text-dim); font-size: 13px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-weight: 600; }
         
-        .profit-payout-box {
-            background: rgba(0, 0, 0, 0.28);
-            border: 1px solid rgba(255, 255, 255, 0.1);
+        .scenario-box {
+            background: rgba(0, 0, 0, 0.35);
+            border: 1px solid rgba(255, 255, 255, 0.08);
             border-radius: 8px;
-            padding: 9px 12px;
-            margin-top: 10px;
-            font-family: monospace;
-            font-size: 12.5px;
+            padding: 10px 12px;
+            margin-top: 8px;
         }
-        .profit-payout-row {
+        .scenario-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 4px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            padding-bottom: 6px;
+            margin-bottom: 6px;
         }
-        .payout-val-green { color: var(--green); font-weight: 800; font-size: 13.5px; }
-        .payout-val-cyan { color: var(--cyan); font-weight: 800; font-size: 13.5px; }
-        .payout-val-red { color: var(--red); font-weight: 800; font-size: 13.5px; }
+        .scenario-title {
+            font-size: 12.5px;
+            font-weight: 800;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .scenario-coins {
+            font-size: 11.5px;
+            color: var(--text-dim);
+            font-family: monospace;
+            font-weight: 700;
+        }
+        .scenario-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            font-size: 12px;
+            font-family: monospace;
+        }
+        .scenario-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .scenario-lbl { color: var(--text-dim); font-size: 11.5px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+        .scenario-val { font-weight: 800; }
 
         .entry-val-box {
             display: flex;
@@ -970,72 +994,47 @@ function renderCards(data) {
                         <span>🟢 LONG ОБЫЧНЫЙ (0.5 / 0.618) <span class="badge-wr">WR ${c.long_normal.wr}</span></span>
                         <span style="font-size:10px; color:var(--text-dim);">${c.long_normal.time}</span>
                     </div>
-                    <table class="table-levels">
-                        <tr>
-                            <td class="lbl">🔹 Вход-1 (0.500 Fib) 1x</td>
-                            <td>
-                                <div class="entry-val-box">
-                                    <span class="price-num c-cyan">${c.long_normal.entry_050} $</span>
-                                    <div class="coins-badge-row">
-                                        <span class="coins-tag">${ln_grid.q1_fmt} ${coinTicker}</span>
-                                        <span class="margin-subtext">($${ln_grid.margin1})</span>
-                                    </div>
-                                </div>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td class="lbl">🔹 Вход-2 / DCA (0.618 Fib) 2x</td>
-                            <td>
-                                <div class="entry-val-box">
-                                    <span class="price-num c-blue">${c.long_normal.entry_0618} $</span>
-                                    <div class="coins-badge-row">
-                                        <span class="coins-tag">${ln_grid.q2_fmt} ${coinTicker}</span>
-                                        <span class="margin-subtext">($${ln_grid.margin2})</span>
-                                    </div>
-                                </div>
-                            </td>
-                        </tr>
-                        <tr><td class="lbl">🎯 Тейк-1 (0.500 Fib)</td><td class="c-green">${c.long_normal.tp_0500} $</td></tr>
-                        <tr><td class="lbl">🎯 Тейк-2 (0.382 Fib)</td><td class="c-green">${c.long_normal.tp_0382} $</td></tr>
-                        <tr><td class="lbl">🛑 Стоп (0.860 Fib)</td><td class="c-red">${c.long_normal.sl} $ <span style="font-size:10px; color:var(--text-dim);">(-${ln_grid.stop_pct}%)</span></td></tr>
-                    </table>
 
-                    <div class="profit-payout-box">
-                        <div class="profit-payout-row">
-                            <span class="lbl">💰 [1] Только Вход-1 (0.500) → 0.382:</span>
-                            <span class="payout-val-green">+$${ln_pnl_only1_to_382}</span>
+                    <!-- 1. ВХОД ОТ 0.5 -->
+                    <div class="scenario-box" style="border-left: 3px solid var(--cyan);">
+                        <div class="scenario-header">
+                            <div class="scenario-title c-cyan">🔹 Вход от 0.5 (1x)</div>
+                            <div class="scenario-coins"><span class="coins-tag">${ln_grid.q1_fmt} ${coinTicker}</span> <span class="margin-subtext">($${ln_grid.margin1})</span></div>
                         </div>
-                        <div class="profit-payout-row">
-                            <span class="lbl">💰 [2] Только Вход-2 (0.618) → 0.500:</span>
-                            <span class="payout-val-green">+$${ln_pnl_only2_to_500}</span>
+                        <div class="scenario-grid">
+                            <div class="scenario-row"><span class="scenario-lbl">🔹 Вход (0.500):</span><span class="scenario-val c-cyan">${c.long_normal.entry_050} $</span></div>
+                            <div class="scenario-row"><span class="scenario-lbl">🎯 Тейк (0.382):</span><span class="scenario-val c-green">${c.long_normal.tp_0382} $ <span class="payout-val-green">(+$${ln_pnl_only1_to_382})</span></span></div>
+                            <div class="scenario-row"><span class="scenario-lbl">🛑 Стоп (0.860):</span><span class="scenario-val c-red">${c.long_normal.sl} $ <span class="payout-val-red">(-$${ln_grid.loss_if_only_1})</span></span></div>
                         </div>
-                        <div class="profit-payout-row">
-                            <span class="lbl">💰 [3] Только Вход-2 (0.618) → 0.382:</span>
-                            <span class="payout-val-green">+$${ln_pnl_only2_to_382}</span>
+                    </div>
+
+                    <!-- 2. ВХОД ОТ 0.5 + ОТ 0.618 -->
+                    <div class="scenario-box" style="border-left: 3px solid var(--green);">
+                        <div class="scenario-header">
+                            <div class="scenario-title c-green">🔥 Вход от 0.5 + от 0.618 (ОБА 1+2)</div>
+                            <div class="scenario-coins"><span class="coins-tag">${fmtCoinQty(ln_grid.q_total)} ${coinTicker}</span> <span class="margin-subtext">($${(parseFloat(ln_grid.margin1)+parseFloat(ln_grid.margin2)).toFixed(1)})</span></div>
                         </div>
-                        <div class="profit-payout-row">
-                            <span class="lbl">💰 [4] ОБА входа → 100% на 0.500:</span>
-                            <span class="payout-val-green">+$${ln_pnl_both_to_500}</span>
+                        <div class="scenario-grid">
+                            <div class="scenario-row"><span class="scenario-lbl">🔹 Вход-1 (0.500) 1x:</span><span class="scenario-val c-cyan">${c.long_normal.entry_050} $ (${ln_grid.q1_fmt} ${coinTicker})</span></div>
+                            <div class="scenario-row"><span class="scenario-lbl">🔹 Вход-2 (0.618) 2x:</span><span class="scenario-val c-blue">${c.long_normal.entry_0618} $ (${ln_grid.q2_fmt} ${coinTicker})</span></div>
+                            <div class="scenario-row"><span class="scenario-lbl">🎯 Тейк-1 (0.500 Fib):</span><span class="scenario-val c-green">${c.long_normal.tp_0500} $ <span class="payout-val-green">(+$${ln_pnl_both_to_500})</span></span></div>
+                            <div class="scenario-row"><span class="scenario-lbl">⭐ Сплит (50% на 0.5 + 50% на 0.382):</span><span class="scenario-val c-cyan"><span class="payout-val-cyan">+$${ln_pnl_split_50_382}</span></span></div>
+                            <div class="scenario-row"><span class="scenario-lbl">🚀 Тейк-2 (0.382 Fib):</span><span class="scenario-val c-green">${c.long_normal.tp_0382} $ <span class="payout-val-green">(+$${ln_pnl_both_to_382})</span></span></div>
+                            <div class="scenario-row"><span class="scenario-lbl">🛑 Стоп (0.860 Fib):</span><span class="scenario-val c-red">${c.long_normal.sl} $ <span class="payout-val-red">(-$${ln_grid.loss_total})</span></span></div>
                         </div>
-                        <div class="profit-payout-row">
-                            <span class="lbl">⭐ [5] Сплит (50% на 0.5 + 50% на 0.382):</span>
-                            <span class="payout-val-cyan">+$${ln_pnl_split_50_382}</span>
+                    </div>
+
+                    <!-- 3. ВХОД ОТ 0.618 -->
+                    <div class="scenario-box" style="border-left: 3px solid var(--blue);">
+                        <div class="scenario-header">
+                            <div class="scenario-title c-blue">🔹 Вход от 0.618 (2x)</div>
+                            <div class="scenario-coins"><span class="coins-tag">${ln_grid.q2_fmt} ${coinTicker}</span> <span class="margin-subtext">($${ln_grid.margin2})</span></div>
                         </div>
-                        <div class="profit-payout-row">
-                            <span class="lbl">🚀 [6] ОБА входа → 100% на 0.382:</span>
-                            <span class="payout-val-green">+$${ln_pnl_both_to_382}</span>
-                        </div>
-                        <div class="profit-payout-row" style="border-top:1px solid rgba(255,255,255,0.08); margin-top:3px; padding-top:3px;">
-                            <span class="lbl">🛑 Стоп (если только Вход-1 0.500):</span>
-                            <span class="payout-val-red">-$${ln_grid.loss_if_only_1}</span>
-                        </div>
-                        <div class="profit-payout-row">
-                            <span class="lbl">🛑 Стоп (если только Вход-2 0.618):</span>
-                            <span class="payout-val-red">-$${ln_grid.loss_if_only_2}</span>
-                        </div>
-                        <div class="profit-payout-row">
-                            <span class="lbl">🛑 Стоп (если ОБА входа 1+2):</span>
-                            <span class="payout-val-red">-$${ln_grid.loss_total}</span>
+                        <div class="scenario-grid">
+                            <div class="scenario-row"><span class="scenario-lbl">🔹 Вход (0.618):</span><span class="scenario-val c-blue">${c.long_normal.entry_0618} $</span></div>
+                            <div class="scenario-row"><span class="scenario-lbl">🎯 Тейк (0.500):</span><span class="scenario-val c-green">${c.long_normal.tp_0500} $ <span class="payout-val-green">(+$${ln_pnl_only2_to_500})</span></span></div>
+                            <div class="scenario-row"><span class="scenario-lbl">🎯 Тейк (0.382):</span><span class="scenario-val c-green">${c.long_normal.tp_0382} $ <span class="payout-val-green">(+$${ln_pnl_only2_to_382})</span></span></div>
+                            <div class="scenario-row"><span class="scenario-lbl">🛑 Стоп (0.860):</span><span class="scenario-val c-red">${c.long_normal.sl} $ <span class="payout-val-red">(-$${ln_grid.loss_if_only_2})</span></span></div>
                         </div>
                     </div>
 
@@ -1052,72 +1051,47 @@ function renderCards(data) {
                         <span>🔴 SHORT ОБЫЧНЫЙ (0.5 / 0.618) <span class="badge-wr">WR ${c.short_normal.wr}</span></span>
                         <span style="font-size:10px; color:var(--text-dim);">${c.short_normal.time}</span>
                     </div>
-                    <table class="table-levels">
-                        <tr>
-                            <td class="lbl">🔹 Вход-1 в Short (0.500)</td>
-                            <td>
-                                <div class="entry-val-box">
-                                    <span class="price-num c-orange">${c.short_normal.entry_050} $</span>
-                                    <div class="coins-badge-row">
-                                        <span class="coins-tag">${sn_grid.q1_fmt} ${coinTicker}</span>
-                                        <span class="margin-subtext">($${sn_grid.margin1})</span>
-                                    </div>
-                                </div>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td class="lbl">🔹 Вход-2 в Short (0.618)</td>
-                            <td>
-                                <div class="entry-val-box">
-                                    <span class="price-num c-red">${c.short_normal.entry_0618} $</span>
-                                    <div class="coins-badge-row">
-                                        <span class="coins-tag">${sn_grid.q2_fmt} ${coinTicker}</span>
-                                        <span class="margin-subtext">($${sn_grid.margin2})</span>
-                                    </div>
-                                </div>
-                            </td>
-                        </tr>
-                        <tr><td class="lbl">🎯 Тейк-1 (0.500 Fib)</td><td class="c-green">${c.short_normal.tp_0500} $</td></tr>
-                        <tr><td class="lbl">🎯 Тейк-2 (0.382 Fib)</td><td class="c-green">${c.short_normal.tp_0382} $</td></tr>
-                        <tr><td class="lbl">🛑 Стоп (0.860 Fib)</td><td class="c-red">${c.short_normal.sl} $ <span style="font-size:10px; color:var(--text-dim);">(-${sn_grid.stop_pct}%)</span></td></tr>
-                    </table>
 
-                    <div class="profit-payout-box">
-                        <div class="profit-payout-row">
-                            <span class="lbl">💰 [1] Только Вход-1 (0.500) → 0.382:</span>
-                            <span class="payout-val-green">+$${sn_pnl_only1_to_382}</span>
+                    <!-- 1. ВХОД ОТ 0.5 -->
+                    <div class="scenario-box" style="border-left: 3px solid var(--orange);">
+                        <div class="scenario-header">
+                            <div class="scenario-title c-orange">🔹 Вход в Short от 0.5 (1x)</div>
+                            <div class="scenario-coins"><span class="coins-tag">${sn_grid.q1_fmt} ${coinTicker}</span> <span class="margin-subtext">($${sn_grid.margin1})</span></div>
                         </div>
-                        <div class="profit-payout-row">
-                            <span class="lbl">💰 [2] Только Вход-2 (0.618) → 0.500:</span>
-                            <span class="payout-val-green">+$${sn_pnl_only2_to_500}</span>
+                        <div class="scenario-grid">
+                            <div class="scenario-row"><span class="scenario-lbl">🔹 Вход (0.500):</span><span class="scenario-val c-orange">${c.short_normal.entry_050} $</span></div>
+                            <div class="scenario-row"><span class="scenario-lbl">🎯 Тейк (0.382):</span><span class="scenario-val c-green">${c.short_normal.tp_0382} $ <span class="payout-val-green">(+$${sn_pnl_only1_to_382})</span></span></div>
+                            <div class="scenario-row"><span class="scenario-lbl">🛑 Стоп (0.860):</span><span class="scenario-val c-red">${c.short_normal.sl} $ <span class="payout-val-red">(-$${sn_grid.loss_if_only_1})</span></span></div>
                         </div>
-                        <div class="profit-payout-row">
-                            <span class="lbl">💰 [3] Только Вход-2 (0.618) → 0.382:</span>
-                            <span class="payout-val-green">+$${sn_pnl_only2_to_382}</span>
+                    </div>
+
+                    <!-- 2. ВХОД ОТ 0.5 + ОТ 0.618 -->
+                    <div class="scenario-box" style="border-left: 3px solid var(--red);">
+                        <div class="scenario-header">
+                            <div class="scenario-title c-red">🔥 Вход в Short от 0.5 + от 0.618 (ОБА 1+2)</div>
+                            <div class="scenario-coins"><span class="coins-tag">${fmtCoinQty(sn_grid.q_total)} ${coinTicker}</span> <span class="margin-subtext">($${(parseFloat(sn_grid.margin1)+parseFloat(sn_grid.margin2)).toFixed(1)})</span></div>
                         </div>
-                        <div class="profit-payout-row">
-                            <span class="lbl">💰 [4] ОБА входа → 100% на 0.500:</span>
-                            <span class="payout-val-green">+$${sn_pnl_both_to_500}</span>
+                        <div class="scenario-grid">
+                            <div class="scenario-row"><span class="scenario-lbl">🔹 Вход-1 (0.500) 1x:</span><span class="scenario-val c-orange">${c.short_normal.entry_050} $ (${sn_grid.q1_fmt} ${coinTicker})</span></div>
+                            <div class="scenario-row"><span class="scenario-lbl">🔹 Вход-2 (0.618) 2x:</span><span class="scenario-val c-red">${c.short_normal.entry_0618} $ (${sn_grid.q2_fmt} ${coinTicker})</span></div>
+                            <div class="scenario-row"><span class="scenario-lbl">🎯 Тейк-1 (0.500 Fib):</span><span class="scenario-val c-green">${c.short_normal.tp_0500} $ <span class="payout-val-green">(+$${sn_pnl_both_to_500})</span></span></div>
+                            <div class="scenario-row"><span class="scenario-lbl">⭐ Сплит (50% на 0.5 + 50% на 0.382):</span><span class="scenario-val c-cyan"><span class="payout-val-cyan">+$${sn_pnl_split_50_382}</span></span></div>
+                            <div class="scenario-row"><span class="scenario-lbl">🚀 Тейк-2 (0.382 Fib):</span><span class="scenario-val c-green">${c.short_normal.tp_0382} $ <span class="payout-val-green">(+$${sn_pnl_both_to_382})</span></span></div>
+                            <div class="scenario-row"><span class="scenario-lbl">🛑 Стоп (0.860 Fib):</span><span class="scenario-val c-red">${c.short_normal.sl} $ <span class="payout-val-red">(-$${sn_grid.loss_total})</span></span></div>
                         </div>
-                        <div class="profit-payout-row">
-                            <span class="lbl">⭐ [5] Сплит (50% на 0.5 + 50% на 0.382):</span>
-                            <span class="payout-val-cyan">+$${sn_pnl_split_50_382}</span>
+                    </div>
+
+                    <!-- 3. ВХОД ОТ 0.618 -->
+                    <div class="scenario-box" style="border-left: 3px solid var(--red);">
+                        <div class="scenario-header">
+                            <div class="scenario-title c-red">🔹 Вход в Short от 0.618 (2x)</div>
+                            <div class="scenario-coins"><span class="coins-tag">${sn_grid.q2_fmt} ${coinTicker}</span> <span class="margin-subtext">($${sn_grid.margin2})</span></div>
                         </div>
-                        <div class="profit-payout-row">
-                            <span class="lbl">🚀 [6] ОБА входа → 100% на 0.382:</span>
-                            <span class="payout-val-green">+$${sn_pnl_both_to_382}</span>
-                        </div>
-                        <div class="profit-payout-row" style="border-top:1px solid rgba(255,255,255,0.08); margin-top:3px; padding-top:3px;">
-                            <span class="lbl">🛑 Стоп (если только Вход-1 0.500):</span>
-                            <span class="payout-val-red">-$${sn_grid.loss_if_only_1}</span>
-                        </div>
-                        <div class="profit-payout-row">
-                            <span class="lbl">🛑 Стоп (если только Вход-2 0.618):</span>
-                            <span class="payout-val-red">-$${sn_grid.loss_if_only_2}</span>
-                        </div>
-                        <div class="profit-payout-row">
-                            <span class="lbl">🛑 Стоп (если ОБА входа 1+2):</span>
-                            <span class="payout-val-red">-$${sn_grid.loss_total}</span>
+                        <div class="scenario-grid">
+                            <div class="scenario-row"><span class="scenario-lbl">🔹 Вход (0.618):</span><span class="scenario-val c-red">${c.short_normal.entry_0618} $</span></div>
+                            <div class="scenario-row"><span class="scenario-lbl">🎯 Тейк (0.500):</span><span class="scenario-val c-green">${c.short_normal.tp_0500} $ <span class="payout-val-green">(+$${sn_pnl_only2_to_500})</span></span></div>
+                            <div class="scenario-row"><span class="scenario-lbl">🎯 Тейк (0.382):</span><span class="scenario-val c-green">${c.short_normal.tp_0382} $ <span class="payout-val-green">(+$${sn_pnl_only2_to_382})</span></span></div>
+                            <div class="scenario-row"><span class="scenario-lbl">🛑 Стоп (0.860):</span><span class="scenario-val c-red">${c.short_normal.sl} $ <span class="payout-val-red">(-$${sn_grid.loss_if_only_2})</span></span></div>
                         </div>
                     </div>
 
@@ -1134,60 +1108,33 @@ function renderCards(data) {
                         <span>🟣 МАНИПУЛЯЦИЯ (1.618+2.0) <span class="badge-wr">WR ${c.long_manip.wr}</span></span>
                         <span style="font-size:10px; color:var(--text-dim);">${c.long_manip.time}</span>
                     </div>
-                    <table class="table-levels">
-                        <tr>
-                            <td class="lbl">🔹 Вход-1 (1.618) 1x</td>
-                            <td>
-                                <div class="entry-val-box">
-                                    <span class="price-num c-purple">${c.long_manip.entry_1} $</span>
-                                    <div class="coins-badge-row">
-                                        <span class="coins-tag">${lm_grid.q1_fmt} ${coinTicker}</span>
-                                        <span class="margin-subtext">($${lm_grid.margin1})</span>
-                                    </div>
-                                </div>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td class="lbl">🔹 Добор-2 (2.000) 2x</td>
-                            <td>
-                                <div class="entry-val-box">
-                                    <span class="price-num c-orange">${c.long_manip.entry_2} $</span>
-                                    <div class="coins-badge-row">
-                                        <span class="coins-tag">${lm_grid.q2_fmt} ${coinTicker}</span>
-                                        <span class="margin-subtext">($${lm_grid.margin2})</span>
-                                    </div>
-                                </div>
-                            </td>
-                        </tr>
-                        <tr><td class="lbl">🎯 Тейк-1 (0.618 Fib)</td><td class="c-green">${c.long_manip.tp_1} $</td></tr>
-                        <tr><td class="lbl">🎯 Тейк-2 (0.500 Fib)</td><td class="c-green">${c.long_manip.tp_2} $</td></tr>
-                        <tr><td class="lbl">🛑 Стоп (${c.long_manip.sl_fib} Fib) [R:R ${c.long_manip.rr_label}]</td><td class="c-red">${c.long_manip.sl} $ <span style="font-size:10px; color:var(--text-dim);">(-${lm_grid.stop_pct}%)</span></td></tr>
-                    </table>
 
-                    <div class="profit-payout-box">
-                        <div class="profit-payout-row">
-                            <span class="lbl">💰 Тейк-1 (только Вход-1 → 0.618):</span>
-                            <span class="payout-val-green">+$${lm_pnl_only1_tp1}</span>
+                    <!-- 1. ВХОД ОТ 1.618 -->
+                    <div class="scenario-box" style="border-left: 3px solid var(--purple);">
+                        <div class="scenario-header">
+                            <div class="scenario-title c-purple">🟣 Вход от 1.618 (1x)</div>
+                            <div class="scenario-coins"><span class="coins-tag">${lm_grid.q1_fmt} ${coinTicker}</span> <span class="margin-subtext">($${lm_grid.margin1})</span></div>
                         </div>
-                        <div class="profit-payout-row">
-                            <span class="lbl">💰 Тейк-2 (только Вход-1 → 0.500):</span>
-                            <span class="payout-val-cyan">+$${lm_pnl_only1_tp2}</span>
+                        <div class="scenario-grid">
+                            <div class="scenario-row"><span class="scenario-lbl">🔹 Вход (1.618):</span><span class="scenario-val c-purple">${c.long_manip.entry_1} $</span></div>
+                            <div class="scenario-row"><span class="scenario-lbl">🎯 Тейк-1 (0.618):</span><span class="scenario-val c-green">${c.long_manip.tp_1} $ <span class="payout-val-green">(+$${lm_pnl_only1_tp1})</span></span></div>
+                            <div class="scenario-row"><span class="scenario-lbl">🎯 Тейк-2 (0.500):</span><span class="scenario-val c-cyan">${c.long_manip.tp_2} $ <span class="payout-val-cyan">(+$${lm_pnl_only1_tp2})</span></span></div>
+                            <div class="scenario-row"><span class="scenario-lbl">🛑 Стоп (${c.long_manip.sl_fib} Fib):</span><span class="scenario-val c-red">${c.long_manip.sl} $ <span class="payout-val-red">(-$${lm_grid.loss_if_only_1})</span></span></div>
                         </div>
-                        <div class="profit-payout-row">
-                            <span class="lbl">🚀 Тейк-1 (ОБА входа → 0.618) [R:R ${c.long_manip.rr_label}]:</span>
-                            <span class="payout-val-green">+$${lm_pnl_both_tp1}</span>
+                    </div>
+
+                    <!-- 2. ВХОД ОТ 1.618 + ОТ 2.000 -->
+                    <div class="scenario-box" style="border-left: 3px solid var(--purple);">
+                        <div class="scenario-header">
+                            <div class="scenario-title c-purple">🔥 Вход 1.618 + 2.0 DCA (ОБА 1+2)</div>
+                            <div class="scenario-coins"><span class="coins-tag">${fmtCoinQty(lm_grid.q_total)} ${coinTicker}</span> <span class="margin-subtext">($${(parseFloat(lm_grid.margin1)+parseFloat(lm_grid.margin2)).toFixed(1)})</span></div>
                         </div>
-                        <div class="profit-payout-row">
-                            <span class="lbl">🔥 Тейк-2 (ОБА входа → 0.500):</span>
-                            <span class="payout-val-green">+$${lm_pnl_both_tp2}</span>
-                        </div>
-                        <div class="profit-payout-row" style="border-top:1px solid rgba(255,255,255,0.08); margin-top:3px; padding-top:3px;">
-                            <span class="lbl">🛑 Стоп (если только Вход-1):</span>
-                            <span class="payout-val-red">-$${lm_grid.loss_if_only_1}</span>
-                        </div>
-                        <div class="profit-payout-row">
-                            <span class="lbl">🛑 Стоп (если ОБА входа 1+2) [R:R ${c.long_manip.rr_label}]:</span>
-                            <span class="payout-val-red">-$${lm_grid.loss_total}</span>
+                        <div class="scenario-grid">
+                            <div class="scenario-row"><span class="scenario-lbl">🟣 Вход-1 (1.618) 1x:</span><span class="scenario-val c-purple">${c.long_manip.entry_1} $ (${lm_grid.q1_fmt} ${coinTicker})</span></div>
+                            <div class="scenario-row"><span class="scenario-lbl">🟠 Вход-2 (2.000) 2x:</span><span class="scenario-val c-orange">${c.long_manip.entry_2} $ (${lm_grid.q2_fmt} ${coinTicker})</span></div>
+                            <div class="scenario-row"><span class="scenario-lbl">🎯 Тейк-1 (0.618 Fib):</span><span class="scenario-val c-green">${c.long_manip.tp_1} $ <span class="payout-val-green">(+$${lm_pnl_both_tp1})</span></span></div>
+                            <div class="scenario-row"><span class="scenario-lbl">🔥 Тейк-2 (0.500 Fib):</span><span class="scenario-val c-green">${c.long_manip.tp_2} $ <span class="payout-val-green">(+$${lm_pnl_both_tp2})</span></span></div>
+                            <div class="scenario-row"><span class="scenario-lbl">🛑 Стоп (${c.long_manip.sl_fib} Fib) [R:R ${c.long_manip.rr_label}]:</span><span class="scenario-val c-red">${c.long_manip.sl} $ <span class="payout-val-red">(-$${lm_grid.loss_total})</span></span></div>
                         </div>
                     </div>
 
