@@ -64,7 +64,6 @@ function fmt3($val) {
 
 function detectLatestLongImpulse($candles, $min_pct) {
     $n = count($candles);
-    $best_impulse = null;
 
     for ($i = 1; $i < min(72, $n - 1); $i++) {
         $start_idx = $n - 1 - $i;
@@ -85,10 +84,10 @@ function detectLatestLongImpulse($candles, $min_pct) {
             continue;
         }
 
-        // Проверяем, не было ли отката ниже 0.500 ПОСЛЕ достижения пика max_idx
+        // Проверяем, не было ли отката ниже 0.500 СТРОГО ПОСЛЕ достижения пика (max_idx + 1)
         $broken = false;
         $fib_05 = calcFibLongLog($max_high, $imp_low, 0.500);
-        for ($step = $max_idx; $step < $n; $step++) {
+        for ($step = $max_idx + 1; $step < $n; $step++) {
             if ($candles[$step]['low'] <= $fib_05) {
                 $broken = true;
                 break;
@@ -103,27 +102,25 @@ function detectLatestLongImpulse($candles, $min_pct) {
             }
         }
 
+        // Возвращаем самый свежий (локальный) валидный импульс
         if (!$broken) {
-            if ($best_impulse === null || $pct > $best_impulse['pct']) {
-                $best_impulse = [
-                    'start_time' => $candles[$start_idx]['time'],
-                    'end_time'   => $candles[$max_idx]['time'],
-                    'end_idx'    => $max_idx,
-                    'high'       => $max_high,
-                    'low'        => $imp_low,
-                    'pct'        => $pct,
-                    'is_live'    => true
-                ];
-            }
+            return [
+                'start_time' => $candles[$start_idx]['time'],
+                'end_time'   => $candles[$max_idx]['time'],
+                'end_idx'    => $max_idx,
+                'high'       => $max_high,
+                'low'        => $imp_low,
+                'pct'        => $pct,
+                'is_live'    => true
+            ];
         }
     }
 
-    return $best_impulse;
+    return null;
 }
 
 function detectLatestShortImpulse($candles, $min_pct) {
     $n = count($candles);
-    $best_impulse = null;
 
     for ($i = 1; $i < min(72, $n - 1); $i++) {
         $start_idx = $n - 1 - $i;
@@ -144,10 +141,10 @@ function detectLatestShortImpulse($candles, $min_pct) {
             continue;
         }
 
-        // Проверяем, не было ли отскока выше 0.500 ПОСЛЕ достижения дна min_idx
+        // Проверяем, не было ли отскока выше 0.500 СТРОГО ПОСЛЕ достижения дна (min_idx + 1)
         $broken = false;
         $fib_05 = calcFibShortLog($imp_high, $min_low, 0.500);
-        for ($step = $min_idx; $step < $n; $step++) {
+        for ($step = $min_idx + 1; $step < $n; $step++) {
             if ($candles[$step]['high'] >= $fib_05) {
                 $broken = true;
                 break;
@@ -162,22 +159,21 @@ function detectLatestShortImpulse($candles, $min_pct) {
             }
         }
 
+        // Возвращаем самый свежий (локальный) валидный дамп-импульс
         if (!$broken) {
-            if ($best_impulse === null || $pct > $best_impulse['pct']) {
-                $best_impulse = [
-                    'start_time' => $candles[$start_idx]['time'],
-                    'end_time'   => $candles[$min_idx]['time'],
-                    'end_idx'    => $min_idx,
-                    'high'       => $imp_high,
-                    'low'        => $min_low,
-                    'pct'        => $pct,
-                    'is_live'    => true
-                ];
-            }
+            return [
+                'start_time' => $candles[$start_idx]['time'],
+                'end_time'   => $candles[$min_idx]['time'],
+                'end_idx'    => $min_idx,
+                'high'       => $imp_high,
+                'low'        => $min_low,
+                'pct'        => $pct,
+                'is_live'    => true
+            ];
         }
     }
 
-    return $best_impulse;
+    return null;
 }
 
 echo "\n========================================================================================\n";
