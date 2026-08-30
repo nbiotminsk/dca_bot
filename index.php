@@ -317,7 +317,7 @@ if (isset($_GET['ajax'])) {
 
             if ($minDist < 990.0) {
                 $priorityScore = 1.0 + $minDist; // Приоритет по близости в %
-                $card['best_choice'] = "⏳ ОЖИДАНИЕ ВХОДА ({$nearestDesc})";
+                $card['best_choice'] = "⏳ ВХОД ({$nearestDesc})";
             } else {
                 $priorityScore = 999.0;
                 $card['best_choice'] = "💤 НЕТ АКТИВНЫХ ВОЛН (Вне позиции)";
