@@ -421,51 +421,51 @@ if (isset($_GET['ajax'])) {
         .block { background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 0; display: flex; flex-direction: column; justify-content: space-between; }
         .block-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; display: flex; justify-content: space-between; }
         
-        .table-levels { width: 100%; border-collapse: collapse; font-size: 13px; font-family: monospace; }
-        .table-levels td { padding: 4px 0; vertical-align: middle; }
-        .table-levels td:last-child { text-align: right; font-weight: 700; }
-        .lbl { color: var(--text-dim); font-size: 12px; }
+        .table-levels { width: 100%; border-collapse: collapse; font-size: 14.5px; font-family: monospace; }
+        .table-levels td { padding: 5px 0; vertical-align: middle; }
+        .table-levels td:last-child { text-align: right; font-weight: 800; font-size: 15px; }
+        .lbl { color: var(--text-dim); font-size: 13px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-weight: 600; }
         
         .profit-payout-box {
-            background: rgba(0, 0, 0, 0.25);
-            border: 1px solid rgba(255, 255, 255, 0.08);
+            background: rgba(0, 0, 0, 0.28);
+            border: 1px solid rgba(255, 255, 255, 0.1);
             border-radius: 8px;
-            padding: 8px 10px;
+            padding: 9px 12px;
             margin-top: 10px;
             font-family: monospace;
-            font-size: 11px;
+            font-size: 12.5px;
         }
         .profit-payout-row {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 3px 0;
+            padding: 4px 0;
         }
-        .payout-val-green { color: var(--green); font-weight: 800; }
-        .payout-val-cyan { color: var(--cyan); font-weight: 800; }
-        .payout-val-red { color: var(--red); font-weight: 800; }
+        .payout-val-green { color: var(--green); font-weight: 800; font-size: 13.5px; }
+        .payout-val-cyan { color: var(--cyan); font-weight: 800; font-size: 13.5px; }
+        .payout-val-red { color: var(--red); font-weight: 800; font-size: 13.5px; }
 
         .entry-val-box {
             display: flex;
             flex-direction: column;
             align-items: flex-end;
-            gap: 2px;
+            gap: 3px;
         }
-        .price-num { font-size: 13px; font-weight: 700; }
-        .coins-badge-row { display: flex; align-items: center; gap: 4px; }
+        .price-num { font-size: 15px; font-weight: 800; }
+        .coins-badge-row { display: flex; align-items: center; gap: 5px; }
         .coins-tag {
             display: inline-block;
             background: #ffd600;
             color: #000;
-            padding: 1px 5px;
+            padding: 2px 7px;
             border-radius: 4px;
-            font-size: 10px;
-            font-weight: 800;
+            font-size: 12px;
+            font-weight: 900;
             letter-spacing: -0.2px;
         }
-        .margin-subtext { color: var(--text-dim); font-size: 10px; font-weight: 600; }
+        .margin-subtext { color: var(--text-dim); font-size: 11.5px; font-weight: 700; }
 
-        .status-pill { display: block; text-align: center; padding: 6px; border-radius: 6px; font-size: 11px; font-weight: 700; margin-top: 8px; }
+        .status-pill { display: block; text-align: center; padding: 7px; border-radius: 6px; font-size: 12px; font-weight: 800; margin-top: 10px; }
         .status-ready { background: rgba(0,230,118,0.2); color: var(--green); border: 1px solid var(--green); }
         .status-wait { background: rgba(255,255,255,0.05); color: var(--text-dim); }
 
