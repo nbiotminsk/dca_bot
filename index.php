@@ -304,20 +304,20 @@ if (isset($_GET['ajax'])) {
 
             if (isset($card['long_normal']) && $card['long_normal']['is_fresher']) {
                 $d = abs($curPrice - $card['long_normal']['raw_e050']) / $curPrice * 100.0;
-                if ($d < $minDist) { $minDist = $d; $nearestDesc = "🟢 До Long 0.500: " . number_format($d, 2) . "%"; }
+                if ($d < $minDist) { $minDist = $d; $nearestDesc = "🟢 Long 0.5: " . number_format($d, 2) . "%"; }
             }
             if (isset($card['short_normal']) && $card['short_normal']['is_fresher']) {
                 $d = abs($curPrice - $card['short_normal']['raw_e050']) / $curPrice * 100.0;
-                if ($d < $minDist) { $minDist = $d; $nearestDesc = "🔴 До Short 0.500: " . number_format($d, 2) . "%"; }
+                if ($d < $minDist) { $minDist = $d; $nearestDesc = "🔴 Short 0.5: " . number_format($d, 2) . "%"; }
             }
             if (isset($card['long_manip'])) {
                 $d = abs($curPrice - $card['long_manip']['raw_e1']) / $curPrice * 100.0;
-                if ($d < $minDist) { $minDist = $d; $nearestDesc = "🟣 До Манипуляции 1.618: " . number_format($d, 2) . "%"; }
+                if ($d < $minDist) { $minDist = $d; $nearestDesc = "🟣 Манип 1.6: " . number_format($d, 2) . "%"; }
             }
 
             if ($minDist < 990.0) {
                 $priorityScore = 1.0 + $minDist; // Приоритет по близости в %
-                $card['best_choice'] = "⏳ ВХОД ({$nearestDesc})";
+                $card['best_choice'] = "⏳ {$nearestDesc}";
             } else {
                 $priorityScore = 999.0;
                 $card['best_choice'] = "💤 НЕТ АКТИВНЫХ ВОЛН (Вне позиции)";
@@ -540,7 +540,8 @@ if (isset($_GET['ajax'])) {
             color: var(--yellow);
             border-color: rgba(255,214,0,0.3);
         }
-        .coin-title { font-size: 22px; font-weight: 800; transition: color 0.2s; }
+        .badge-wr { background: rgba(0, 230, 118, 0.15); color: var(--green); border: 1px solid rgba(0, 230, 118, 0.3); padding: 1px 6px; border-radius: 4px; font-size: 11px; font-weight: 800; letter-spacing: 0; white-space: nowrap; }
+        .coin-title { font-size: 22px; font-weight: 800; transition: color 0.2s; white-space: nowrap; }
         .coin-price { font-size: 22px; font-weight: 800; color: #fff; font-family: monospace; white-space: nowrap; }
         .coin-quick-summary {
             font-size: 13px;
@@ -550,6 +551,7 @@ if (isset($_GET['ajax'])) {
             border-radius: 6px;
             border: 1px solid rgba(255,255,255,0.08);
             font-weight: 600;
+            white-space: nowrap;
         }
         .coin-card.is-active-signal .coin-quick-summary {
             background: rgba(0, 230, 118, 0.15);
@@ -660,8 +662,9 @@ if (isset($_GET['ajax'])) {
             .coin-title { font-size: 17px; }
             .coin-price { font-size: 15px; font-weight: 800; }
             .coin-header-right { gap: 8px; }
-            .coin-header-left { gap: 8px; }
+            .coin-header-left { gap: 6px; }
             .badge-wr { font-size: 9.5px; padding: 1px 4px; }
+            .coin-quick-summary { font-size: 11px; padding: 2px 6px; }
             .toggle-icon { width: 24px; height: 24px; font-size: 11px; }
         }
         .status-ready { background: rgba(0,230,118,0.2); color: var(--green); border: 1px solid var(--green); }
