@@ -2,7 +2,7 @@
 /**
  * Live Web Screener & Signal Scanner с Риск-Калькулятором Позиций
  * Монеты: HYPEUSDT, NEARUSDT, UNIUSDT
- * Автоматический расчет объемов входа (в КОЛИЧЕСТВЕ МОНЕТ и $) на основе депозита, риска в % и плеча.
+ * Адаптивный дизайн для мобильных устройств (красивый перенос объемов на новую строку).
  */
 
 error_reporting(E_ALL & ~E_DEPRECATED);
@@ -261,7 +261,7 @@ if (isset($_GET['ajax'])) {
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Mon 1H Terminal & Coin Calculator</title>
     <style>
         :root {
@@ -279,12 +279,12 @@ if (isset($_GET['ajax'])) {
             --yellow: #ffd600;
         }
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-        body { background-color: var(--bg); color: var(--text); padding: 20px; }
+        body { background-color: var(--bg); color: var(--text); padding: 16px; }
         
-        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 14px; border-bottom: 1px solid var(--border); flex-wrap: wrap; gap: 10px; }
-        .header h1 { font-size: 20px; font-weight: 800; display: flex; align-items: center; gap: 8px; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--border); flex-wrap: wrap; gap: 10px; }
+        .header h1 { font-size: 18px; font-weight: 800; display: flex; align-items: center; gap: 8px; }
         
-        .header-actions { display: flex; align-items: center; gap: 10px; }
+        .header-actions { display: flex; align-items: center; gap: 8px; }
         .btn-refresh { 
             display: inline-flex; align-items: center; gap: 6px; 
             background: #252836; color: #fff; border: 1px solid #3b4054; 
@@ -305,61 +305,75 @@ if (isset($_GET['ajax'])) {
             background: #1a1d26;
             border: 1px solid #2e3447;
             border-radius: 12px;
-            padding: 16px 20px;
-            margin-bottom: 24px;
+            padding: 14px 16px;
+            margin-bottom: 20px;
             box-shadow: 0 4px 15px rgba(0,0,0,0.25);
             display: flex;
             align-items: center;
             justify-content: space-between;
             flex-wrap: wrap;
-            gap: 16px;
+            gap: 12px;
         }
-        .calc-title { font-size: 14px; font-weight: 800; text-transform: uppercase; color: var(--yellow); letter-spacing: 0.5px; display: flex; align-items: center; gap: 8px; }
-        .calc-inputs { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
-        .calc-field { display: flex; flex-direction: column; gap: 4px; }
-        .calc-field label { font-size: 11px; font-weight: 700; color: var(--text-dim); text-transform: uppercase; }
-        .calc-input-wrap { display: flex; align-items: center; background: #101218; border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; }
-        .calc-input-wrap input { background: transparent; border: none; color: #fff; font-family: monospace; font-size: 15px; font-weight: 700; width: 80px; outline: none; }
-        .calc-input-wrap span { color: var(--text-dim); font-size: 12px; font-weight: 700; margin-left: 4px; }
-        .calc-info-badge { background: rgba(255,214,0,0.12); border: 1px solid rgba(255,214,0,0.3); color: var(--yellow); padding: 8px 14px; border-radius: 8px; font-size: 12px; font-weight: 700; font-family: monospace; }
+        .calc-title { font-size: 13px; font-weight: 800; text-transform: uppercase; color: var(--yellow); letter-spacing: 0.5px; display: flex; align-items: center; gap: 6px; width: 100%; }
+        .calc-inputs { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; width: 100%; }
+        .calc-field { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 85px; }
+        .calc-field label { font-size: 10px; font-weight: 700; color: var(--text-dim); text-transform: uppercase; }
+        .calc-input-wrap { display: flex; align-items: center; background: #101218; border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; }
+        .calc-input-wrap input { background: transparent; border: none; color: #fff; font-family: monospace; font-size: 15px; font-weight: 700; width: 100%; outline: none; }
+        .calc-input-wrap span { color: var(--text-dim); font-size: 12px; font-weight: 700; margin-left: 2px; }
+        .calc-info-badge { width: 100%; background: rgba(255,214,0,0.12); border: 1px solid rgba(255,214,0,0.3); color: var(--yellow); padding: 8px 12px; border-radius: 8px; font-size: 12px; font-weight: 700; font-family: monospace; text-align: center; margin-top: 4px; }
         
-        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 20px; }
-        .coin-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; padding: 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+        .coin-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; padding: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); }
         .coin-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px; }
         .coin-title { font-size: 20px; font-weight: 800; }
         .coin-price { font-size: 22px; font-weight: 800; color: #fff; font-family: monospace; }
 
-        .verdict-box { background: rgba(255,255,255,0.06); border-radius: 8px; padding: 10px; margin-bottom: 16px; text-align: center; font-weight: 800; font-size: 13px; border: 1px solid var(--border); }
+        .verdict-box { background: rgba(255,255,255,0.06); border-radius: 8px; padding: 8px 10px; margin-bottom: 14px; text-align: center; font-weight: 800; font-size: 13px; border: 1px solid var(--border); }
 
         .block { background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 12px; }
         .block-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; display: flex; justify-content: space-between; }
         
         .table-levels { width: 100%; border-collapse: collapse; font-size: 13px; font-family: monospace; }
-        .table-levels td { padding: 4px 0; }
+        .table-levels td { padding: 5px 0; vertical-align: top; }
         .table-levels td:last-child { text-align: right; font-weight: 700; }
         .lbl { color: var(--text-dim); font-size: 12px; }
         
-        /* Бейдж точного количества монет для ввода на бирже */
+        /* Компактный блок объема для мобильных */
+        .entry-val-box {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 3px;
+        }
+        .price-num {
+            font-size: 14px;
+            font-weight: 700;
+        }
+        .coins-badge-row {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            margin-top: 1px;
+        }
         .coins-tag {
             display: inline-block;
             background: #ffd600;
             color: #000;
-            padding: 2px 7px;
-            border-radius: 5px;
-            font-size: 12px;
+            padding: 1px 6px;
+            border-radius: 4px;
+            font-size: 11px;
             font-weight: 800;
-            margin-left: 6px;
-            box-shadow: 0 2px 8px rgba(255,214,0,0.25);
+            letter-spacing: -0.2px;
+            box-shadow: 0 2px 6px rgba(255,214,0,0.25);
         }
         .margin-subtext {
-            display: inline-block;
             color: var(--text-dim);
             font-size: 11px;
             font-weight: 600;
-            margin-left: 4px;
         }
 
-        .status-pill { display: block; text-align: center; padding: 5px; border-radius: 6px; font-size: 11px; font-weight: 700; margin-top: 8px; }
+        .status-pill { display: block; text-align: center; padding: 6px; border-radius: 6px; font-size: 11px; font-weight: 700; margin-top: 8px; }
         .status-ready { background: rgba(0,230,118,0.2); color: var(--green); border: 1px solid var(--green); }
         .status-wait { background: rgba(255,255,255,0.05); color: var(--text-dim); }
 
@@ -377,21 +391,21 @@ if (isset($_GET['ajax'])) {
 <div class="header">
     <h1>📡 Mon 1H Strategy Terminal</h1>
     <div class="header-actions">
-        <span id="update-time" style="color:var(--text-dim); font-size:13px;">Обновление...</span>
+        <span id="update-time" style="color:var(--text-dim); font-size:12px;">Обновление...</span>
         <button class="btn-refresh" id="refresh-btn" type="button">
-            <svg id="refresh-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <svg id="refresh-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
             </svg>
             Обновить
         </button>
-        <span class="badge-live">LIVE BYBIT</span>
+        <span class="badge-live">LIVE</span>
     </div>
 </div>
 
 <!-- 🧮 ПАНЕЛЬ РИСК-КАЛЬКУЛЯТОРА -->
 <div class="calc-panel">
     <div class="calc-title">
-        <span>🧮 Риск-Калькулятор (Расчет в монетах и $)</span>
+        <span>🧮 Риск-Калькулятор Позиций</span>
     </div>
     <div class="calc-inputs">
         <div class="calc-field">
@@ -409,15 +423,15 @@ if (isset($_GET['ajax'])) {
             </div>
         </div>
         <div class="calc-field">
-            <label>Кредитное Плечо</label>
+            <label>Плечо</label>
             <div class="calc-input-wrap">
                 <input type="number" id="cfg-leverage" value="1" min="1" max="50" step="1" oninput="saveAndRecalc()">
                 <span>x</span>
             </div>
         </div>
-        <div class="calc-info-badge" id="calc-summary">
-            Макс. риск на сделку: $20.00
-        </div>
+    </div>
+    <div class="calc-info-badge" id="calc-summary">
+        Макс. риск на сделку: $20.00
     </div>
 </div>
 
@@ -455,21 +469,18 @@ function saveAndRecalc() {
     }
 }
 
-// Форматирование количества монет (целое или дробное)
 function fmtCoinQty(qty) {
     if (qty >= 100) return qty.toFixed(1);
     if (qty >= 10) return qty.toFixed(2);
     return qty.toFixed(3);
 }
 
-// Расчет точного количества монет и маржи позиции
 function calculatePosition(entryPrice, stopPrice, isManip = false) {
     const dep = parseFloat(document.getElementById('cfg-deposit').value) || 1000;
     const rsk = parseFloat(document.getElementById('cfg-risk').value) || 2.0;
     const lev = parseFloat(document.getElementById('cfg-leverage').value) || 1;
 
     if (isManip) {
-        // Для манипуляции выделяем долю от депозита
         const totalPosDollar = (dep * 0.15) * lev;
         const lot1Dollar = totalPosDollar * (1 / 3);
         const lot2Dollar = totalPosDollar * (2 / 3);
@@ -487,7 +498,6 @@ function calculatePosition(entryPrice, stopPrice, isManip = false) {
     const stopDistancePct = Math.abs((entryPrice - stopPrice) / entryPrice);
     if (stopDistancePct <= 0.0001) return { qty: "0", margin_usd: "0", stop_pct: "0" };
 
-    // Размер позиции в $ и в монетах
     const totalPosDollar = maxRiskDollar / stopDistancePct;
     const coinQty = totalPosDollar / entryPrice;
     const marginDollar = totalPosDollar / lev;
@@ -549,17 +559,25 @@ function renderCards(data) {
                     <tr>
                         <td class="lbl">🔹 Вход-1 (0.500 Fib) 1x</td>
                         <td>
-                            <span class="c-cyan">${c.long_normal.entry_050} $</span>
-                            <span class="coins-tag">${ln_calc_050.qty} ${coinTicker}</span>
-                            <span class="margin-subtext">($${ln_calc_050.margin_usd})</span>
+                            <div class="entry-val-box">
+                                <span class="price-num c-cyan">${c.long_normal.entry_050} $</span>
+                                <div class="coins-badge-row">
+                                    <span class="coins-tag">${ln_calc_050.qty} ${coinTicker}</span>
+                                    <span class="margin-subtext">($${ln_calc_050.margin_usd})</span>
+                                </div>
+                            </div>
                         </td>
                     </tr>
                     <tr>
                         <td class="lbl">🔹 Вход-2 / DCA (0.618 Fib) 2x</td>
                         <td>
-                            <span class="c-blue">${c.long_normal.entry_0618} $</span>
-                            <span class="coins-tag">${ln_calc_0618.qty} ${coinTicker}</span>
-                            <span class="margin-subtext">($${ln_calc_0618.margin_usd})</span>
+                            <div class="entry-val-box">
+                                <span class="price-num c-blue">${c.long_normal.entry_0618} $</span>
+                                <div class="coins-badge-row">
+                                    <span class="coins-tag">${ln_calc_0618.qty} ${coinTicker}</span>
+                                    <span class="margin-subtext">($${ln_calc_0618.margin_usd})</span>
+                                </div>
+                            </div>
                         </td>
                     </tr>
                     <tr><td class="lbl">🎯 Тейк-1 (0.500 Fib)</td><td class="c-green">${c.long_normal.tp_0500} $</td></tr>
@@ -583,17 +601,25 @@ function renderCards(data) {
                     <tr>
                         <td class="lbl">🔹 Вход-1 в Short (0.500)</td>
                         <td>
-                            <span class="c-orange">${c.short_normal.entry_050} $</span>
-                            <span class="coins-tag">${sn_calc_050.qty} ${coinTicker}</span>
-                            <span class="margin-subtext">($${sn_calc_050.margin_usd})</span>
+                            <div class="entry-val-box">
+                                <span class="price-num c-orange">${c.short_normal.entry_050} $</span>
+                                <div class="coins-badge-row">
+                                    <span class="coins-tag">${sn_calc_050.qty} ${coinTicker}</span>
+                                    <span class="margin-subtext">($${sn_calc_050.margin_usd})</span>
+                                </div>
+                            </div>
                         </td>
                     </tr>
                     <tr>
                         <td class="lbl">🔹 Вход-2 в Short (0.618)</td>
                         <td>
-                            <span class="c-red">${c.short_normal.entry_0618} $</span>
-                            <span class="coins-tag">${sn_calc_0618.qty} ${coinTicker}</span>
-                            <span class="margin-subtext">($${sn_calc_0618.margin_usd})</span>
+                            <div class="entry-val-box">
+                                <span class="price-num c-red">${c.short_normal.entry_0618} $</span>
+                                <div class="coins-badge-row">
+                                    <span class="coins-tag">${sn_calc_0618.qty} ${coinTicker}</span>
+                                    <span class="margin-subtext">($${sn_calc_0618.margin_usd})</span>
+                                </div>
+                            </div>
                         </td>
                     </tr>
                     <tr><td class="lbl">🎯 Тейк-1 (0.500 Fib)</td><td class="c-green">${c.short_normal.tp_0500} $</td></tr>
@@ -617,17 +643,25 @@ function renderCards(data) {
                     <tr>
                         <td class="lbl">Вход (1.618) 1 лот</td>
                         <td>
-                            <span class="c-purple">${c.long_manip.entry_1} $</span>
-                            <span class="coins-tag">${lm_calc.lot1_qty} ${coinTicker}</span>
-                            <span class="margin-subtext">($${lm_calc.lot1_usd})</span>
+                            <div class="entry-val-box">
+                                <span class="price-num c-purple">${c.long_manip.entry_1} $</span>
+                                <div class="coins-badge-row">
+                                    <span class="coins-tag">${lm_calc.lot1_qty} ${coinTicker}</span>
+                                    <span class="margin-subtext">($${lm_calc.lot1_usd})</span>
+                                </div>
+                            </div>
                         </td>
                     </tr>
                     <tr>
                         <td class="lbl">Добор (2.000) 2 лота</td>
                         <td>
-                            <span class="c-orange">${c.long_manip.entry_2} $</span>
-                            <span class="coins-tag">${(parseFloat(lm_calc_2.lot1_qty) * 2).toFixed(1)} ${coinTicker}</span>
-                            <span class="margin-subtext">($${lm_calc.lot2_usd})</span>
+                            <div class="entry-val-box">
+                                <span class="price-num c-orange">${c.long_manip.entry_2} $</span>
+                                <div class="coins-badge-row">
+                                    <span class="coins-tag">${(parseFloat(lm_calc_2.lot1_qty) * 2).toFixed(1)} ${coinTicker}</span>
+                                    <span class="margin-subtext">($${lm_calc.lot2_usd})</span>
+                                </div>
+                            </div>
                         </td>
                     </tr>
                     <tr><td class="lbl">🎯 Тейк-1 (0.618 Fib)</td><td class="c-green">${c.long_manip.tp_1} $</td></tr>
