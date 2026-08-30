@@ -348,24 +348,35 @@ if (isset($_GET['ajax'])) {
         .calc-info-badge { width: 100%; background: rgba(255,214,0,0.12); border: 1px solid rgba(255,214,0,0.3); color: var(--yellow); padding: 8px 12px; border-radius: 8px; font-size: 12px; font-weight: 700; font-family: monospace; text-align: center; margin-top: 4px; }
         
         .grid { 
-            display: grid; 
-            grid-template-columns: repeat(3, 1fr); 
-            gap: 16px; 
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            max-width: 1400px;
+            margin: 0 auto;
         }
-        @media (max-width: 1200px) {
-            .grid { grid-template-columns: repeat(2, 1fr); }
+        .coin-card { 
+            background: var(--card-bg); 
+            border: 1px solid var(--border); 
+            border-radius: 14px; 
+            padding: 18px 20px; 
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3); 
         }
-        @media (max-width: 768px) {
-            .grid { grid-template-columns: 1fr; }
-        }
-        .coin-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; padding: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); }
         .coin-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px; }
-        .coin-title { font-size: 20px; font-weight: 800; }
-        .coin-price { font-size: 22px; font-weight: 800; color: #fff; font-family: monospace; }
+        .coin-title { font-size: 22px; font-weight: 800; }
+        .coin-price { font-size: 24px; font-weight: 800; color: #fff; font-family: monospace; }
+
+        .coin-blocks-row {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 14px;
+        }
+        @media (max-width: 1024px) {
+            .coin-blocks-row { grid-template-columns: 1fr; }
+        }
 
         .verdict-box { background: rgba(255,255,255,0.06); border-radius: 8px; padding: 8px 10px; margin-bottom: 14px; text-align: center; font-weight: 800; font-size: 13px; border: 1px solid var(--border); }
 
-        .block { background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 12px; }
+        .block { background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 0; display: flex; flex-direction: column; justify-content: space-between; }
         .block-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; display: flex; justify-content: space-between; }
         
         .table-levels { width: 100%; border-collapse: collapse; font-size: 13px; font-family: monospace; }
@@ -645,7 +656,8 @@ function renderCards(data) {
             </div>
 
             <div class="verdict-box">👉 РЕШЕНИЕ: ${c.best_choice}</div>
-
+            
+            <div class="coin-blocks-row">
             <!-- 1. LONG NORMAL -->
             <div class="block" style="border-left: 3px solid var(--blue); opacity: ${c.long_normal && !c.long_normal.is_fresher ? '0.6' : '1.0'};">
                 <div class="block-title c-blue">
@@ -855,6 +867,7 @@ function renderCards(data) {
                 </div>
                 ` : '<div style="color:var(--text-dim); font-size:12px;">Нет импульса ≥ 1.0%</div>'}
             </div>
+            </div> <!-- .coin-blocks-row -->
 
         </div>
         `;
