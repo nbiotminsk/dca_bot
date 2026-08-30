@@ -640,18 +640,23 @@ if (isset($_GET['ajax'])) {
 
         /* 📱 Компактный аккуратный вид на мобильных */
         @media (max-width: 768px) {
-            .table-levels { font-size: 12.5px; }
+            body { padding: 10px; }
+            .grid { gap: 14px; }
+            .coin-card { padding: 12px; border-radius: 10px; }
+            .coin-body { margin-top: 10px; padding-top: 10px; }
+            .coin-blocks-row { flex-direction: column; width: 100%; gap: 10px; }
+            .coin-blocks-row .block { flex: 1 1 100%; width: 100%; min-width: 100%; box-sizing: border-box; padding: 10px; }
+            .table-levels { font-size: 12.5px; width: 100%; }
             .table-levels td { padding: 3px 0; }
             .table-levels td:last-child { font-size: 13px; font-weight: 700; }
             .lbl { font-size: 11.5px; font-weight: 500; }
             .price-num { font-size: 13px; font-weight: 700; }
             .coins-tag { font-size: 10px; font-weight: 800; padding: 1px 5px; }
             .margin-subtext { font-size: 10px; font-weight: 600; }
-            .profit-payout-box { font-size: 11px; padding: 7px 9px; margin-top: 8px; }
+            .profit-payout-box { font-size: 11px; padding: 7px 9px; margin-top: 8px; width: 100%; box-sizing: border-box; }
             .profit-payout-row { padding: 2.5px 0; }
             .payout-val-green, .payout-val-cyan, .payout-val-red { font-size: 11.5px; font-weight: 800; }
-            .status-pill { font-size: 11px; padding: 5px; margin-top: 7px; }
-            .coin-card { padding: 12px; }
+            .status-pill { font-size: 11px; padding: 5px; margin-top: 7px; width: 100%; box-sizing: border-box; }
             .coin-title { font-size: 17px; }
             .coin-price { font-size: 15px; font-weight: 800; }
             .coin-header-right { gap: 8px; }
