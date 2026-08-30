@@ -239,10 +239,10 @@ foreach ($symbols as $sym) {
 
     echo "  --------------------------------------------------------------------------------------\n";
 
-    // LONG MANIPULATION (Индивидуальный оптимальный стоп и R:R под характер каждой монеты)
+    // LONG MANIPULATION (Индивидуальный оптимальный стоп и R:R под характер каждой монеты на 2-летней истории)
     $coinManipConfig = [
         'UNIUSDT'  => ['sl_fib' => 2.395, 'rr' => '1:2.4'],
-        'NEARUSDT' => ['sl_fib' => 2.570, 'rr' => '1:1.8'],
+        'NEARUSDT' => ['sl_fib' => 2.395, 'rr' => '1:2.4'],
         'HYPEUSDT' => ['sl_fib' => 2.291, 'rr' => '1:3.0']
     ];
     $sl_fib_opt   = isset($coinManipConfig[$sym]) ? $coinManipConfig[$sym]['sl_fib'] : 2.500;
