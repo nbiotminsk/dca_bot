@@ -591,21 +591,25 @@ function renderCards(data) {
         // Расчет для Long Manip (Сетка 1.618 1x + 2.000 2x со стопом 2.618 Fib)
         let lm_grid = null;
         let lm_pnl_only1_tp1 = "0.00";
+        let lm_pnl_only1_tp2 = "0.00";
         let lm_pnl_both_tp1 = "0.00";
         let lm_pnl_both_tp2 = "0.00";
 
         if (c.long_manip) {
             lm_grid = calculateDcaGrid(c.long_manip.raw_e1, c.long_manip.raw_e2, c.long_manip.raw_sl, false);
             if (lm_grid) {
-                // Только Вход-1 (1.618) -> Тейк-1 (0.618)
+                // 1. Только Вход-1 (1.618) -> Тейк-1 (0.618)
                 lm_pnl_only1_tp1 = (lm_grid.q1 * (c.long_manip.raw_tp1 - c.long_manip.raw_e1)).toFixed(2);
 
-                // Оба входа -> Тейк-1 (0.618)
+                // 2. Только Вход-1 (1.618) -> Тейк-2 (0.500)
+                lm_pnl_only1_tp2 = (lm_grid.q1 * (c.long_manip.raw_tp2 - c.long_manip.raw_e1)).toFixed(2);
+
+                // 3. Оба входа -> Тейк-1 (0.618)
                 const pnl1_tp1 = lm_grid.q1 * (c.long_manip.raw_tp1 - c.long_manip.raw_e1);
                 const pnl2_tp1 = lm_grid.q2 * (c.long_manip.raw_tp1 - c.long_manip.raw_e2);
                 lm_pnl_both_tp1 = (pnl1_tp1 + pnl2_tp1).toFixed(2);
 
-                // Оба входа -> Тейк-2 (0.500)
+                // 4. Оба входа -> Тейк-2 (0.500)
                 const pnl1_tp2 = lm_grid.q1 * (c.long_manip.raw_tp2 - c.long_manip.raw_e1);
                 const pnl2_tp2 = lm_grid.q2 * (c.long_manip.raw_tp2 - c.long_manip.raw_e2);
                 lm_pnl_both_tp2 = (pnl1_tp2 + pnl2_tp2).toFixed(2);
@@ -804,7 +808,11 @@ function renderCards(data) {
                         <span class="payout-val-green">+$${lm_pnl_only1_tp1}</span>
                     </div>
                     <div class="profit-payout-row">
-                        <span class="lbl">🚀 Тейк-1 (ОБА входа → 0.618):</span>
+                        <span class="lbl">💰 Тейк-2 (только Вход-1 → 0.500):</span>
+                        <span class="payout-val-cyan">+$${lm_pnl_only1_tp2}</span>
+                    </div>
+                    <div class="profit-payout-row">
+                        <span class="lbl">🚀 Тейк-1 (ОБА входа → 0.618) [R:R 1:2]:</span>
                         <span class="payout-val-green">+$${lm_pnl_both_tp1}</span>
                     </div>
                     <div class="profit-payout-row">
@@ -816,7 +824,7 @@ function renderCards(data) {
                         <span class="payout-val-red">-$${lm_grid.loss_if_only_1}</span>
                     </div>
                     <div class="profit-payout-row">
-                        <span class="lbl">🛑 Стоп (если ОБА входа 1+2):</span>
+                        <span class="lbl">🛑 Стоп (если ОБА входа 1+2) [R:R 1:2]:</span>
                         <span class="payout-val-red">-$${lm_grid.loss_total}</span>
                     </div>
                 </div>
