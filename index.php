@@ -1050,9 +1050,8 @@ function renderCards(data) {
                             <div class="scenario-coins"><span class="coins-tag">${ln_grid.q_solo1_fmt} ${coinTicker}</span> <span class="margin-subtext">($${ln_grid.margin_solo1})</span></div>
                         </div>
                         <div class="scenario-grid">
-                            <div class="scenario-row"><span class="scenario-lbl">🔹 Вход (0.500):</span><span class="scenario-val c-cyan">${c.long_normal.entry_050} $</span></div>
-                            <div class="scenario-row"><span class="scenario-lbl">🎯 Тейк (0.382):</span><span class="scenario-val c-green">${c.long_normal.tp_0382} $ <span class="payout-val-green">(+$${ln_pnl_only1_to_382})</span></span></div>
-                            <div class="scenario-row"><span class="scenario-lbl">🛑 Стоп (0.860):</span><span class="scenario-val c-red">${c.long_normal.sl} $ <span class="payout-val-red">(-$${ln_grid.loss_total})</span></span></div>
+                            <div class="scenario-row"><span class="scenario-lbl">🎯 Доход (Тейк 0.382):</span><span class="scenario-val payout-val-green">+$${ln_pnl_only1_to_382}</span></div>
+                            <div class="scenario-row"><span class="scenario-lbl">🛑 Убыток (Стоп 0.860):</span><span class="scenario-val payout-val-red">-$${ln_grid.loss_total}</span></div>
                         </div>
                     </div>
 
@@ -1063,11 +1062,11 @@ function renderCards(data) {
                             <div class="scenario-coins"><span class="coins-tag">${fmtCoinQty(ln_grid.q_total)} ${coinTicker}</span> <span class="margin-subtext">($${(parseFloat(ln_grid.margin1)+parseFloat(ln_grid.margin2)).toFixed(1)})</span></div>
                         </div>
                         <div class="scenario-grid">
-                            <div class="scenario-row"><span class="scenario-lbl">🔹 Входы (1x + 2x):</span><span class="scenario-val">${c.long_normal.entry_050} $ <span class="coins-tag" style="font-size:9.5px; padding:0 4px;">${ln_grid.q1_fmt}</span> + ${c.long_normal.entry_0618} $ <span class="coins-tag" style="font-size:9.5px; padding:0 4px;">${ln_grid.q2_fmt}</span></span></div>
-                            <div class="scenario-row"><span class="scenario-lbl">🎯 ТП1 (0.500):</span><span class="scenario-val c-green">${c.long_normal.tp_0500} $ <span class="payout-val-green">(+$${ln_pnl_both_to_500})</span></span></div>
-                            <div class="scenario-row"><span class="scenario-lbl">⭐ Сплит (50/50):</span><span class="scenario-val c-cyan"><span class="payout-val-cyan">+$${ln_pnl_split_50_382}</span></span></div>
-                            <div class="scenario-row"><span class="scenario-lbl">🚀 ТП2 (0.382):</span><span class="scenario-val c-green">${c.long_normal.tp_0382} $ <span class="payout-val-green">(+$${ln_pnl_both_to_382})</span></span></div>
-                            <div class="scenario-row"><span class="scenario-lbl">🛑 Стоп (0.860):</span><span class="scenario-val c-red">${c.long_normal.sl} $ <span class="payout-val-red">(-$${ln_grid.loss_total})</span></span></div>
+                            <div class="scenario-row"><span class="scenario-lbl">🔹 Доли входа:</span><span class="scenario-val" style="font-size:11.5px; color:var(--text-dim);">1x (${ln_grid.q1_fmt}) + 2x (${ln_grid.q2_fmt})</span></div>
+                            <div class="scenario-row"><span class="scenario-lbl">🎯 Доход при ТП1 (0.500):</span><span class="scenario-val payout-val-green">+$${ln_pnl_both_to_500}</span></div>
+                            <div class="scenario-row"><span class="scenario-lbl">⭐ Сплит (50% на ТП1 + 50% на ТП2):</span><span class="scenario-val payout-val-cyan">+$${ln_pnl_split_50_382}</span></div>
+                            <div class="scenario-row"><span class="scenario-lbl">🚀 Доход при ТП2 (0.382):</span><span class="scenario-val payout-val-green">+$${ln_pnl_both_to_382}</span></div>
+                            <div class="scenario-row"><span class="scenario-lbl">🛑 Убыток на стопе (ОБА входа):</span><span class="scenario-val payout-val-red">-$${ln_grid.loss_total}</span></div>
                         </div>
                     </div>
 
@@ -1078,10 +1077,9 @@ function renderCards(data) {
                             <div class="scenario-coins"><span class="coins-tag">${ln_grid.q_solo2_fmt} ${coinTicker}</span> <span class="margin-subtext">($${ln_grid.margin_solo2})</span></div>
                         </div>
                         <div class="scenario-grid">
-                            <div class="scenario-row"><span class="scenario-lbl">🔹 Вход (0.618):</span><span class="scenario-val c-blue">${c.long_normal.entry_0618} $</span></div>
-                            <div class="scenario-row"><span class="scenario-lbl">🎯 ТП1 (0.500):</span><span class="scenario-val c-green">${c.long_normal.tp_0500} $ <span class="payout-val-green">(+$${ln_pnl_only2_to_500})</span></span></div>
-                            <div class="scenario-row"><span class="scenario-lbl">🎯 ТП2 (0.382):</span><span class="scenario-val c-green">${c.long_normal.tp_0382} $ <span class="payout-val-green">(+$${ln_pnl_only2_to_382})</span></span></div>
-                            <div class="scenario-row"><span class="scenario-lbl">🛑 Стоп (0.860):</span><span class="scenario-val c-red">${c.long_normal.sl} $ <span class="payout-val-red">(-$${ln_grid.loss_total})</span></span></div>
+                            <div class="scenario-row"><span class="scenario-lbl">🎯 Доход при ТП1 (0.500):</span><span class="scenario-val payout-val-green">+$${ln_pnl_only2_to_500}</span></div>
+                            <div class="scenario-row"><span class="scenario-lbl">🚀 Доход при ТП2 (0.382):</span><span class="scenario-val payout-val-green">+$${ln_pnl_only2_to_382}</span></div>
+                            <div class="scenario-row"><span class="scenario-lbl">🛑 Убыток (Стоп 0.860):</span><span class="scenario-val payout-val-red">-$${ln_grid.loss_total}</span></div>
                         </div>
                     </div>
 
@@ -1115,9 +1113,8 @@ function renderCards(data) {
                             <div class="scenario-coins"><span class="coins-tag">${sn_grid.q_solo1_fmt} ${coinTicker}</span> <span class="margin-subtext">($${sn_grid.margin_solo1})</span></div>
                         </div>
                         <div class="scenario-grid">
-                            <div class="scenario-row"><span class="scenario-lbl">🔹 Вход (0.500):</span><span class="scenario-val c-orange">${c.short_normal.entry_050} $</span></div>
-                            <div class="scenario-row"><span class="scenario-lbl">🎯 Тейк (0.382):</span><span class="scenario-val c-green">${c.short_normal.tp_0382} $ <span class="payout-val-green">(+$${sn_pnl_only1_to_382})</span></span></div>
-                            <div class="scenario-row"><span class="scenario-lbl">🛑 Стоп (0.860):</span><span class="scenario-val c-red">${c.short_normal.sl} $ <span class="payout-val-red">(-$${sn_grid.loss_total})</span></span></div>
+                            <div class="scenario-row"><span class="scenario-lbl">🎯 Доход (Тейк 0.382):</span><span class="scenario-val payout-val-green">+$${sn_pnl_only1_to_382}</span></div>
+                            <div class="scenario-row"><span class="scenario-lbl">🛑 Убыток (Стоп 0.860):</span><span class="scenario-val payout-val-red">-$${sn_grid.loss_total}</span></div>
                         </div>
                     </div>
 
@@ -1128,11 +1125,11 @@ function renderCards(data) {
                             <div class="scenario-coins"><span class="coins-tag">${fmtCoinQty(sn_grid.q_total)} ${coinTicker}</span> <span class="margin-subtext">($${(parseFloat(sn_grid.margin1)+parseFloat(sn_grid.margin2)).toFixed(1)})</span></div>
                         </div>
                         <div class="scenario-grid">
-                            <div class="scenario-row"><span class="scenario-lbl">🔹 Входы (1x + 2x):</span><span class="scenario-val">${c.short_normal.entry_050} $ <span class="coins-tag" style="font-size:9.5px; padding:0 4px;">${sn_grid.q1_fmt}</span> + ${c.short_normal.entry_0618} $ <span class="coins-tag" style="font-size:9.5px; padding:0 4px;">${sn_grid.q2_fmt}</span></span></div>
-                            <div class="scenario-row"><span class="scenario-lbl">🎯 ТП1 (0.500):</span><span class="scenario-val c-green">${c.short_normal.tp_0500} $ <span class="payout-val-green">(+$${sn_pnl_both_to_500})</span></span></div>
-                            <div class="scenario-row"><span class="scenario-lbl">⭐ Сплит (50/50):</span><span class="scenario-val c-cyan"><span class="payout-val-cyan">+$${sn_pnl_split_50_382}</span></span></div>
-                            <div class="scenario-row"><span class="scenario-lbl">🚀 ТП2 (0.382):</span><span class="scenario-val c-green">${c.short_normal.tp_0382} $ <span class="payout-val-green">(+$${sn_pnl_both_to_382})</span></span></div>
-                            <div class="scenario-row"><span class="scenario-lbl">🛑 Стоп (0.860):</span><span class="scenario-val c-red">${c.short_normal.sl} $ <span class="payout-val-red">(-$${sn_grid.loss_total})</span></span></div>
+                            <div class="scenario-row"><span class="scenario-lbl">🔹 Доли входа:</span><span class="scenario-val" style="font-size:11.5px; color:var(--text-dim);">1x (${sn_grid.q1_fmt}) + 2x (${sn_grid.q2_fmt})</span></div>
+                            <div class="scenario-row"><span class="scenario-lbl">🎯 Доход при ТП1 (0.500):</span><span class="scenario-val payout-val-green">+$${sn_pnl_both_to_500}</span></div>
+                            <div class="scenario-row"><span class="scenario-lbl">⭐ Сплит (50% на ТП1 + 50% на ТП2):</span><span class="scenario-val payout-val-cyan">+$${sn_pnl_split_50_382}</span></div>
+                            <div class="scenario-row"><span class="scenario-lbl">🚀 Доход при ТП2 (0.382):</span><span class="scenario-val payout-val-green">+$${sn_pnl_both_to_382}</span></div>
+                            <div class="scenario-row"><span class="scenario-lbl">🛑 Убыток на стопе (ОБА входа):</span><span class="scenario-val payout-val-red">-$${sn_grid.loss_total}</span></div>
                         </div>
                     </div>
 
@@ -1143,10 +1140,9 @@ function renderCards(data) {
                             <div class="scenario-coins"><span class="coins-tag">${sn_grid.q_solo2_fmt} ${coinTicker}</span> <span class="margin-subtext">($${sn_grid.margin_solo2})</span></div>
                         </div>
                         <div class="scenario-grid">
-                            <div class="scenario-row"><span class="scenario-lbl">🔹 Вход (0.618):</span><span class="scenario-val c-red">${c.short_normal.entry_0618} $</span></div>
-                            <div class="scenario-row"><span class="scenario-lbl">🎯 ТП1 (0.500):</span><span class="scenario-val c-green">${c.short_normal.tp_0500} $ <span class="payout-val-green">(+$${sn_pnl_only2_to_500})</span></span></div>
-                            <div class="scenario-row"><span class="scenario-lbl">🎯 ТП2 (0.382):</span><span class="scenario-val c-green">${c.short_normal.tp_0382} $ <span class="payout-val-green">(+$${sn_pnl_only2_to_382})</span></span></div>
-                            <div class="scenario-row"><span class="scenario-lbl">🛑 Стоп (0.860):</span><span class="scenario-val c-red">${c.short_normal.sl} $ <span class="payout-val-red">(-$${sn_grid.loss_total})</span></span></div>
+                            <div class="scenario-row"><span class="scenario-lbl">🎯 Доход при ТП1 (0.500):</span><span class="scenario-val payout-val-green">+$${sn_pnl_only2_to_500}</span></div>
+                            <div class="scenario-row"><span class="scenario-lbl">🚀 Доход при ТП2 (0.382):</span><span class="scenario-val payout-val-green">+$${sn_pnl_only2_to_382}</span></div>
+                            <div class="scenario-row"><span class="scenario-lbl">🛑 Убыток (Стоп 0.860):</span><span class="scenario-val payout-val-red">-$${sn_grid.loss_total}</span></div>
                         </div>
                     </div>
 
@@ -1180,10 +1176,9 @@ function renderCards(data) {
                             <div class="scenario-coins"><span class="coins-tag">${lm_grid.q_solo1_fmt} ${coinTicker}</span> <span class="margin-subtext">($${lm_grid.margin_solo1})</span></div>
                         </div>
                         <div class="scenario-grid">
-                            <div class="scenario-row"><span class="scenario-lbl">🔹 Вход (1.618):</span><span class="scenario-val c-purple">${c.long_manip.entry_1} $</span></div>
-                            <div class="scenario-row"><span class="scenario-lbl">🎯 Тейк-1 (0.618):</span><span class="scenario-val c-green">${c.long_manip.tp_1} $ <span class="payout-val-green">(+$${lm_pnl_only1_tp1})</span></span></div>
-                            <div class="scenario-row"><span class="scenario-lbl">🎯 Тейк-2 (0.500):</span><span class="scenario-val c-cyan">${c.long_manip.tp_2} $ <span class="payout-val-cyan">(+$${lm_pnl_only1_tp2})</span></span></div>
-                            <div class="scenario-row"><span class="scenario-lbl">🛑 Стоп (${c.long_manip.sl_fib} Fib):</span><span class="scenario-val c-red">${c.long_manip.sl} $ <span class="payout-val-red">(-$${lm_grid.loss_total})</span></span></div>
+                            <div class="scenario-row"><span class="scenario-lbl">🎯 Доход при ТП1 (0.618):</span><span class="scenario-val payout-val-green">+$${lm_pnl_only1_tp1}</span></div>
+                            <div class="scenario-row"><span class="scenario-lbl">🔥 Доход при ТП2 (0.500):</span><span class="scenario-val payout-val-cyan">+$${lm_pnl_only1_tp2}</span></div>
+                            <div class="scenario-row"><span class="scenario-lbl">🛑 Убыток на стопе:</span><span class="scenario-val payout-val-red">-$${lm_grid.loss_total}</span></div>
                         </div>
                     </div>
 
@@ -1194,10 +1189,10 @@ function renderCards(data) {
                             <div class="scenario-coins"><span class="coins-tag">${fmtCoinQty(lm_grid.q_total)} ${coinTicker}</span> <span class="margin-subtext">($${(parseFloat(lm_grid.margin1)+parseFloat(lm_grid.margin2)).toFixed(1)})</span></div>
                         </div>
                         <div class="scenario-grid">
-                            <div class="scenario-row"><span class="scenario-lbl">🔹 Входы (1x + 2x):</span><span class="scenario-val">${c.long_manip.entry_1} $ <span class="coins-tag" style="font-size:9.5px; padding:0 4px;">${lm_grid.q1_fmt}</span> + ${c.long_manip.entry_2} $ <span class="coins-tag" style="font-size:9.5px; padding:0 4px;">${lm_grid.q2_fmt}</span></span></div>
-                            <div class="scenario-row"><span class="scenario-lbl">🎯 ТП1 (0.618):</span><span class="scenario-val c-green">${c.long_manip.tp_1} $ <span class="payout-val-green">(+$${lm_pnl_both_tp1})</span></span></div>
-                            <div class="scenario-row"><span class="scenario-lbl">🔥 ТП2 (0.500):</span><span class="scenario-val c-green">${c.long_manip.tp_2} $ <span class="payout-val-green">(+$${lm_pnl_both_tp2})</span></span></div>
-                            <div class="scenario-row"><span class="scenario-lbl">🛑 Стоп (${c.long_manip.sl_fib} Fib):</span><span class="scenario-val c-red">${c.long_manip.sl} $ <span class="payout-val-red">(-$${lm_grid.loss_total})</span></span></div>
+                            <div class="scenario-row"><span class="scenario-lbl">🔹 Доли входа:</span><span class="scenario-val" style="font-size:11.5px; color:var(--text-dim);">1x (${lm_grid.q1_fmt}) + 2x (${lm_grid.q2_fmt})</span></div>
+                            <div class="scenario-row"><span class="scenario-lbl">🎯 Доход при ТП1 (0.618):</span><span class="scenario-val payout-val-green">+$${lm_pnl_both_tp1}</span></div>
+                            <div class="scenario-row"><span class="scenario-lbl">🔥 Доход при ТП2 (0.500):</span><span class="scenario-val payout-val-green">+$${lm_pnl_both_tp2}</span></div>
+                            <div class="scenario-row"><span class="scenario-lbl">🛑 Убыток на стопе:</span><span class="scenario-val payout-val-red">-$${lm_grid.loss_total}</span></div>
                         </div>
                     </div>
 
