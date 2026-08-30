@@ -1,8 +1,8 @@
 <?php
 /**
- * Live Web Screener & Signal Scanner для стратегии "Манипуляция на часе (Mon 1H)"
+ * Live Screener & Signal Scanner для стратегии "Манипуляция на часе (Mon 1H)"
  * Монеты: HYPEUSDT, NEARUSDT, UNIUSDT
- * Автоматическое определение ДОМИНИРУЮЩЕГО СИГНАЛА с ручной кнопкой обновления и защитой от кэширования.
+ * Автоматический поиск ПОЛНОЙ МАКРО-ВОЛНЫ импульса от истинного дна.
  */
 
 error_reporting(E_ALL & ~E_DEPRECATED);
@@ -11,7 +11,7 @@ date_default_timezone_set('Europe/Moscow'); // UTC+3
 $symbols = ['HYPEUSDT', 'NEARUSDT', 'UNIUSDT'];
 $MIN_IMP_MANIP  = 1.0;
 $MIN_IMP_NORMAL = 3.5;
-$MAX_IMPULSE_HOURS = 48;
+$MAX_IMPULSE_HOURS = 72; // До 72 часов для захвата полноценных волн
 
 function fetchBybitKlines($symbol, $interval = '60', $limit = 100) {
     $url = "https://api.bybit.com/v5/market/kline?category=linear&symbol={$symbol}&interval={$interval}&limit={$limit}";
@@ -54,76 +54,117 @@ function fmt3($val) {
     return number_format((float)$val, 3, '.', '');
 }
 
+/**
+ * Алгоритм поиска ПОЛНОЙ МАКРО-ВОЛНЫ:
+ * Сканирует историю от текущего бара назад в поиске истинного основания импульса,
+ * пока ни одна промежуточная свеча не пробивала 0.500 Fib.
+ */
 function detectLatestLongImpulse($candles, $min_pct) {
     global $MAX_IMPULSE_HOURS;
     $n = count($candles);
-    $last_valid = null;
-    $active_start = null; $active_low = null; $active_high = null; $active_end = null; $is_active = false;
+    $best_impulse = null;
 
-    for ($i = 0; $i < $n - 1; $i++) {
-        $cur = $candles[$i]; $next = $candles[$i + 1];
-        if ($next['high'] > $cur['high'] && !$is_active) {
-            $active_start = $i; $active_low = $cur['low']; $active_high = $next['high']; $active_end = $i + 1; $is_active = true;
+    // Перебираем потенциальные точки старта от 1 до 72 баров назад
+    for ($i = 1; $i < min(72, $n - 1); $i++) {
+        $start_idx = $n - 1 - $i;
+        $imp_low   = $candles[$start_idx]['low'];
+        $imp_high  = $candles[$start_idx + 1]['high'];
+        
+        if ($candles[$start_idx + 1]['high'] <= $candles[$start_idx]['high']) {
+            continue; // Не было старта роста
         }
-        if ($is_active) {
-            $f05 = calcFibLongLog($active_high, $active_low, 0.500);
-            if ($cur['low'] <= $f05 && $i > $active_start) {
-                $is_active = false;
-                $pct = ($active_high - $active_low) / $active_low * 100.0;
-                if ($pct >= $min_pct && $active_end > $active_start) {
-                    $last_valid = ['start_time' => $candles[$active_start]['time'], 'end_time' => $candles[$active_end]['time'], 'end_idx' => $active_end, 'high' => $active_high, 'low' => $active_low, 'pct' => $pct];
+
+        $broken = false;
+        $max_high = $imp_high;
+        $max_idx  = $start_idx + 1;
+
+        // Протягиваем импульс вперед до текущего момента
+        for ($k = $start_idx + 1; $k < $n; $k++) {
+            $cur_05 = calcFibLongLog($max_high, $imp_low, 0.500);
+            if ($candles[$k]['low'] <= $cur_05) {
+                $broken = true;
+                break;
+            }
+            if ($candles[$k]['high'] > $max_high) {
+                $max_high = $candles[$k]['high'];
+                $max_idx  = $k;
+            }
+        }
+
+        if (!$broken) {
+            $pct = ($max_high - $imp_low) / $imp_low * 100.0;
+            if ($pct >= $min_pct) {
+                // Нашли валидную макро-волну. Берем самую глубокую (наибольший размах)
+                if ($best_impulse === null || $pct > $best_impulse['pct']) {
+                    $best_impulse = [
+                        'start_time' => $candles[$start_idx]['time'],
+                        'end_time'   => $candles[$max_idx]['time'],
+                        'end_idx'    => $max_idx,
+                        'high'       => $max_high,
+                        'low'        => $imp_low,
+                        'pct'        => $pct,
+                        'is_live'    => true
+                    ];
                 }
-            } else {
-                if ($cur['high'] > $active_high) { $active_high = $cur['high']; $active_end  = $i; }
             }
         }
     }
-    if ($is_active && $active_high && $active_low) {
-        $pct = ($active_high - $active_low) / $active_low * 100.0;
-        if ($pct >= $min_pct) {
-            $last_valid = ['start_time' => $candles[$active_start]['time'], 'end_time' => $candles[$active_end]['time'], 'end_idx' => $active_end, 'high' => $active_high, 'low' => $active_low, 'pct' => $pct, 'is_live' => true];
-        }
-    }
-    if ($last_valid && ($n - 1 - $last_valid['end_idx']) > $MAX_IMPULSE_HOURS) {
-        return null;
-    }
-    return $last_valid;
+
+    return $best_impulse;
 }
 
+/**
+ * Алгоритм поиска ПОЛНОЙ МАКРО-ВОЛНЫ ДАМПА (SHORT)
+ */
 function detectLatestShortImpulse($candles, $min_pct) {
     global $MAX_IMPULSE_HOURS;
     $n = count($candles);
-    $last_valid = null;
-    $active_start = null; $active_high = null; $active_low = null; $active_end = null; $is_active = false;
+    $best_impulse = null;
 
-    for ($i = 0; $i < $n - 1; $i++) {
-        $cur = $candles[$i]; $next = $candles[$i + 1];
-        if ($next['low'] < $cur['low'] && !$is_active) {
-            $active_start = $i; $active_high = $cur['high']; $active_low = $next['low']; $active_end = $i + 1; $is_active = true;
+    for ($i = 1; $i < min(72, $n - 1); $i++) {
+        $start_idx = $n - 1 - $i;
+        $imp_high  = $candles[$start_idx]['high'];
+        $imp_low   = $candles[$start_idx + 1]['low'];
+        
+        if ($candles[$start_idx + 1]['low'] >= $candles[$start_idx]['low']) {
+            continue;
         }
-        if ($is_active) {
-            $f05 = calcFibShortLog($active_high, $active_low, 0.500);
-            if ($cur['high'] >= $f05 && $i > $active_start) {
-                $is_active = false;
-                $pct = ($active_high - $active_low) / $active_high * 100.0;
-                if ($pct >= $min_pct && $active_end > $active_start) {
-                    $last_valid = ['start_time' => $candles[$active_start]['time'], 'end_time' => $candles[$active_end]['time'], 'end_idx' => $active_end, 'high' => $active_high, 'low' => $active_low, 'pct' => $pct];
+
+        $broken = false;
+        $min_low = $imp_low;
+        $min_idx = $start_idx + 1;
+
+        for ($k = $start_idx + 1; $k < $n; $k++) {
+            $cur_05 = calcFibShortLog($imp_high, $min_low, 0.500);
+            if ($candles[$k]['high'] >= $cur_05) {
+                $broken = true;
+                break;
+            }
+            if ($candles[$k]['low'] < $min_low) {
+                $min_low = $candles[$k]['low'];
+                $min_idx = $k;
+            }
+        }
+
+        if (!$broken) {
+            $pct = ($imp_high - $min_low) / $imp_high * 100.0;
+            if ($pct >= $min_pct) {
+                if ($best_impulse === null || $pct > $best_impulse['pct']) {
+                    $best_impulse = [
+                        'start_time' => $candles[$start_idx]['time'],
+                        'end_time'   => $candles[$min_idx]['time'],
+                        'end_idx'    => $min_idx,
+                        'high'       => $imp_high,
+                        'low'        => $min_low,
+                        'pct'        => $pct,
+                        'is_live'    => true
+                    ];
                 }
-            } else {
-                if ($cur['low'] < $active_low) { $active_low = $cur['low']; $active_end = $i; }
             }
         }
     }
-    if ($is_active && $active_high && $active_low) {
-        $pct = ($active_high - $active_low) / $active_high * 100.0;
-        if ($pct >= $min_pct) {
-            $last_valid = ['start_time' => $candles[$active_start]['time'], 'end_time' => $candles[$active_end]['time'], 'end_idx' => $active_end, 'high' => $active_high, 'low' => $active_low, 'pct' => $pct, 'is_live' => true];
-        }
-    }
-    if ($last_valid && ($n - 1 - $last_valid['end_idx']) > $MAX_IMPULSE_HOURS) {
-        return null;
-    }
-    return $last_valid;
+
+    return $best_impulse;
 }
 
 if (isset($_GET['ajax'])) {
@@ -303,7 +344,6 @@ async function updateScreener() {
     if (btn) btn.classList.add('loading');
 
     try {
-        // Указываем текущий URL страницы + timestamp для предотвращения кэширования браузером / Cloudflare / Nginx
         const currentUrl = window.location.pathname;
         const res = await fetch(currentUrl + '?ajax=1&t=' + new Date().getTime());
         const data = await res.json();
@@ -336,7 +376,7 @@ async function updateScreener() {
                     <div class="status-pill ${c.long_normal.active ? 'status-ready' : 'status-wait'}">
                         ${c.long_normal.active ? (c.long_normal.is_fresher ? '🟢 ВХОД В LONG (Актуальный импульс)' : '⚠️ Старый импульс') : '⏳ Ожидание отката'}
                     </div>
-                    ` : '<div style="color:var(--text-dim); font-size:12px;">Нет импульса ≥ 3.5% за 48ч</div>'}
+                    ` : '<div style="color:var(--text-dim); font-size:12px;">Нет импульса ≥ 3.5%</div>'}
                 </div>
 
                 <!-- 2. SHORT NORMAL -->
@@ -354,7 +394,7 @@ async function updateScreener() {
                     <div class="status-pill ${c.short_normal.active ? 'status-ready' : 'status-wait'}">
                         ${c.short_normal.active ? (c.short_normal.is_fresher ? '🔴 ВХОД В SHORT (Актуальный дамп)' : '⚠️ Старый дамп') : '⏳ Ожидание отскока вверх'}
                     </div>
-                    ` : '<div style="color:var(--text-dim); font-size:12px;">Нет дамп-импульса ≥ 3.5% за 48ч</div>'}
+                    ` : '<div style="color:var(--text-dim); font-size:12px;">Нет дамп-импульса ≥ 3.5%</div>'}
                 </div>
 
                 <!-- 3. LONG MANIPULATION -->
