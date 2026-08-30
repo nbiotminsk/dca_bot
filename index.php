@@ -619,27 +619,24 @@ if (isset($_GET['ajax'])) {
         
         .general-levels-box {
             display: flex;
-            flex-wrap: wrap;
-            gap: 6px;
+            flex-direction: column;
+            gap: 4px;
             background: rgba(0,0,0,0.4);
             border: 1px solid rgba(255,255,255,0.08);
             border-radius: 8px;
-            padding: 8px 10px;
+            padding: 8px 12px;
             margin-bottom: 8px;
-            font-size: 11.5px;
+            font-size: 13px;
             font-family: monospace;
         }
-        .level-pill {
+        .level-row {
             display: flex;
+            justify-content: space-between;
             align-items: center;
-            gap: 4px;
-            background: rgba(255,255,255,0.04);
-            padding: 3px 7px;
-            border-radius: 5px;
-            border: 1px solid rgba(255,255,255,0.06);
+            padding: 2px 0;
         }
-        .level-pill .pill-lbl { color: var(--text-dim); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 11px; }
-        .level-pill .pill-val { font-weight: 800; }
+        .level-row .pill-lbl { color: var(--text-dim); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 12px; }
+        .level-row .pill-val { font-weight: 800; font-size: 13.5px; }
 
         .scenario-box {
             background: rgba(0, 0, 0, 0.28);
@@ -1039,11 +1036,11 @@ function renderCards(data) {
 
                     <!-- 📍 ОБЩИЕ УРОВНИ И ЦЕНЫ -->
                     <div class="general-levels-box">
-                        <div class="level-pill"><span class="pill-lbl">🔹 0.500:</span> <span class="pill-val c-cyan">${c.long_normal.entry_050} $</span></div>
-                        <div class="level-pill"><span class="pill-lbl">🔹 0.618:</span> <span class="pill-val c-blue">${c.long_normal.entry_0618} $</span></div>
-                        <div class="level-pill"><span class="pill-lbl">🎯 ТП1 (0.500):</span> <span class="pill-val c-green">${c.long_normal.tp_0500} $</span></div>
-                        <div class="level-pill"><span class="pill-lbl">🎯 ТП2 (0.382):</span> <span class="pill-val c-green">${c.long_normal.tp_0382} $</span></div>
-                        <div class="level-pill"><span class="pill-lbl">🛑 Стоп (0.860):</span> <span class="pill-val c-red">${c.long_normal.sl} $</span></div>
+                        <div class="level-row"><span class="pill-lbl">🔹 Вход-1 (0.500 Fib):</span> <span class="pill-val c-cyan">${c.long_normal.entry_050} $</span></div>
+                        <div class="level-row"><span class="pill-lbl">🔹 Вход-2 (0.618 Fib):</span> <span class="pill-val c-blue">${c.long_normal.entry_0618} $</span></div>
+                        <div class="level-row"><span class="pill-lbl">🎯 Тейк-1 (0.500 Fib):</span> <span class="pill-val c-green">${c.long_normal.tp_0500} $</span></div>
+                        <div class="level-row"><span class="pill-lbl">🎯 Тейк-2 (0.382 Fib):</span> <span class="pill-val c-green">${c.long_normal.tp_0382} $</span></div>
+                        <div class="level-row"><span class="pill-lbl">🛑 Стоп (0.860 Fib):</span> <span class="pill-val c-red">${c.long_normal.sl} $</span></div>
                     </div>
 
                     <!-- 1. ВХОД ТОЛЬКО ОТ 0.5 -->
@@ -1104,11 +1101,11 @@ function renderCards(data) {
 
                     <!-- 📍 ОБЩИЕ УРОВНИ И ЦЕНЫ В SHORT -->
                     <div class="general-levels-box">
-                        <div class="level-pill"><span class="pill-lbl">🔹 0.500:</span> <span class="pill-val c-orange">${c.short_normal.entry_050} $</span></div>
-                        <div class="level-pill"><span class="pill-lbl">🔹 0.618:</span> <span class="pill-val c-red">${c.short_normal.entry_0618} $</span></div>
-                        <div class="level-pill"><span class="pill-lbl">🎯 ТП1 (0.500):</span> <span class="pill-val c-green">${c.short_normal.tp_0500} $</span></div>
-                        <div class="level-pill"><span class="pill-lbl">🎯 ТП2 (0.382):</span> <span class="pill-val c-green">${c.short_normal.tp_0382} $</span></div>
-                        <div class="level-pill"><span class="pill-lbl">🛑 Стоп (0.860):</span> <span class="pill-val c-red">${c.short_normal.sl} $</span></div>
+                        <div class="level-row"><span class="pill-lbl">🔹 Вход-1 в Short (0.500 Fib):</span> <span class="pill-val c-orange">${c.short_normal.entry_050} $</span></div>
+                        <div class="level-row"><span class="pill-lbl">🔹 Вход-2 в Short (0.618 Fib):</span> <span class="pill-val c-red">${c.short_normal.entry_0618} $</span></div>
+                        <div class="level-row"><span class="pill-lbl">🎯 Тейк-1 (0.500 Fib):</span> <span class="pill-val c-green">${c.short_normal.tp_0500} $</span></div>
+                        <div class="level-row"><span class="pill-lbl">🎯 Тейк-2 (0.382 Fib):</span> <span class="pill-val c-green">${c.short_normal.tp_0382} $</span></div>
+                        <div class="level-row"><span class="pill-lbl">🛑 Стоп (0.860 Fib):</span> <span class="pill-val c-red">${c.short_normal.sl} $</span></div>
                     </div>
 
                     <!-- 1. ВХОД В SHORT ТОЛЬКО ОТ 0.5 -->
@@ -1169,11 +1166,11 @@ function renderCards(data) {
 
                     <!-- 📍 ОБЩИЕ УРОВНИ И ЦЕНЫ В МАНИПУЛЯЦИИ -->
                     <div class="general-levels-box">
-                        <div class="level-pill"><span class="pill-lbl">🟣 1.618:</span> <span class="pill-val c-purple">${c.long_manip.entry_1} $</span></div>
-                        <div class="level-pill"><span class="pill-lbl">🟠 2.000:</span> <span class="pill-val c-orange">${c.long_manip.entry_2} $</span></div>
-                        <div class="level-pill"><span class="pill-lbl">🎯 ТП1 (0.618):</span> <span class="pill-val c-green">${c.long_manip.tp_1} $</span></div>
-                        <div class="level-pill"><span class="pill-lbl">🎯 ТП2 (0.500):</span> <span class="pill-val c-green">${c.long_manip.tp_2} $</span></div>
-                        <div class="level-pill"><span class="pill-lbl">🛑 Стоп (${c.long_manip.sl_fib}):</span> <span class="pill-val c-red">${c.long_manip.sl} $</span></div>
+                        <div class="level-row"><span class="pill-lbl">🟣 Вход-1 (1.618 Fib):</span> <span class="pill-val c-purple">${c.long_manip.entry_1} $</span></div>
+                        <div class="level-row"><span class="pill-lbl">🟠 Добор-2 (2.000 Fib):</span> <span class="pill-val c-orange">${c.long_manip.entry_2} $</span></div>
+                        <div class="level-row"><span class="pill-lbl">🎯 Тейк-1 (0.618 Fib):</span> <span class="pill-val c-green">${c.long_manip.tp_1} $</span></div>
+                        <div class="level-row"><span class="pill-lbl">🎯 Тейк-2 (0.500 Fib):</span> <span class="pill-val c-green">${c.long_manip.tp_2} $</span></div>
+                        <div class="level-row"><span class="pill-lbl">🛑 Стоп (${c.long_manip.sl_fib} Fib):</span> <span class="pill-val c-red">${c.long_manip.sl} $</span></div>
                     </div>
 
                     <!-- 1. ВХОД ТОЛЬКО ОТ 1.618 -->
