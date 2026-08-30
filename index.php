@@ -2,11 +2,10 @@
 /**
  * Live Web Screener & Signal Scanner с Риск-Калькулятором Позиций
  * Монеты: HYPEUSDT, NEARUSDT, UNIUSDT
- * Автоматический расчет сетки DCA (1x + 2x) с 4 сценариями тейков:
- * 1. Только Вход-1 -> 0.382
- * 2. Оба входа -> 100% на 0.500
- * 3. Сплит-выход: 50% на 0.500 + 50% на 0.382 (С защитой в БУ)
- * 4. Оба входа -> 100% на 0.382 (Макс. вытяг)
+ * Включает:
+ * 1. Обычный Long/Short (Сетка 0.500 / 0.618 со стопом 0.710)
+ * 2. Манипуляцию Long (1.618 1x + 2.000 2x DCA с оптимальным стопом 2.618 Fib)
+ * 3. Полный расчет риска в $ и количества монет под депозит/плечо
  */
 
 error_reporting(E_ALL & ~E_DEPRECATED);
@@ -235,6 +234,8 @@ if (isset($_GET['ajax'])) {
             $m2 = calcFibLongLog($impLM['high'], $impLM['low'], 2.000);
             $tp1 = calcFibLongLog($impLM['high'], $impLM['low'], 0.618);
             $tp2 = calcFibLongLog($impLM['high'], $impLM['low'], 0.500);
+            $sl2618 = calcFibLongLog($impLM['high'], $impLM['low'], 2.618);
+
             $card['long_manip'] = [
                 'entry_1'      => fmt3($m1),
                 'raw_e1'       => (float)$m1,
@@ -244,8 +245,10 @@ if (isset($_GET['ajax'])) {
                 'raw_tp1'      => (float)$tp1,
                 'tp_2'         => fmt3($tp2),
                 'raw_tp2'      => (float)$tp2,
+                'sl_2618'      => fmt3($sl2618),
+                'raw_sl'       => (float)$sl2618,
                 'pct'          => number_format($impLM['pct'], 2),
-                'active'       => ($curPrice <= $m1),
+                'active'       => ($curPrice <= $m1 && $curPrice > $sl2618),
                 'time'         => date('d.m H:i', (int)($impLM['end_time'] / 1000))
             ];
         }
@@ -490,6 +493,7 @@ function fmtCoinQty(qty) {
     return qty.toFixed(3);
 }
 
+// Расчет СЕТКИ DCA (Вход 1 [1 доля] + Вход 2 [2 доли]), где СУММАРНЫЙ убыток на стопе = maxRiskDollar
 function calculateDcaGrid(e1, e2, sl, isShort = false) {
     const dep = parseFloat(document.getElementById('cfg-deposit').value) || 1000;
     const rsk = parseFloat(document.getElementById('cfg-risk').value) || 2.0;
@@ -530,26 +534,6 @@ function calculateDcaGrid(e1, e2, sl, isShort = false) {
     };
 }
 
-function calculateManipPosition(e1, e2) {
-    const dep = parseFloat(document.getElementById('cfg-deposit').value) || 1000;
-    const lev = parseFloat(document.getElementById('cfg-leverage').value) || 1;
-
-    const totalPosDollar = (dep * 0.15) * lev;
-    const lot1Dollar = totalPosDollar * (1 / 3);
-    const lot2Dollar = totalPosDollar * (2 / 3);
-    const qty1 = e1 > 0 ? (lot1Dollar / e1) : 0;
-    const qty2 = e2 > 0 ? (lot2Dollar / e2) : 0;
-
-    return {
-        lot1_qty: fmtCoinQty(qty1),
-        lot1_raw_qty: qty1,
-        lot2_qty: fmtCoinQty(qty2),
-        lot2_raw_qty: qty2,
-        lot1_usd: lot1Dollar.toFixed(1),
-        lot2_usd: lot2Dollar.toFixed(1)
-    };
-}
-
 function renderCards(data) {
     if (!data || !data.items) return;
     let html = '';
@@ -566,22 +550,16 @@ function renderCards(data) {
         if (c.long_normal) {
             ln_grid = calculateDcaGrid(c.long_normal.raw_e050, c.long_normal.raw_e0618, c.long_normal.raw_sl, false);
             if (ln_grid) {
-                // 1. Только Вход-1 -> 0.382
                 ln_pnl_only1_to_382 = (ln_grid.q1 * (c.long_normal.raw_tp0382 - c.long_normal.raw_e050)).toFixed(2);
-
-                // 2. Оба входа -> 100% на 0.500
                 const pnl2_to_500 = ln_grid.q2 * (c.long_normal.raw_tp0500 - c.long_normal.raw_e0618);
                 ln_pnl_both_to_500 = pnl2_to_500.toFixed(2);
 
-                // 3. Сплит: 50% на 0.500 (дает 50% от pnl2_to_500) + 50% на 0.382 (дает 50% от полной прибыли на 0.382)
                 const pnl1_to_382 = ln_grid.q1 * (c.long_normal.raw_tp0382 - c.long_normal.raw_e050);
                 const pnl2_to_382 = ln_grid.q2 * (c.long_normal.raw_tp0382 - c.long_normal.raw_e0618);
                 const full_pnl_382 = pnl1_to_382 + pnl2_to_382;
 
                 const split_pnl = (0.50 * pnl2_to_500) + (0.50 * full_pnl_382);
                 ln_pnl_split_50_382 = split_pnl.toFixed(2);
-
-                // 4. Оба входа -> 100% на 0.382
                 ln_pnl_both_to_382 = full_pnl_382.toFixed(2);
             }
         }
@@ -596,37 +574,42 @@ function renderCards(data) {
         if (c.short_normal) {
             sn_grid = calculateDcaGrid(c.short_normal.raw_e050, c.short_normal.raw_e0618, c.short_normal.raw_sl, true);
             if (sn_grid) {
-                // 1. Только Вход-1 -> 0.382
                 sn_pnl_only1_to_382 = (sn_grid.q1 * (c.short_normal.raw_e050 - c.short_normal.raw_tp0382)).toFixed(2);
-
-                // 2. Оба входа -> 100% на 0.500
                 const pnl2_to_500 = sn_grid.q2 * (c.short_normal.raw_e0618 - c.short_normal.raw_tp0500);
                 sn_pnl_both_to_500 = pnl2_to_500.toFixed(2);
 
-                // 3. Сплит: 50% на 0.500 + 50% на 0.382
                 const pnl1_to_382 = sn_grid.q1 * (c.short_normal.raw_e050 - c.short_normal.raw_tp0382);
                 const pnl2_to_382 = sn_grid.q2 * (c.short_normal.raw_e0618 - c.short_normal.raw_tp0382);
                 const full_pnl_382 = pnl1_to_382 + pnl2_to_382;
 
                 const split_pnl = (0.50 * pnl2_to_500) + (0.50 * full_pnl_382);
                 sn_pnl_split_50_382 = split_pnl.toFixed(2);
-
-                // 4. Оба входа -> 100% на 0.382
                 sn_pnl_both_to_382 = full_pnl_382.toFixed(2);
             }
         }
 
-        // Расчет для Long Manip
-        let lm_calc = { lot1_qty: "0", lot2_qty: "0", lot1_usd: "0", lot2_usd: "0" };
-        let lm_pnl_tp1 = "0.00";
-        let lm_pnl_tp2 = "0.00";
+        // Расчет для Long Manip (Сетка 1.618 1x + 2.000 2x со стопом 2.618 Fib)
+        let lm_grid = null;
+        let lm_pnl_only1_tp1 = "0.00";
+        let lm_pnl_both_tp1 = "0.00";
+        let lm_pnl_both_tp2 = "0.00";
 
         if (c.long_manip) {
-            lm_calc = calculateManipPosition(c.long_manip.raw_e1, c.long_manip.raw_e2);
-            const move_m_tp1 = (c.long_manip.raw_tp1 - c.long_manip.raw_e1) / c.long_manip.raw_e1;
-            const move_m_tp2 = (c.long_manip.raw_tp2 - c.long_manip.raw_e1) / c.long_manip.raw_e1;
-            lm_pnl_tp1 = (parseFloat(lm_calc.lot1_usd) * move_m_tp1).toFixed(2);
-            lm_pnl_tp2 = (parseFloat(lm_calc.lot1_usd) * move_m_tp2).toFixed(2);
+            lm_grid = calculateDcaGrid(c.long_manip.raw_e1, c.long_manip.raw_e2, c.long_manip.raw_sl, false);
+            if (lm_grid) {
+                // Только Вход-1 (1.618) -> Тейк-1 (0.618)
+                lm_pnl_only1_tp1 = (lm_grid.q1 * (c.long_manip.raw_tp1 - c.long_manip.raw_e1)).toFixed(2);
+
+                // Оба входа -> Тейк-1 (0.618)
+                const pnl1_tp1 = lm_grid.q1 * (c.long_manip.raw_tp1 - c.long_manip.raw_e1);
+                const pnl2_tp1 = lm_grid.q2 * (c.long_manip.raw_tp1 - c.long_manip.raw_e2);
+                lm_pnl_both_tp1 = (pnl1_tp1 + pnl2_tp1).toFixed(2);
+
+                // Оба входа -> Тейк-2 (0.500)
+                const pnl1_tp2 = lm_grid.q1 * (c.long_manip.raw_tp2 - c.long_manip.raw_e1);
+                const pnl2_tp2 = lm_grid.q2 * (c.long_manip.raw_tp2 - c.long_manip.raw_e2);
+                lm_pnl_both_tp2 = (pnl1_tp2 + pnl2_tp2).toFixed(2);
+            }
         }
 
         html += `
@@ -675,7 +658,6 @@ function renderCards(data) {
                     <tr><td class="lbl">🛑 Стоп (0.710 Fib)</td><td class="c-red">${c.long_normal.sl} $ <span style="font-size:10px; color:var(--text-dim);">(-${ln_grid.stop_pct}%)</span></td></tr>
                 </table>
 
-                <!-- 4 СЦЕНАРИЯ ВЫПЛАТ И СТОПЫ В ДОЛЛАРАХ -->
                 <div class="profit-payout-box">
                     <div class="profit-payout-row">
                         <span class="lbl">💰 [1] Только Вход-1 → 0.382:</span>
@@ -785,44 +767,57 @@ function renderCards(data) {
                     🟣 МАНИПУЛЯЦИЯ (1.618 + 2.0 DCA)
                     <span style="font-size:10px; color:var(--text-dim);">${c.long_manip ? c.long_manip.time : ''}</span>
                 </div>
-                ${c.long_manip ? `
+                ${c.long_manip && lm_grid ? `
                 <table class="table-levels">
                     <tr>
-                        <td class="lbl">Вход (1.618) 1 лот</td>
+                        <td class="lbl">🔹 Вход-1 (1.618) 1x</td>
                         <td>
                             <div class="entry-val-box">
                                 <span class="price-num c-purple">${c.long_manip.entry_1} $</span>
                                 <div class="coins-badge-row">
-                                    <span class="coins-tag">${lm_calc.lot1_qty} ${coinTicker}</span>
-                                    <span class="margin-subtext">($${lm_calc.lot1_usd})</span>
+                                    <span class="coins-tag">${lm_grid.q1_fmt} ${coinTicker}</span>
+                                    <span class="margin-subtext">($${lm_grid.margin1})</span>
                                 </div>
                             </div>
                         </td>
                     </tr>
                     <tr>
-                        <td class="lbl">Добор (2.000) 2 лота</td>
+                        <td class="lbl">🔹 Добор-2 (2.000) 2x</td>
                         <td>
                             <div class="entry-val-box">
                                 <span class="price-num c-orange">${c.long_manip.entry_2} $</span>
                                 <div class="coins-badge-row">
-                                    <span class="coins-tag">${lm_calc.lot2_qty} ${coinTicker}</span>
-                                    <span class="margin-subtext">($${lm_calc.lot2_usd})</span>
+                                    <span class="coins-tag">${lm_grid.q2_fmt} ${coinTicker}</span>
+                                    <span class="margin-subtext">($${lm_grid.margin2})</span>
                                 </div>
                             </div>
                         </td>
                     </tr>
                     <tr><td class="lbl">🎯 Тейк-1 (0.618 Fib)</td><td class="c-green">${c.long_manip.tp_1} $</td></tr>
                     <tr><td class="lbl">🎯 Тейк-2 (0.500 Fib)</td><td class="c-green">${c.long_manip.tp_2} $</td></tr>
+                    <tr><td class="lbl">🛑 Стоп (2.618 Fib)</td><td class="c-red">${c.long_manip.sl_2618} $ <span style="font-size:10px; color:var(--text-dim);">(-${lm_grid.stop_pct}%)</span></td></tr>
                 </table>
 
                 <div class="profit-payout-box">
                     <div class="profit-payout-row">
-                        <span class="lbl">💰 Профит Тейк-1 (0.618):</span>
-                        <span class="payout-val-green">+$${lm_pnl_tp1}</span>
+                        <span class="lbl">💰 Тейк-1 (только Вход-1 → 0.618):</span>
+                        <span class="payout-val-green">+$${lm_pnl_only1_tp1}</span>
                     </div>
                     <div class="profit-payout-row">
-                        <span class="lbl">🚀 Профит Тейк-2 (0.500):</span>
-                        <span class="payout-val-green">+$${lm_pnl_tp2}</span>
+                        <span class="lbl">🚀 Тейк-1 (ОБА входа → 0.618):</span>
+                        <span class="payout-val-green">+$${lm_pnl_both_tp1}</span>
+                    </div>
+                    <div class="profit-payout-row">
+                        <span class="lbl">🔥 Тейк-2 (ОБА входа → 0.500):</span>
+                        <span class="payout-val-green">+$${lm_pnl_both_tp2}</span>
+                    </div>
+                    <div class="profit-payout-row" style="border-top:1px solid rgba(255,255,255,0.08); margin-top:3px; padding-top:3px;">
+                        <span class="lbl">🛑 Стоп (если только Вход-1):</span>
+                        <span class="payout-val-red">-$${lm_grid.loss_if_only_1}</span>
+                    </div>
+                    <div class="profit-payout-row">
+                        <span class="lbl">🛑 Стоп (если ОБА входа 1+2):</span>
+                        <span class="payout-val-red">-$${lm_grid.loss_total}</span>
                     </div>
                 </div>
 
