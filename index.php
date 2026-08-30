@@ -347,6 +347,17 @@ if (isset($_GET['ajax'])) {
             }
         }
 
+        // Сводка по активному импульсу для превью карточки
+        $impSummary = "";
+        if ($long_time >= $short_time && isset($card['long_normal'])) {
+            $impSummary = "⚡ +" . $card['long_normal']['pct'] . "%";
+        } elseif ($short_time > $long_time && isset($card['short_normal'])) {
+            $impSummary = "⚡ -" . $card['short_normal']['pct'] . "%";
+        } elseif (isset($card['long_manip'])) {
+            $impSummary = "⚡ +" . $card['long_manip']['pct'] . "%";
+        }
+        $card['impulse_summary'] = $impSummary;
+
         $card['priority_score'] = $priorityScore;
         $data[] = $card;
     }
@@ -564,6 +575,7 @@ if (isset($_GET['ajax'])) {
             border-color: rgba(255,214,0,0.3);
         }
         .badge-wr { background: rgba(0, 230, 118, 0.15); color: var(--green); border: 1px solid rgba(0, 230, 118, 0.3); padding: 1px 6px; border-radius: 4px; font-size: 11px; font-weight: 800; letter-spacing: 0; white-space: nowrap; }
+        .badge-impulse { background: rgba(255, 214, 0, 0.15); color: var(--yellow); border: 1px solid rgba(255, 214, 0, 0.35); padding: 1px 6px; border-radius: 4px; font-size: 11px; font-weight: 800; letter-spacing: 0; white-space: nowrap; }
         .coin-title { font-size: 22px; font-weight: 800; transition: color 0.2s; white-space: nowrap; }
         .coin-price { font-size: 22px; font-weight: 800; color: #fff; font-family: monospace; white-space: nowrap; }
         .coin-quick-summary {
@@ -687,6 +699,7 @@ if (isset($_GET['ajax'])) {
             .coin-header-right { gap: 8px; }
             .coin-header-left { gap: 6px; }
             .badge-wr { font-size: 9.5px; padding: 1px 4px; }
+            .badge-impulse { font-size: 9.5px; padding: 1px 4px; }
             .coin-quick-summary { font-size: 11px; padding: 2px 6px; }
             .toggle-icon { width: 24px; height: 24px; font-size: 11px; }
         }
@@ -953,6 +966,7 @@ function renderCards(data) {
                     <div style="display:flex; gap:6px; align-items:center;">
                         <span class="badge-wr" title="Исторический Win Rate обычного Long/Short">Норм: ${c.wr_normal}</span>
                         <span class="badge-wr" style="color:var(--purple); background:rgba(213,0,249,0.12); border-color:rgba(213,0,249,0.3);" title="Исторический Win Rate Манипуляции">Манип: ${c.wr_manip}</span>
+                        ${c.impulse_summary ? `<span class="badge-impulse" title="Текущий импульс монеты">${c.impulse_summary}</span>` : ''}
                     </div>
                     <div class="coin-quick-summary">${c.best_choice}</div>
                 </div>
