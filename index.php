@@ -264,19 +264,56 @@ if (isset($_GET['ajax'])) {
             ];
         }
 
-        // Авто-вердикт главного приоритета
+        // Авто-вердикт и скоринг близости ко входу (для умной сортировки)
+        $priorityScore = 999.0; // Чем меньше число, тем выше в списке
+
+        // 1. Проверяем активные входы прямо сейчас
         if (isset($card['long_manip']) && $card['long_manip']['active']) {
-            $card['best_choice'] = "🟣 ВХОД В МАНИПУЛЯЦИЮ (Приоритет 1)";
+            $card['best_choice'] = "🟣 ВХОД В МАНИПУЛЯЦИЮ ПРЯМО СЕЙЧАС (Приоритет 1)";
+            $priorityScore = 0.0;
         } elseif (isset($card['long_normal']) && $card['long_normal']['active'] && $card['long_normal']['is_fresher']) {
-            $card['best_choice'] = "🟢 ВХОД В LONG (Свежий тренд роста)";
+            $card['best_choice'] = "🟢 ВХОД В LONG ПРЯМО СЕЙЧАС (Свежий тренд роста)";
+            $priorityScore = 0.1;
         } elseif (isset($card['short_normal']) && $card['short_normal']['active'] && $card['short_normal']['is_fresher']) {
-            $card['best_choice'] = "🔴 ВХОД В SHORT (Свежий тренд падения)";
+            $card['best_choice'] = "🔴 ВХОД В SHORT ПРЯМО СЕЙЧАС (Свежий тренд падения)";
+            $priorityScore = 0.2;
         } else {
-            $card['best_choice'] = "⏳ ВНЕ ПОЗИЦИИ (Ждем подхода к лимиткам)";
+            // 2. Если входа прямо сейчас нет — считаем минимальную дистанцию (%) до ближайшего входа
+            $minDist = 999.0;
+            $nearestDesc = "";
+
+            if (isset($card['long_normal']) && $card['long_normal']['is_fresher']) {
+                $d = abs($curPrice - $card['long_normal']['raw_e050']) / $curPrice * 100.0;
+                if ($d < $minDist) { $minDist = $d; $nearestDesc = "🟢 До Long 0.500: " . number_format($d, 2) . "%"; }
+            }
+            if (isset($card['short_normal']) && $card['short_normal']['is_fresher']) {
+                $d = abs($curPrice - $card['short_normal']['raw_e050']) / $curPrice * 100.0;
+                if ($d < $minDist) { $minDist = $d; $nearestDesc = "🔴 До Short 0.500: " . number_format($d, 2) . "%"; }
+            }
+            if (isset($card['long_manip'])) {
+                $d = abs($curPrice - $card['long_manip']['raw_e1']) / $curPrice * 100.0;
+                if ($d < $minDist) { $minDist = $d; $nearestDesc = "🟣 До Манипуляции 1.618: " . number_format($d, 2) . "%"; }
+            }
+
+            if ($minDist < 990.0) {
+                $priorityScore = 1.0 + $minDist; // Приоритет по близости в %
+                $card['best_choice'] = "⏳ ОЖИДАНИЕ ВХОДА ({$nearestDesc})";
+            } else {
+                $priorityScore = 999.0;
+                $card['best_choice'] = "💤 НЕТ АКТИВНЫХ ВОЛН (Вне позиции)";
+            }
         }
 
+        $card['priority_score'] = $priorityScore;
         $data[] = $card;
     }
+
+    // Сортировка: сначала те, где есть вход прямо сейчас (score 0), затем самые близкие по % дистанции
+    usort($data, function($a, $b) {
+        if ($a['priority_score'] == $b['priority_score']) return 0;
+        return ($a['priority_score'] < $b['priority_score']) ? -1 : 1;
+    });
+
     echo json_encode(['time' => date('H:i:s'), 'items' => $data]);
     exit;
 }
