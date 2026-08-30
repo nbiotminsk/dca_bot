@@ -343,7 +343,7 @@ if (isset($_GET['ajax'])) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Mon 1H Terminal & Risk Calculator</title>
+    <title>Тест стратегии Николая</title>
     <style>
         :root {
             --bg: #0d0e12;
@@ -682,7 +682,7 @@ if (isset($_GET['ajax'])) {
 <body>
 
 <div class="header">
-    <h1>📡 Mon 1H Strategy Terminal</h1>
+    <h1>📡 Тест стратегии Николая</h1>
     <div class="header-actions">
         <span id="update-time" style="color:var(--text-dim); font-size:12px;">Обновление...</span>
         <button class="btn-refresh" id="refresh-btn" type="button">
