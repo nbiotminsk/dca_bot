@@ -61,12 +61,11 @@ function calcFibShortLog($high, $low, $level) {
 }
 
 function fmtPrice($val, $sym = '') {
-    $decimals = ($sym === 'ENAUSDT' || $sym === 'ENA') ? 4 : 3;
-    return number_format((float)$val, $decimals, '.', '');
+    return number_format((float)$val, 4, '.', '');
 }
 
 function fmt3($val) {
-    return number_format((float)$val, 3, '.', '');
+    return number_format((float)$val, 4, '.', '');
 }
 
 function detectLatestLongImpulse($candles, $min_pct = 1.5) {

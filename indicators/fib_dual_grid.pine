@@ -421,38 +421,38 @@ if barstate.islast
             string pos = maj_lbl_pos
             
             float p000 = calc_fib_long(h, l, 0.000, use_log)
-            draw_level(p000, "🏛️ TOP " + str.tostring(p000, "#.###"), col_maj_000, w_maj_000, "dashed", x_start, x_end, pos, lines_arr, labels_arr)
+            draw_level(p000, "🏛️ TOP " + str.tostring(p000, "#.####"), col_maj_000, w_maj_000, "dashed", x_start, x_end, pos, lines_arr, labels_arr)
             
             if show_0236
                 float p023 = calc_fib_long(h, l, 0.236, use_log)
-                draw_level(p023, "🎯 TP-2 (0.236) " + str.tostring(p023, "#.###"), col_maj_023, w_maj_023, "dotted", x_start, x_end, pos, lines_arr, labels_arr)
+                draw_level(p023, "🎯 TP-2 (0.236) " + str.tostring(p023, "#.####"), col_maj_023, w_maj_023, "dotted", x_start, x_end, pos, lines_arr, labels_arr)
             if show_0382
                 float p038 = calc_fib_long(h, l, 0.382, use_log)
-                draw_level(p038, "🎯 TP (0.382) " + str.tostring(p038, "#.###"), col_maj_038, w_maj_038, "solid", x_start, x_end, pos, lines_arr, labels_arr)
+                draw_level(p038, "🎯 TP (0.382) " + str.tostring(p038, "#.####"), col_maj_038, w_maj_038, "solid", x_start, x_end, pos, lines_arr, labels_arr)
             
             float p050 = calc_fib_long(h, l, 0.500, use_log)
-            draw_level(p050, "⬆️ 0.500  " + str.tostring(p050, "#.###"), col_maj_050, w_maj_050, "solid", x_start, x_end, pos, lines_arr, labels_arr)
+            draw_level(p050, "⬆️ 0.500  " + str.tostring(p050, "#.####"), col_maj_050, w_maj_050, "solid", x_start, x_end, pos, lines_arr, labels_arr)
             
             float p061 = calc_fib_long(h, l, 0.618, use_log)
-            draw_level(p061, "⬆️ 0.618  " + str.tostring(p061, "#.###"), col_maj_061, w_maj_061, "solid", x_start, x_end, pos, lines_arr, labels_arr)
+            draw_level(p061, "⬆️ 0.618  " + str.tostring(p061, "#.####"), col_maj_061, w_maj_061, "solid", x_start, x_end, pos, lines_arr, labels_arr)
             
             if show_0786
                 float p078 = calc_fib_long(h, l, 0.786, use_log)
-                draw_level(p078, "⬆️ 0.786  " + str.tostring(p078, "#.###"), col_maj_078, w_maj_078, "dotted", x_start, x_end, pos, lines_arr, labels_arr)
+                draw_level(p078, "⬆️ 0.786  " + str.tostring(p078, "#.####"), col_maj_078, w_maj_078, "dotted", x_start, x_end, pos, lines_arr, labels_arr)
             if show_0860
                 float p086 = calc_fib_long(h, l, 0.860, use_log)
-                draw_level(p086, "🛑 SL (0.860) " + str.tostring(p086, "#.###"), col_maj_086, w_maj_086, "dashed", x_start, x_end, pos, lines_arr, labels_arr)
+                draw_level(p086, "🛑 SL (0.860) " + str.tostring(p086, "#.####"), col_maj_086, w_maj_086, "dashed", x_start, x_end, pos, lines_arr, labels_arr)
             
             float p100 = calc_fib_long(h, l, 1.000, use_log)
-            draw_level(p100, "🛑 LOW (1.0) " + str.tostring(p100, "#.###"), col_maj_100, w_maj_100, "solid", x_start, x_end, pos, lines_arr, labels_arr)
+            draw_level(p100, "🛑 LOW (1.0) " + str.tostring(p100, "#.####"), col_maj_100, w_maj_100, "solid", x_start, x_end, pos, lines_arr, labels_arr)
             
             if show_manip
                 float p141 = calc_fib_long(h, l, 1.414, use_log)
                 float p161 = calc_fib_long(h, l, 1.618, use_log)
                 float p200 = calc_fib_long(h, l, 2.000, use_log)
-                draw_level(p141, "🔴 1.414  " + str.tostring(p141, "#.###"), col_maj_141, w_maj_141, "solid", x_start, x_end, pos, lines_arr, labels_arr)
-                draw_level(p161, "🟣 1.618  " + str.tostring(p161, "#.###"), col_maj_161, w_maj_161, "solid", x_start, x_end, pos, lines_arr, labels_arr)
-                draw_level(p200, "🟠 2.000  " + str.tostring(p200, "#.###"), col_maj_200, w_maj_200, "solid", x_start, x_end, pos, lines_arr, labels_arr)
+                draw_level(p141, "🔴 1.414  " + str.tostring(p141, "#.####"), col_maj_141, w_maj_141, "solid", x_start, x_end, pos, lines_arr, labels_arr)
+                draw_level(p161, "🟣 1.618  " + str.tostring(p161, "#.####"), col_maj_161, w_maj_161, "solid", x_start, x_end, pos, lines_arr, labels_arr)
+                draw_level(p200, "🟠 2.000  " + str.tostring(p200, "#.####"), col_maj_200, w_maj_200, "solid", x_start, x_end, pos, lines_arr, labels_arr)
 
         // ⚡ Младшая Long (Динамически растет от 80.15 к текущему пику)
         if show_min and not na(min_l_high) and not na(min_l_low)
@@ -460,31 +460,31 @@ if barstate.islast
             
             if show_0382
                 float p038 = calc_fib_long(h, l, 0.382, use_log)
-                draw_level(p038, "🎯 TP (0.382) " + str.tostring(p038, "#.###"), col_min_038, w_min_038, "dotted", x_start, x_end, "Справа", lines_arr, labels_arr)
+                draw_level(p038, "🎯 TP (0.382) " + str.tostring(p038, "#.####"), col_min_038, w_min_038, "dotted", x_start, x_end, "Справа", lines_arr, labels_arr)
             
             float p050 = calc_fib_long(h, l, 0.500, use_log)
-            draw_level(p050, "⬆️ 0.500  " + str.tostring(p050, "#.###"), col_min_050, w_min_050, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
+            draw_level(p050, "⬆️ 0.500  " + str.tostring(p050, "#.####"), col_min_050, w_min_050, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
             
             float p061 = calc_fib_long(h, l, 0.618, use_log)
-            draw_level(p061, "⬆️ 0.618  " + str.tostring(p061, "#.###"), col_min_061, w_min_061, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
+            draw_level(p061, "⬆️ 0.618  " + str.tostring(p061, "#.####"), col_min_061, w_min_061, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
             
             if show_0786
                 float p078 = calc_fib_long(h, l, 0.786, use_log)
-                draw_level(p078, "⬆️ 0.786  " + str.tostring(p078, "#.###"), col_min_078, w_min_078, "dotted", x_start, x_end, "Справа", lines_arr, labels_arr)
+                draw_level(p078, "⬆️ 0.786  " + str.tostring(p078, "#.####"), col_min_078, w_min_078, "dotted", x_start, x_end, "Справа", lines_arr, labels_arr)
             if show_0860
                 float p086 = calc_fib_long(h, l, 0.860, use_log)
-                draw_level(p086, "🛑 SL (0.860) " + str.tostring(p086, "#.###"), col_min_086, w_min_086, "dashed", x_start, x_end, "Справа", lines_arr, labels_arr)
+                draw_level(p086, "🛑 SL (0.860) " + str.tostring(p086, "#.####"), col_min_086, w_min_086, "dashed", x_start, x_end, "Справа", lines_arr, labels_arr)
             
             float p100 = calc_fib_long(h, l, 1.000, use_log)
-            draw_level(p100, "🛑 LOW (1.0) " + str.tostring(p100, "#.###"), col_min_100, w_min_100, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
+            draw_level(p100, "🛑 LOW (1.0) " + str.tostring(p100, "#.####"), col_min_100, w_min_100, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
             
             if show_manip
                 float p141 = calc_fib_long(h, l, 1.414, use_log)
                 float p161 = calc_fib_long(h, l, 1.618, use_log)
                 float p200 = calc_fib_long(h, l, 2.000, use_log)
-                draw_level(p141, "🔴 1.414  " + str.tostring(p141, "#.###"), col_min_141, w_min_141, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
-                draw_level(p161, "🟣 1.618  " + str.tostring(p161, "#.###"), col_min_161, w_min_161, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
-                draw_level(p200, "🟠 2.000  " + str.tostring(p200, "#.###"), col_min_200, w_min_200, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
+                draw_level(p141, "🔴 1.414  " + str.tostring(p141, "#.####"), col_min_141, w_min_141, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
+                draw_level(p161, "🟣 1.618  " + str.tostring(p161, "#.####"), col_min_161, w_min_161, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
+                draw_level(p200, "🟠 2.000  " + str.tostring(p200, "#.####"), col_min_200, w_min_200, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
 
     // ── 2. SHORT СЕТКИ ──
     if allow_short
@@ -494,38 +494,38 @@ if barstate.islast
             string pos = maj_lbl_pos
             
             float p000 = calc_fib_short(h, l, 0.000, use_log)
-            draw_level(p000, "🏛️ BOT " + str.tostring(p000, "#.###"), col_maj_000, w_maj_000, "dashed", x_start, x_end, pos, lines_arr, labels_arr)
+            draw_level(p000, "🏛️ BOT " + str.tostring(p000, "#.####"), col_maj_000, w_maj_000, "dashed", x_start, x_end, pos, lines_arr, labels_arr)
             
             if show_0236
                 float p023 = calc_fib_short(h, l, 0.236, use_log)
-                draw_level(p023, "🎯 TP-2 (0.236) " + str.tostring(p023, "#.###"), col_maj_023, w_maj_023, "dotted", x_start, x_end, pos, lines_arr, labels_arr)
+                draw_level(p023, "🎯 TP-2 (0.236) " + str.tostring(p023, "#.####"), col_maj_023, w_maj_023, "dotted", x_start, x_end, pos, lines_arr, labels_arr)
             if show_0382
                 float p038 = calc_fib_short(h, l, 0.382, use_log)
-                draw_level(p038, "🎯 TP (0.382) " + str.tostring(p038, "#.###"), col_maj_038, w_maj_038, "solid", x_start, x_end, pos, lines_arr, labels_arr)
+                draw_level(p038, "🎯 TP (0.382) " + str.tostring(p038, "#.####"), col_maj_038, w_maj_038, "solid", x_start, x_end, pos, lines_arr, labels_arr)
             
             float p050 = calc_fib_short(h, l, 0.500, use_log)
-            draw_level(p050, "⬇️ 0.500  " + str.tostring(p050, "#.###"), col_maj_050, w_maj_050, "solid", x_start, x_end, pos, lines_arr, labels_arr)
+            draw_level(p050, "⬇️ 0.500  " + str.tostring(p050, "#.####"), col_maj_050, w_maj_050, "solid", x_start, x_end, pos, lines_arr, labels_arr)
             
             float p061 = calc_fib_short(h, l, 0.618, use_log)
-            draw_level(p061, "⬇️ 0.618  " + str.tostring(p061, "#.###"), col_maj_061, w_maj_061, "solid", x_start, x_end, pos, lines_arr, labels_arr)
+            draw_level(p061, "⬇️ 0.618  " + str.tostring(p061, "#.####"), col_maj_061, w_maj_061, "solid", x_start, x_end, pos, lines_arr, labels_arr)
             
             if show_0786
                 float p078 = calc_fib_short(h, l, 0.786, use_log)
-                draw_level(p078, "⬇️ 0.786  " + str.tostring(p078, "#.###"), col_maj_078, w_maj_078, "dotted", x_start, x_end, pos, lines_arr, labels_arr)
+                draw_level(p078, "⬇️ 0.786  " + str.tostring(p078, "#.####"), col_maj_078, w_maj_078, "dotted", x_start, x_end, pos, lines_arr, labels_arr)
             if show_0860
                 float p086 = calc_fib_short(h, l, 0.860, use_log)
-                draw_level(p086, "🛑 SL (0.860) " + str.tostring(p086, "#.###"), col_maj_086, w_maj_086, "dashed", x_start, x_end, pos, lines_arr, labels_arr)
+                draw_level(p086, "🛑 SL (0.860) " + str.tostring(p086, "#.####"), col_maj_086, w_maj_086, "dashed", x_start, x_end, pos, lines_arr, labels_arr)
             
             float p100 = calc_fib_short(h, l, 1.000, use_log)
-            draw_level(p100, "🛑 HIGH (1.0) " + str.tostring(p100, "#.###"), col_maj_100, w_maj_100, "solid", x_start, x_end, pos, lines_arr, labels_arr)
+            draw_level(p100, "🛑 HIGH (1.0) " + str.tostring(p100, "#.####"), col_maj_100, w_maj_100, "solid", x_start, x_end, pos, lines_arr, labels_arr)
             
             if show_manip
                 float p141 = calc_fib_short(h, l, 1.414, use_log)
                 float p161 = calc_fib_short(h, l, 1.618, use_log)
                 float p200 = calc_fib_short(h, l, 2.000, use_log)
-                draw_level(p141, "🔴 1.414  " + str.tostring(p141, "#.###"), col_maj_141, w_maj_141, "solid", x_start, x_end, pos, lines_arr, labels_arr)
-                draw_level(p161, "🟣 1.618  " + str.tostring(p161, "#.###"), col_maj_161, w_maj_161, "solid", x_start, x_end, pos, lines_arr, labels_arr)
-                draw_level(p200, "🟠 2.000  " + str.tostring(p200, "#.###"), col_maj_200, w_maj_200, "solid", x_start, x_end, pos, lines_arr, labels_arr)
+                draw_level(p141, "🔴 1.414  " + str.tostring(p141, "#.####"), col_maj_141, w_maj_141, "solid", x_start, x_end, pos, lines_arr, labels_arr)
+                draw_level(p161, "🟣 1.618  " + str.tostring(p161, "#.####"), col_maj_161, w_maj_161, "solid", x_start, x_end, pos, lines_arr, labels_arr)
+                draw_level(p200, "🟠 2.000  " + str.tostring(p200, "#.####"), col_maj_200, w_maj_200, "solid", x_start, x_end, pos, lines_arr, labels_arr)
 
         // ⚡ Младшая Short
         if show_min and not na(min_s_high) and not na(min_s_low)
@@ -533,28 +533,28 @@ if barstate.islast
             
             if show_0382
                 float p038 = calc_fib_short(h, l, 0.382, use_log)
-                draw_level(p038, "🎯 TP (0.382) " + str.tostring(p038, "#.###"), col_min_038, w_min_038, "dotted", x_start, x_end, "Справа", lines_arr, labels_arr)
+                draw_level(p038, "🎯 TP (0.382) " + str.tostring(p038, "#.####"), col_min_038, w_min_038, "dotted", x_start, x_end, "Справа", lines_arr, labels_arr)
             
             float p050 = calc_fib_short(h, l, 0.500, use_log)
-            draw_level(p050, "⬇️ 0.500  " + str.tostring(p050, "#.###"), col_min_050, w_min_050, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
+            draw_level(p050, "⬇️ 0.500  " + str.tostring(p050, "#.####"), col_min_050, w_min_050, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
             
             float p061 = calc_fib_short(h, l, 0.618, use_log)
-            draw_level(p061, "⬇️ 0.618  " + str.tostring(p061, "#.###"), col_min_061, w_min_061, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
+            draw_level(p061, "⬇️ 0.618  " + str.tostring(p061, "#.####"), col_min_061, w_min_061, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
             
             if show_0786
                 float p078 = calc_fib_short(h, l, 0.786, use_log)
-                draw_level(p078, "⬇️ 0.786  " + str.tostring(p078, "#.###"), col_min_078, w_min_078, "dotted", x_start, x_end, "Справа", lines_arr, labels_arr)
+                draw_level(p078, "⬇️ 0.786  " + str.tostring(p078, "#.####"), col_min_078, w_min_078, "dotted", x_start, x_end, "Справа", lines_arr, labels_arr)
             if show_0860
                 float p086 = calc_fib_short(h, l, 0.860, use_log)
-                draw_level(p086, "🛑 SL (0.860) " + str.tostring(p086, "#.###"), col_min_086, w_min_086, "dashed", x_start, x_end, "Справа", lines_arr, labels_arr)
+                draw_level(p086, "🛑 SL (0.860) " + str.tostring(p086, "#.####"), col_min_086, w_min_086, "dashed", x_start, x_end, "Справа", lines_arr, labels_arr)
             
             float p100 = calc_fib_short(h, l, 1.000, use_log)
-            draw_level(p100, "🛑 HIGH (1.0) " + str.tostring(p100, "#.###"), col_min_100, w_min_100, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
+            draw_level(p100, "🛑 HIGH (1.0) " + str.tostring(p100, "#.####"), col_min_100, w_min_100, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
             
             if show_manip
                 float p141 = calc_fib_short(h, l, 1.414, use_log)
                 float p161 = calc_fib_short(h, l, 1.618, use_log)
                 float p200 = calc_fib_short(h, l, 2.000, use_log)
-                draw_level(p141, "🔴 1.414  " + str.tostring(p141, "#.###"), col_min_141, w_min_141, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
-                draw_level(p161, "🟣 1.618  " + str.tostring(p161, "#.###"), col_min_161, w_min_161, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
-                draw_level(p200, "🟠 2.000  " + str.tostring(p200, "#.###"), col_min_200, w_min_200, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
+                draw_level(p141, "🔴 1.414  " + str.tostring(p141, "#.####"), col_min_141, w_min_141, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
+                draw_level(p161, "🟣 1.618  " + str.tostring(p161, "#.####"), col_min_161, w_min_161, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
+                draw_level(p200, "🟠 2.000  " + str.tostring(p200, "#.####"), col_min_200, w_min_200, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
