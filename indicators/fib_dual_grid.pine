@@ -130,9 +130,86 @@ draw_level(float price, string label_text, color col, int width, string style_ty
     array.push(labels_arr, lb)
 
 // ══════════════════════════════════════════════════════════════════════════════
-// 6. НАДЕЖНЫЙ ПОИСК АКТИВНЫХ ИМПУЛЬСОВ (С ДИНАМИЧЕСКИМ РАСШИРЕНИЕМ)
+// 6. НАДЕЖНЫЙ ПОИСК АКТИВНЫХ ИМПУЛЬСОВ (МАКРО-СВИНГ И ЛОКАЛЬНАЯ ФИБА)
 // ══════════════════════════════════════════════════════════════════════════════
-find_long_impulse(int lookback, float min_pct, int max_duration) =>
+
+// Поиск Старшей (Макро) Фибы по структурным свингам
+find_macro_long(int lookback, float min_pct) =>
+    int   best_start = na
+    float best_low   = na
+    float best_high  = na
+    float best_pct   = 0.0
+    int   max_s      = math.min(lookback, bar_index)
+
+    if max_s >= 5
+        // Сканируем последние вершины
+        for b = 1 to math.min(45, max_s - 2)
+            float h = high[b]
+            // b должна быть сформированной вершиной (не текущая развивающаяся свеча и выше b-1 / b+1)
+            if high[b - 1] <= h and high[b + 1] <= h
+                // Ищем базу импульса (самый низкий минимум перед взлетом)
+                float cur_min_l = h
+                int   cur_min_s = na
+                for s = b + 1 to max_s
+                    if low[s] < cur_min_l
+                        cur_min_l := low[s]
+                        cur_min_s := s
+                
+                if not na(cur_min_s)
+                    float pct = (h - cur_min_l) / cur_min_l * 100.0
+                    if pct >= min_pct
+                        // Проверяем статус после вершины: максимум не должен быть перебит выше
+                        bool broken_high = false
+                        for p = b - 1 to 0
+                            if high[p] > h
+                                broken_high := true
+                                break
+                        if not broken_high
+                            if pct > best_pct
+                                best_pct   := pct
+                                best_start := bar_index - cur_min_s
+                                best_low   := cur_min_l
+                                best_high  := h
+
+    [best_start, best_low, best_high, best_pct]
+
+find_macro_short(int lookback, float min_pct) =>
+    int   best_start = na
+    float best_high  = na
+    float best_low   = na
+    float best_pct   = 0.0
+    int   max_s      = math.min(lookback, bar_index)
+
+    if max_s >= 5
+        for b = 1 to math.min(45, max_s - 2)
+            float l = low[b]
+            if low[b - 1] >= l and low[b + 1] >= l
+                float cur_max_h = l
+                int   cur_max_s = na
+                for s = b + 1 to max_s
+                    if high[s] > cur_max_h
+                        cur_max_h := high[s]
+                        cur_max_s := s
+                
+                if not na(cur_max_s)
+                    float pct = (cur_max_h - l) / cur_max_h * 100.0
+                    if pct >= min_pct
+                        bool broken_low = false
+                        for p = b - 1 to 0
+                            if low[p] < l
+                                broken_low := true
+                                break
+                        if not broken_low
+                            if pct > best_pct
+                                best_pct   := pct
+                                best_start := bar_index - cur_max_s
+                                best_high  := cur_max_h
+                                best_low   := l
+
+    [best_start, best_high, best_low, best_pct]
+
+// Поиск Младшей (Локальной) Фибы (только с подтвержденным завершением импульса)
+find_minor_long(int lookback, float min_pct, int max_duration) =>
     int   best_start = na
     float best_low   = na
     float best_high  = na
@@ -140,7 +217,8 @@ find_long_impulse(int lookback, float min_pct, int max_duration) =>
     int   max_s      = math.min(lookback, bar_index)
 
     if max_s >= 2
-        for b = 0 to math.min(30, max_s - 1)
+        // Вершина b должна быть строго закрытой свечой (b >= 1), чтобы не натягивать на растущую в моменте свечу
+        for b = 1 to math.min(25, max_s - 1)
             float h = high[b]
             int   cand_s = na
             float cand_l = low[b]
@@ -167,24 +245,23 @@ find_long_impulse(int lookback, float min_pct, int max_duration) =>
                         bool tp_hit   = false
                         bool sl_hit   = false
 
-                        if b > 0
-                            for p = b - 1 to 0
-                                if not entered
-                                    if low[p] <= in_050
-                                        entered := true
-                                        entry_p := p
-                                    else
-                                        if high[p] > h or low[p] < sl_lim
-                                            sl_hit := true
-                                            break
+                        for p = b - 1 to 0
+                            if not entered
+                                if low[p] <= in_050
+                                    entered := true
+                                    entry_p := p
                                 else
-                                    if p < entry_p
-                                        if high[p] >= tp_038
-                                            tp_hit := true
-                                            break
-                                        if low[p] <= sl_lim
-                                            sl_hit := true
-                                            break
+                                    if high[p] > h or low[p] < sl_lim
+                                        sl_hit := true
+                                        break
+                            else
+                                if p < entry_p
+                                    if high[p] >= tp_038
+                                        tp_hit := true
+                                        break
+                                    if low[p] <= sl_lim
+                                        sl_hit := true
+                                        break
 
                         if not tp_hit and not sl_hit
                             cand_pct := pct
@@ -201,7 +278,7 @@ find_long_impulse(int lookback, float min_pct, int max_duration) =>
 
     [best_start, best_low, best_high, best_pct]
 
-find_short_impulse(int lookback, float min_pct, int max_duration) =>
+find_minor_short(int lookback, float min_pct, int max_duration) =>
     int   best_start = na
     float best_high  = na
     float best_low   = na
@@ -209,7 +286,7 @@ find_short_impulse(int lookback, float min_pct, int max_duration) =>
     int   max_s      = math.min(lookback, bar_index)
 
     if max_s >= 2
-        for b = 0 to math.min(30, max_s - 1)
+        for b = 1 to math.min(25, max_s - 1)
             float l = low[b]
             int   cand_s = na
             float cand_h = high[b]
@@ -236,24 +313,23 @@ find_short_impulse(int lookback, float min_pct, int max_duration) =>
                         bool tp_hit   = false
                         bool sl_hit   = false
 
-                        if b > 0
-                            for p = b - 1 to 0
-                                if not entered
-                                    if high[p] >= in_050
-                                        entered := true
-                                        entry_p := p
-                                    else
-                                        if high[p] > sl_lim or low[p] < l
-                                            sl_hit := true
-                                            break
+                        for p = b - 1 to 0
+                            if not entered
+                                if high[p] >= in_050
+                                    entered := true
+                                    entry_p := p
                                 else
-                                    if p < entry_p
-                                        if low[p] <= tp_038
-                                            tp_hit := true
-                                            break
-                                        if high[p] >= sl_lim
-                                            sl_hit := true
-                                            break
+                                    if high[p] > sl_lim or low[p] < l
+                                        sl_hit := true
+                                        break
+                            else
+                                if p < entry_p
+                                    if low[p] <= tp_038
+                                        tp_hit := true
+                                        break
+                                    if high[p] >= sl_lim
+                                        sl_hit := true
+                                        break
 
                         if not tp_hit and not sl_hit
                             cand_pct := pct
@@ -284,13 +360,13 @@ if barstate.islast
         label.delete(lb)
     labels_arr.clear()
 
-    // Старшая ищет ближайшую живую волну импульса (длительность до 40 свечей)
-    // Младшая ищет быстрый каскадный импульс (включая развивающийся прямо на текущей свече)
-    [maj_l_s, maj_l_low, maj_l_high, maj_l_pct] = find_long_impulse(maj_lookb, maj_min_p, 40)
-    [min_l_s, min_l_low, min_l_high, min_l_pct] = find_long_impulse(min_lookb, min_min_p, min_bars)
+    // Старшая Фиба: Свинг-поиск макро-волн
+    // Младшая Фиба: Локальные импульсы только с подтвержденным завершением (b >= 1)
+    [maj_l_s, maj_l_low, maj_l_high, maj_l_pct] = find_macro_long(maj_lookb, maj_min_p)
+    [min_l_s, min_l_low, min_l_high, min_l_pct] = find_minor_long(min_lookb, min_min_p, min_bars)
 
-    [maj_s_s, maj_s_high, maj_s_low, maj_s_pct] = find_short_impulse(maj_lookb, maj_min_p, 40)
-    [min_s_s, min_s_high, min_s_low, min_s_pct] = find_short_impulse(min_lookb, min_min_p, min_bars)
+    [maj_s_s, maj_s_high, maj_s_low, maj_s_pct] = find_macro_short(maj_lookb, maj_min_p)
+    [min_s_s, min_s_high, min_s_low, min_s_pct] = find_minor_short(min_lookb, min_min_p, min_bars)
 
     bool allow_long  = (i_mode == "Только LONG") or (i_mode == "Оба направления (L+S)") or (i_mode == "Авто (по тренду)" and (na(min_s_pct) or min_l_pct >= min_s_pct))
     bool allow_short = (i_mode == "Только SHORT") or (i_mode == "Оба направления (L+S)") or (i_mode == "Авто (по тренду)" and (na(min_l_pct) or min_s_pct > min_l_pct))

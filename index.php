@@ -69,45 +69,45 @@ function fmt3($val) {
     return number_format((float)$val, 3, '.', '');
 }
 
-function detectLatestLongImpulse($candles, $min_pct) {
+function detectLatestLongImpulse($candles, $min_pct = 1.5) {
     $n = count($candles);
     $best = null;
 
-    for ($start_idx = max(0, $n - 72); $start_idx < $n - 1; $start_idx++) {
-        $imp_low   = $candles[$start_idx]['low'];
-        $max_high  = $candles[$start_idx]['high'];
-        $broken    = false;
-        $has_growth = false;
+    // Ищем только подтвержденные сформированные вершины (b < n - 1), чтобы не натягивать фибу на растущую в моменте свечу
+    for ($b = $n - 2; $b >= max(0, $n - 45); $b--) {
+        $max_high = $candles[$b]['high'];
+        if ($candles[$b + 1]['high'] > $max_high) {
+            continue; // пик еще не подтвержден, свеча растет
+        }
 
-        // Пошагово идем свеча за свечой
-        for ($k = $start_idx + 1; $k < $n; $k++) {
-            // Текущая свеча не должна корректировать всю натянутую фибу к 0.500 уровню
-            $fib_05 = calcFibLongLog($max_high, $imp_low, 0.500);
-            if ($candles[$k]['low'] <= $fib_05) {
-                $broken = true;
-                break;
-            }
-            if ($candles[$k]['low'] < $imp_low) {
-                $broken = true;
-                break;
-            }
+        $cur_min_l = $max_high;
+        $cur_min_s = $b;
 
-            // Если свеча обновляет максимум — поднимаем фибу выше!
-            if ($candles[$k]['high'] > $max_high) {
-                $max_high = $candles[$k]['high'];
-                $has_growth = true;
+        for ($s = $b - 1; $s >= max(0, $b - 35); $s--) {
+            if ($candles[$s]['low'] < $cur_min_l) {
+                $cur_min_l = $candles[$s]['low'];
+                $cur_min_s = $s;
             }
         }
 
-        if (!$broken && $has_growth) {
-            $pct = ($max_high - $imp_low) / $imp_low * 100.0;
-            if ($pct >= $min_pct) {
+        $pct = ($max_high - $cur_min_l) / $cur_min_l * 100.0;
+        if ($pct >= $min_pct) {
+            $broken = false;
+            $fib_086 = calcFibLongLog($max_high, $cur_min_l, 0.860);
+            for ($k = $b + 1; $k < $n; $k++) {
+                if ($candles[$k]['high'] > $max_high || $candles[$k]['low'] <= $fib_086) {
+                    $broken = true;
+                    break;
+                }
+            }
+
+            if (!$broken) {
                 if ($best === null || $pct > $best['pct']) {
                     $best = [
-                        'start_time' => $candles[$start_idx]['time'],
-                        'end_time'   => $candles[$n - 1]['time'],
+                        'start_time' => $candles[$cur_min_s]['time'],
+                        'end_time'   => $candles[$b]['time'],
                         'high'       => $max_high,
-                        'low'        => $imp_low,
+                        'low'        => $cur_min_l,
                         'pct'        => $pct,
                         'is_live'    => true
                     ];
@@ -119,44 +119,43 @@ function detectLatestLongImpulse($candles, $min_pct) {
     return $best;
 }
 
-function detectLatestShortImpulse($candles, $min_pct) {
+function detectLatestShortImpulse($candles, $min_pct = 2.0) {
     $n = count($candles);
     $best = null;
 
-    for ($start_idx = max(0, $n - 72); $start_idx < $n - 1; $start_idx++) {
-        $imp_high  = $candles[$start_idx]['high'];
-        $min_low   = $candles[$start_idx]['low'];
-        $broken    = false;
-        $has_drop  = false;
+    for ($b = $n - 2; $b >= max(0, $n - 45); $b--) {
+        $min_low = $candles[$b]['low'];
+        if ($candles[$b + 1]['low'] < $min_low) {
+            continue;
+        }
 
-        // Пошагово идем свеча за свечой
-        for ($k = $start_idx + 1; $k < $n; $k++) {
-            // Текущая свеча не должна откатывать вверх к 0.500 уровню дамп-фибы
-            $fib_05 = calcFibShortLog($imp_high, $min_low, 0.500);
-            if ($candles[$k]['high'] >= $fib_05) {
-                $broken = true;
-                break;
-            }
-            if ($candles[$k]['high'] > $imp_high) {
-                $broken = true;
-                break;
-            }
+        $cur_max_h = $min_low;
+        $cur_max_s = $b;
 
-            // Если свеча обновляет минимум — опускаем фибу ниже!
-            if ($candles[$k]['low'] < $min_low) {
-                $min_low = $candles[$k]['low'];
-                $has_drop = true;
+        for ($s = $b - 1; $s >= max(0, $b - 35); $s--) {
+            if ($candles[$s]['high'] > $cur_max_h) {
+                $cur_max_h = $candles[$s]['high'];
+                $cur_max_s = $s;
             }
         }
 
-        if (!$broken && $has_drop) {
-            $pct = ($imp_high - $min_low) / $imp_high * 100.0;
-            if ($pct >= $min_pct) {
+        $pct = ($cur_max_h - $min_low) / $cur_max_h * 100.0;
+        if ($pct >= $min_pct) {
+            $broken = false;
+            $fib_086 = calcFibShortLog($cur_max_h, $min_low, 0.860);
+            for ($k = $b + 1; $k < $n; $k++) {
+                if ($candles[$k]['low'] < $min_low || $candles[$k]['high'] >= $fib_086) {
+                    $broken = true;
+                    break;
+                }
+            }
+
+            if (!$broken) {
                 if ($best === null || $pct > $best['pct']) {
                     $best = [
-                        'start_time' => $candles[$start_idx]['time'],
-                        'end_time'   => $candles[$n - 1]['time'],
-                        'high'       => $imp_high,
+                        'start_time' => $candles[$cur_max_s]['time'],
+                        'end_time'   => $candles[$b]['time'],
+                        'high'       => $cur_max_h,
                         'low'        => $min_low,
                         'pct'        => $pct,
                         'is_live'    => true
