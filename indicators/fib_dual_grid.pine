@@ -12,7 +12,7 @@ use_log    = input.bool(true, "Логарифмическая шкала (Log Fi
 // 2. СТАРШАЯ (ГЛОБАЛЬНАЯ) ФИБА — НАСТРОЙКИ, ЦВЕТА И ТОЛЩИНА
 // ══════════════════════════════════════════════════════════════════════════════
 grp_maj_set = "🏛️ Старшая Фиба: Поиск и Позиция"
-show_maj    = input.bool(true, "Показывать Старшую Фибу", group=grp_maj_set)
+show_maj    = input.bool(false, "Показывать Старшую Фибу (Глобальную)", group=grp_maj_set)
 maj_min_p   = input.float(5.0, "Мин. размах Старшей (%)", minval=1.0, step=0.5, group=grp_maj_set)
 maj_lookb   = input.int(100, "Глубина поиска Старшей (свечей)", minval=20, maxval=300, group=grp_maj_set)
 maj_lbl_pos = input.string("Слева", "Расположение подписей Старшей", options=["Слева", "Справа"], group=grp_maj_set)
@@ -51,8 +51,8 @@ w_maj_200   = input.int(2, "Толщина 2.000", minval=1, maxval=4, group=grp
 // ══════════════════════════════════════════════════════════════════════════════
 // 3. МЛАДШАЯ (ЛОКАЛЬНАЯ) ФИБА — НАСТРОЙКИ, ЦВЕТА И ТОЛЩИНА
 // ══════════════════════════════════════════════════════════════════════════════
-grp_min_set = "⚡ Младшая Фиба: Поиск"
-show_min    = input.bool(true, "Показывать Младшую Фибу", group=grp_min_set)
+grp_min_set = "⚡ Младшая Фиба: Поиск (Основная)"
+show_min    = input.bool(true, "Показывать Младшую Фибу (Локальную)", group=grp_min_set)
 min_min_p   = input.float(2.0, "Мин. размах Младшей (%)", minval=0.5, step=0.5, group=grp_min_set)
 min_lookb   = input.int(36, "Глубина поиска Младшей (свечей)", minval=10, maxval=100, group=grp_min_set)
 
@@ -125,7 +125,7 @@ draw_level(float price, string label_text, color col, int width, string style_ty
 // ══════════════════════════════════════════════════════════════════════════════
 // 6. НАДЕЖНЫЙ ПОИСК АКТИВНЫХ ИМПУЛЬСОВ
 // ══════════════════════════════════════════════════════════════════════════════
-find_long_impulse(int lookback, float min_pct) =>
+find_long_impulse(int lookback, float min_pct, bool find_recent) =>
     int   best_start = na
     float best_low   = na
     float best_high  = na
@@ -133,7 +133,7 @@ find_long_impulse(int lookback, float min_pct) =>
     int   max_s      = math.min(lookback, bar_index)
 
     if max_s >= 2
-        for s = max_s to 2
+        for s = 2 to max_s
             float l = low[s]
             for b = s - 1 to 1
                 float h = high[b]
@@ -145,7 +145,7 @@ find_long_impulse(int lookback, float min_pct) =>
                 
                 if valid_imp
                     float pct = (h - l) / l * 100.0
-                    if pct >= min_pct and pct > best_pct
+                    if pct >= min_pct and (pct > best_pct or find_recent)
                         float in_050 = calc_fib_long(h, l, 0.500, use_log)
                         float tp_038 = calc_fib_long(h, l, 0.382, use_log)
                         float sl_860 = calc_fib_long(h, l, 0.860, use_log)
@@ -174,10 +174,14 @@ find_long_impulse(int lookback, float min_pct) =>
                             best_start := bar_index - s
                             best_low   := l
                             best_high  := h
+                            if find_recent
+                                break
+            if find_recent and not na(best_start)
+                break
 
     [best_start, best_low, best_high, best_pct]
 
-find_short_impulse(int lookback, float min_pct) =>
+find_short_impulse(int lookback, float min_pct, bool find_recent) =>
     int   best_start = na
     float best_high  = na
     float best_low   = na
@@ -185,7 +189,7 @@ find_short_impulse(int lookback, float min_pct) =>
     int   max_s      = math.min(lookback, bar_index)
 
     if max_s >= 2
-        for s = max_s to 2
+        for s = 2 to max_s
             float h = high[s]
             for b = s - 1 to 1
                 float l = low[b]
@@ -197,7 +201,7 @@ find_short_impulse(int lookback, float min_pct) =>
                 
                 if valid_dump
                     float pct = (h - l) / h * 100.0
-                    if pct >= min_pct and pct > best_pct
+                    if pct >= min_pct and (pct > best_pct or find_recent)
                         float in_050 = calc_fib_short(h, l, 0.500, use_log)
                         float tp_038 = calc_fib_short(h, l, 0.382, use_log)
                         float sl_860 = calc_fib_short(h, l, 0.860, use_log)
@@ -226,6 +230,10 @@ find_short_impulse(int lookback, float min_pct) =>
                             best_start := bar_index - s
                             best_high  := h
                             best_low   := l
+                            if find_recent
+                                break
+            if find_recent and not na(best_start)
+                break
 
     [best_start, best_high, best_low, best_pct]
 
@@ -243,14 +251,16 @@ if barstate.islast
         label.delete(lb)
     labels_arr.clear()
 
-    [maj_l_s, maj_l_low, maj_l_high, maj_l_pct] = find_long_impulse(maj_lookb, maj_min_p)
-    [min_l_s, min_l_low, min_l_high, min_l_pct] = find_long_impulse(min_lookb, min_min_p)
+    // Старшая ищет максимальную глобальную волну (find_recent=false)
+    // Младшая ищет непосредственный каскадный импульс (find_recent=true)
+    [maj_l_s, maj_l_low, maj_l_high, maj_l_pct] = find_long_impulse(maj_lookb, maj_min_p, false)
+    [min_l_s, min_l_low, min_l_high, min_l_pct] = find_long_impulse(min_lookb, min_min_p, true)
 
-    [maj_s_s, maj_s_high, maj_s_low, maj_s_pct] = find_short_impulse(maj_lookb, maj_min_p)
-    [min_s_s, min_s_high, min_s_low, min_s_pct] = find_short_impulse(min_lookb, min_min_p)
+    [maj_s_s, maj_s_high, maj_s_low, maj_s_pct] = find_short_impulse(maj_lookb, maj_min_p, false)
+    [min_s_s, min_s_high, min_s_low, min_s_pct] = find_short_impulse(min_lookb, min_min_p, true)
 
-    bool allow_long  = (i_mode == "Только LONG") or (i_mode == "Оба направления (L+S)") or (i_mode == "Авто (по тренду)" and (na(maj_s_pct) or maj_l_pct >= maj_s_pct))
-    bool allow_short = (i_mode == "Только SHORT") or (i_mode == "Оба направления (L+S)") or (i_mode == "Авто (по тренду)" and (na(maj_l_pct) or maj_s_pct > maj_l_pct))
+    bool allow_long  = (i_mode == "Только LONG") or (i_mode == "Оба направления (L+S)") or (i_mode == "Авто (по тренду)" and (na(min_s_pct) or min_l_pct >= min_s_pct))
+    bool allow_short = (i_mode == "Только SHORT") or (i_mode == "Оба направления (L+S)") or (i_mode == "Авто (по тренду)" and (na(min_l_pct) or min_s_pct > min_l_pct))
 
     int x_end = bar_index + 16
 
@@ -294,8 +304,7 @@ if barstate.islast
                 draw_level(p200, "🟠 2.000  " + str.tostring(p200, "#.###"), col_maj_200, w_maj_200, "solid", x_start, x_end, pos, lines_arr, labels_arr)
 
         // ⚡ Младшая Long
-        bool is_diff_l = na(maj_l_s) or (min_l_s != maj_l_s) or (math.abs(min_l_low - maj_l_low) > 0.0001)
-        if show_min and not na(min_l_high) and not na(min_l_low) and is_diff_l
+        if show_min and not na(min_l_high) and not na(min_l_low)
             float h = min_l_high, float l = min_l_low, int x_start = min_l_s
             
             if show_0382
@@ -326,7 +335,7 @@ if barstate.islast
 
     // ── 2. SHORT СЕТКИ ──
     if allow_short
-        // 🏛️ Старшая Short
+        // 🏛️ Старшая Short (Глобальная, по умолчанию выключена)
         if show_maj and not na(maj_s_high) and not na(maj_s_low)
             float h = maj_s_high, float l = maj_s_low, int x_start = maj_s_s
             string pos = maj_lbl_pos
@@ -363,9 +372,8 @@ if barstate.islast
                 draw_level(p161, "🟣 1.618  " + str.tostring(p161, "#.###"), col_maj_161, w_maj_161, "solid", x_start, x_end, pos, lines_arr, labels_arr)
                 draw_level(p200, "🟠 2.000  " + str.tostring(p200, "#.###"), col_maj_200, w_maj_200, "solid", x_start, x_end, pos, lines_arr, labels_arr)
 
-        // ⚡ Младшая Short
-        bool is_diff_s = na(maj_s_s) or (min_s_s != maj_s_s) or (math.abs(min_s_high - maj_s_high) > 0.0001)
-        if show_min and not na(min_s_high) and not na(min_s_low) and is_diff_s
+        // ⚡ Младшая Short (Основная локальная волна)
+        if show_min and not na(min_s_high) and not na(min_s_low)
             float h = min_s_high, float l = min_s_low, int x_start = min_s_s
             
             if show_0382
