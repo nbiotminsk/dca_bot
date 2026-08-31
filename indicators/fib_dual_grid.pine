@@ -125,7 +125,7 @@ draw_level(float price, string label_text, color col, int width, string style_ty
 // ══════════════════════════════════════════════════════════════════════════════
 // 6. НАДЕЖНЫЙ ПОИСК АКТИВНЫХ ИМПУЛЬСОВ
 // ══════════════════════════════════════════════════════════════════════════════
-find_long_impulse(int lookback, float min_pct, bool find_recent) =>
+find_long_impulse(int lookback, float min_pct, bool is_minor) =>
     int   best_start = na
     float best_low   = na
     float best_high  = na
@@ -133,10 +133,15 @@ find_long_impulse(int lookback, float min_pct, bool find_recent) =>
     int   max_s      = math.min(lookback, bar_index)
 
     if max_s >= 2
-        for s = 2 to max_s
-            float l = low[s]
-            for b = s - 1 to 1
-                float h = high[b]
+        for b = 1 to math.min(20, max_s - 1)
+            float h = high[b]
+            int   cand_s = na
+            float cand_l = low[b]
+            float cand_pct = 0.0
+
+            int scan_limit = is_minor ? math.min(b + 7, max_s) : max_s
+            for s = b + 1 to scan_limit
+                float l = low[s]
                 bool valid_imp = true
                 for m = s to b
                     if high[m] > h or low[m] < l
@@ -145,43 +150,47 @@ find_long_impulse(int lookback, float min_pct, bool find_recent) =>
                 
                 if valid_imp
                     float pct = (h - l) / l * 100.0
-                    if pct >= min_pct and (pct > best_pct or find_recent)
-                        float in_050 = calc_fib_long(h, l, 0.500, use_log)
-                        float tp_038 = calc_fib_long(h, l, 0.382, use_log)
-                        float sl_860 = calc_fib_long(h, l, 0.860, use_log)
+                    if pct >= min_pct and pct > cand_pct
+                        cand_pct := pct
+                        cand_s   := s
+                        cand_l   := l
 
-                        bool entered = false
-                        bool tp_hit  = false
-                        bool sl_hit  = false
+            if not na(cand_s)
+                float in_050 = calc_fib_long(h, cand_l, 0.500, use_log)
+                float tp_038 = calc_fib_long(h, cand_l, 0.382, use_log)
+                float sl_860 = calc_fib_long(h, cand_l, 0.860, use_log)
 
-                        for p = b - 1 to 0
-                            if not entered and low[p] <= in_050
-                                entered := true
-                            if entered
-                                if high[p] >= tp_038
-                                    tp_hit := true
-                                    break
-                                if low[p] <= sl_860 or low[p] < l
-                                    sl_hit := true
-                                    break
-                            else
-                                if high[p] > h or low[p] < l
-                                    sl_hit := true
-                                    break
+                bool entered = false
+                bool tp_hit  = false
+                bool sl_hit  = false
 
-                        if not tp_hit and not sl_hit
-                            best_pct   := pct
-                            best_start := bar_index - s
-                            best_low   := l
-                            best_high  := h
-                            if find_recent
-                                break
-            if find_recent and not na(best_start)
-                break
+                for p = b - 1 to 0
+                    if not entered and low[p] <= in_050
+                        entered := true
+                    if entered
+                        if high[p] >= tp_038
+                            tp_hit := true
+                            break
+                        if low[p] <= sl_860 or low[p] < cand_l
+                            sl_hit := true
+                            break
+                    else
+                        if high[p] > h or low[p] < cand_l
+                            sl_hit := true
+                            break
+
+                if not tp_hit and not sl_hit
+                    if is_minor or cand_pct > best_pct
+                        best_pct   := cand_pct
+                        best_start := bar_index - cand_s
+                        best_low   := cand_l
+                        best_high  := h
+                        if is_minor
+                            break
 
     [best_start, best_low, best_high, best_pct]
 
-find_short_impulse(int lookback, float min_pct, bool find_recent) =>
+find_short_impulse(int lookback, float min_pct, bool is_minor) =>
     int   best_start = na
     float best_high  = na
     float best_low   = na
@@ -189,10 +198,15 @@ find_short_impulse(int lookback, float min_pct, bool find_recent) =>
     int   max_s      = math.min(lookback, bar_index)
 
     if max_s >= 2
-        for s = 2 to max_s
-            float h = high[s]
-            for b = s - 1 to 1
-                float l = low[b]
+        for b = 1 to math.min(20, max_s - 1)
+            float l = low[b]
+            int   cand_s = na
+            float cand_h = high[b]
+            float cand_pct = 0.0
+
+            int scan_limit = is_minor ? math.min(b + 7, max_s) : max_s
+            for s = b + 1 to scan_limit
+                float h = high[s]
                 bool valid_dump = true
                 for m = s to b
                     if high[m] > h or low[m] < l
@@ -201,39 +215,43 @@ find_short_impulse(int lookback, float min_pct, bool find_recent) =>
                 
                 if valid_dump
                     float pct = (h - l) / h * 100.0
-                    if pct >= min_pct and (pct > best_pct or find_recent)
-                        float in_050 = calc_fib_short(h, l, 0.500, use_log)
-                        float tp_038 = calc_fib_short(h, l, 0.382, use_log)
-                        float sl_860 = calc_fib_short(h, l, 0.860, use_log)
+                    if pct >= min_pct and pct > cand_pct
+                        cand_pct := pct
+                        cand_s   := s
+                        cand_h   := h
 
-                        bool entered = false
-                        bool tp_hit  = false
-                        bool sl_hit  = false
+            if not na(cand_s)
+                float in_050 = calc_fib_short(cand_h, l, 0.500, use_log)
+                float tp_038 = calc_fib_short(cand_h, l, 0.382, use_log)
+                float sl_860 = calc_fib_short(cand_h, l, 0.860, use_log)
 
-                        for p = b - 1 to 0
-                            if not entered and high[p] >= in_050
-                                entered := true
-                            if entered
-                                if low[p] <= tp_038
-                                    tp_hit := true
-                                    break
-                                if high[p] >= sl_860 or high[p] > h
-                                    sl_hit := true
-                                    break
-                            else
-                                if high[p] > h or low[p] < l
-                                    sl_hit := true
-                                    break
+                bool entered = false
+                bool tp_hit  = false
+                bool sl_hit  = false
 
-                        if not tp_hit and not sl_hit
-                            best_pct   := pct
-                            best_start := bar_index - s
-                            best_high  := h
-                            best_low   := l
-                            if find_recent
-                                break
-            if find_recent and not na(best_start)
-                break
+                for p = b - 1 to 0
+                    if not entered and high[p] >= in_050
+                        entered := true
+                    if entered
+                        if low[p] <= tp_038
+                            tp_hit := true
+                            break
+                        if high[p] >= sl_860 or high[p] > cand_h
+                            sl_hit := true
+                            break
+                    else
+                        if high[p] > cand_h or low[p] < l
+                            sl_hit := true
+                            break
+
+                if not tp_hit and not sl_hit
+                    if is_minor or cand_pct > best_pct
+                        best_pct   := cand_pct
+                        best_start := bar_index - cand_s
+                        best_high  := cand_h
+                        best_low   := l
+                        if is_minor
+                            break
 
     [best_start, best_high, best_low, best_pct]
 
@@ -251,8 +269,8 @@ if barstate.islast
         label.delete(lb)
     labels_arr.clear()
 
-    // Старшая ищет максимальную глобальную волну (find_recent=false)
-    // Младшая ищет непосредственный каскадный импульс (find_recent=true)
+    // Старшая ищет максимальную глобальную волну (is_minor=false)
+    // Младшая ищет точную вершину непосредственного каскадного импульса (is_minor=true)
     [maj_l_s, maj_l_low, maj_l_high, maj_l_pct] = find_long_impulse(maj_lookb, maj_min_p, false)
     [min_l_s, min_l_low, min_l_high, min_l_pct] = find_long_impulse(min_lookb, min_min_p, true)
 
@@ -372,7 +390,7 @@ if barstate.islast
                 draw_level(p161, "🟣 1.618  " + str.tostring(p161, "#.###"), col_maj_161, w_maj_161, "solid", x_start, x_end, pos, lines_arr, labels_arr)
                 draw_level(p200, "🟠 2.000  " + str.tostring(p200, "#.###"), col_maj_200, w_maj_200, "solid", x_start, x_end, pos, lines_arr, labels_arr)
 
-        // ⚡ Младшая Short (Основная локальная волна)
+        // ⚡ Младшая Short (Точная вершина каскада 106.75)
         if show_min and not na(min_s_high) and not na(min_s_low)
             float h = min_s_high, float l = min_s_low, int x_start = min_s_s
             
