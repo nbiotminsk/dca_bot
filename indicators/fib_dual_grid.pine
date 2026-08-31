@@ -1,5 +1,5 @@
-//@version=5
-indicator("Fibonacci Dual Grid (Pro Custom)", shorttitle="Fib Dual Grid Pro", overlay=true, max_lines_count=500, max_labels_count=500)
+//@version=6
+indicator("Fibonacci Dual Grid (Pro Custom)", shorttitle="Fib Dual Grid Pro v6", overlay=true, max_lines_count=500, max_labels_count=500)
 
 // ══════════════════════════════════════════════════════════════════════════════
 // 1. ОБЩИЕ НАСТРОЙКИ
@@ -92,7 +92,7 @@ show_0860   = input.bool(true, "Показывать 0.860 Fib (Стоп-Лос�
 show_manip  = input.bool(true, "Показывать 1.618 / 2.000 (Манипуляция)", group=grp_lvls)
 
 // ══════════════════════════════════════════════════════════════════════════════
-// 5. МАТЕМАТИЧЕСКИЕ ФУНКЦИИ И ОТРИСОВКА
+// 5. МАТЕМАТИЧЕСКИЕ ФУНКЦИИ И ОТРИСОВКА (PINE SCRIPT v6)
 // ══════════════════════════════════════════════════════════════════════════════
 calc_fib_long(float h, float l, float lvl, bool is_log) =>
     if is_log and h > 0 and l > 0
@@ -124,7 +124,7 @@ draw_level(float price, float lvl, string name, string pref, color col, int widt
     array.push(labels_arr, lb)
 
 // ══════════════════════════════════════════════════════════════════════════════
-// 6. ПОИСК ИМПУЛЬСОВ (ПРАВИЛЬНЫЙ ДВУХЭТАПНЫЙ АЛГОРИТМ: ИМПУЛЬС + ОТКАТ)
+// 6. ПОИСК ИМПУЛЬСОВ (ДВУХЭТАПНЫЙ АЛГОРИТМ v6: ИМПУЛЬС + ОТКАТ)
 // ══════════════════════════════════════════════════════════════════════════════
 find_long_impulse(int lookback, float min_pct) =>
     int   best_start = na
@@ -139,7 +139,6 @@ find_long_impulse(int lookback, float min_pct) =>
         bool broken = false
         bool growth = false
 
-        // Этап 1: формирование роста до пика
         for k = s - 1 to 0
             float cur_05 = calc_fib_long(h, l, 0.500, use_log)
             if low[k] <= cur_05
@@ -153,7 +152,6 @@ find_long_impulse(int lookback, float min_pct) =>
                 peak_bar := k
                 growth := true
 
-        // Этап 2: проверка отката от сформированного пика
         if not broken and growth and peak_bar < s
             float sl_86 = calc_fib_long(h, l, 0.860, use_log)
             bool sl_hit = false
@@ -185,7 +183,6 @@ find_short_impulse(int lookback, float min_pct) =>
         bool broken = false
         bool drop   = false
 
-        // Этап 1: формирование дампа до дна
         for k = s - 1 to 0
             float cur_05 = calc_fib_short(h, l, 0.500, use_log)
             if high[k] >= cur_05
@@ -199,7 +196,6 @@ find_short_impulse(int lookback, float min_pct) =>
                 bottom_bar := k
                 drop := true
 
-        // Этап 2: проверка отката от сформированного дна
         if not broken and drop and bottom_bar < s
             float sl_86 = calc_fib_short(h, l, 0.860, use_log)
             bool sl_hit = false
