@@ -147,10 +147,11 @@ find_macro_long(int lookback, float min_pct) =>
             float h = high[b]
             // b должна быть сформированной вершиной (не текущая развивающаяся свеча и выше b-1 / b+1)
             if high[b - 1] <= h and high[b + 1] <= h
-                // Ищем базу импульса (самый низкий минимум перед взлетом)
+                // Ищем базу импульса (самый низкий минимум перед взлетом в пределах 32 свечей до старта ралли)
                 float cur_min_l = h
                 int   cur_min_s = na
-                for s = b + 1 to max_s
+                int   scan_end  = math.min(b + 32, max_s)
+                for s = b + 1 to scan_end
                     if low[s] < cur_min_l
                         cur_min_l := low[s]
                         cur_min_s := s
@@ -186,7 +187,8 @@ find_macro_short(int lookback, float min_pct) =>
             if low[b - 1] >= l and low[b + 1] >= l
                 float cur_max_h = l
                 int   cur_max_s = na
-                for s = b + 1 to max_s
+                int   scan_end  = math.min(b + 32, max_s)
+                for s = b + 1 to scan_end
                     if high[s] > cur_max_h
                         cur_max_h := high[s]
                         cur_max_s := s
