@@ -73,7 +73,10 @@ function detectLatestLongImpulse($candles, $min_pct = 1.5) {
     $n = count($candles);
     $best = null;
 
-    for ($s = max(0, $n - 35); $s < $n - 1; $s++) {
+    if ($n < 3) return null;
+
+    // Сканируем только закрытые свечи (до $n - 2)
+    for ($s = max(0, $n - 35); $s < $n - 2; $s++) {
         $l_s = $candles[$s]['low'];
         $h_s = $candles[$s]['high'];
         $cur_h = $h_s;
@@ -82,7 +85,7 @@ function detectLatestLongImpulse($candles, $min_pct = 1.5) {
         $peak_locked = false;
         $end_idx = $s;
 
-        for ($k = $s + 1; $k < $n; $k++) {
+        for ($k = $s + 1; $k < $n - 1; $k++) {
             $l_k = $candles[$k]['low'];
             $h_k = $candles[$k]['high'];
             $c_k = $candles[$k]['close'];
@@ -131,6 +134,18 @@ function detectLatestLongImpulse($candles, $min_pct = 1.5) {
             }
         }
 
+        // Проверка отработки на незакрытой свече n-1 (если импульс уже подтвержден ранее)
+        if ($is_impulse && !$broken) {
+            if ($peak_locked) {
+                $tp_038 = calcFibLongLog($cur_h, $l_s, 0.382);
+                $sl_lim = calcFibLongLog($cur_h, $l_s, 0.860);
+                $cur_live = $candles[$n - 1];
+                if ($cur_live['high'] >= $tp_038 || $cur_live['close'] >= $tp_038 || $cur_live['low'] <= $sl_lim) {
+                    $broken = true;
+                }
+            }
+        }
+
         if ($is_impulse && !$broken) {
             $pct = ($cur_h - $l_s) / $l_s * 100.0;
             if ($pct >= $min_pct) {
@@ -155,7 +170,9 @@ function detectLatestShortImpulse($candles, $min_pct = 2.0) {
     $n = count($candles);
     $best = null;
 
-    for ($s = max(0, $n - 35); $s < $n - 1; $s++) {
+    if ($n < 3) return null;
+
+    for ($s = max(0, $n - 35); $s < $n - 2; $s++) {
         $h_s = $candles[$s]['high'];
         $l_s = $candles[$s]['low'];
         $cur_l = $l_s;
@@ -164,7 +181,7 @@ function detectLatestShortImpulse($candles, $min_pct = 2.0) {
         $peak_locked = false;
         $end_idx = $s;
 
-        for ($k = $s + 1; $k < $n; $k++) {
+        for ($k = $s + 1; $k < $n - 1; $k++) {
             $l_k = $candles[$k]['low'];
             $h_k = $candles[$k]['high'];
             $c_k = $candles[$k]['close'];
@@ -209,6 +226,17 @@ function detectLatestShortImpulse($candles, $min_pct = 2.0) {
                         $broken = true;
                         break;
                     }
+                }
+            }
+        }
+
+        if ($is_dump && !$broken) {
+            if ($peak_locked) {
+                $tp_038 = calcFibShortLog($h_s, $cur_l, 0.382);
+                $sl_lim = calcFibShortLog($h_s, $cur_l, 0.860);
+                $cur_live = $candles[$n - 1];
+                if ($cur_live['low'] <= $tp_038 || $cur_live['close'] <= $tp_038 || $cur_live['high'] >= $sl_lim) {
+                    $broken = true;
                 }
             }
         }

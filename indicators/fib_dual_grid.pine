@@ -212,11 +212,12 @@ find_macro_short(int lookback, float min_pct) =>
 
 // Поиск Младшей (Локальной) Фибы по строгому правилу:
 // 1. Начальная свеча s (low = l_s, high = h_s).
-// 2. Свечи k проверяются: цена НЕ должна опускаться <= 0.500 первой свечи ДО первого пробоя ее High.
-// 3. Как только High первой свечи пробит (без касания 0.500) — импульс запущен!
-// 4. Пока цена не коснулась 0.500 текущей растущей волны — вершина поднимается при новых High.
-// 5. Как только цена коснулась 0.500 (как в 11:00 на NEAR) — вершина БЛОКИРУЕТСЯ навсегда!
-// 6. Дальше при достижении Тейка 0.382 или Стопа 0.860 — сделка завершается и фиба удаляется.
+// 2. Импульс подтверждается ТОЛЬКО ЗАКРЫТЫМИ СВЕЧАМИ (до свечи 1 включительно). Незакрытая текущая свеча [0] не может подтверждать начало импульса!
+// 3. Следующие закрытые свечи НЕ должны опускаться <= 0.500 первой свечи ДО первого закрытого пробоя ее High.
+// 4. Как только закрытая свеча пробила High (без касания 0.500) — импульс запущен!
+// 5. Пока цена не коснулась 0.500 текущей растущей волны — вершина поднимается при новых High.
+// 6. Как только цена коснулась 0.500 — вершина БЛОКИРУЕТСЯ навсегда!
+// 7. Дальше при достижении Тейка 0.382 или Стопа 0.860 — сделка завершается и фиба удаляется.
 find_minor_long(int lookback, float min_pct, int max_duration) =>
     int   best_start = na
     float best_low   = na
@@ -224,8 +225,8 @@ find_minor_long(int lookback, float min_pct, int max_duration) =>
     float best_pct   = 0.0
     int   max_s      = math.min(lookback, bar_index)
 
-    if max_s >= 2
-        for s = math.min(35, max_s - 1) to 1
+    if max_s >= 3
+        for s = math.min(35, max_s - 1) to 2
             float l_s = low[s]
             float h_s = high[s]
             float cur_h = h_s
@@ -234,7 +235,8 @@ find_minor_long(int lookback, float min_pct, int max_duration) =>
             bool  peak_locked  = false
             int   end_idx      = s
 
-            for k = s - 1 to 0
+            // Сканируем только закрытые свечи от s-1 до 1
+            for k = s - 1 to 1
                 if low[k] < l_s
                     broken := true
                     break
@@ -268,6 +270,14 @@ find_minor_long(int lookback, float min_pct, int max_duration) =>
                             broken := true
                             break
             
+            // На текущей живой свече [0] проверяем только отработку входов/тейков/стопов, если импульс уже подтвержден
+            if is_impulse and not broken
+                if peak_locked
+                    float tp_038 = calc_fib_long(cur_h, l_s, 0.382, use_log)
+                    float sl_lim = show_manip ? calc_fib_long(cur_h, l_s, 2.000, use_log) : calc_fib_long(cur_h, l_s, 0.860, use_log)
+                    if high[0] >= tp_038 or close[0] >= tp_038 or low[0] <= sl_lim
+                        broken := true
+
             if is_impulse and not broken
                 float pct = (cur_h - l_s) / l_s * 100.0
                 if pct >= min_pct
@@ -286,8 +296,8 @@ find_minor_short(int lookback, float min_pct, int max_duration) =>
     float best_pct   = 0.0
     int   max_s      = math.min(lookback, bar_index)
 
-    if max_s >= 2
-        for s = math.min(35, max_s - 1) to 1
+    if max_s >= 3
+        for s = math.min(35, max_s - 1) to 2
             float h_s = high[s]
             float l_s = low[s]
             float cur_l = l_s
@@ -296,7 +306,7 @@ find_minor_short(int lookback, float min_pct, int max_duration) =>
             bool  peak_locked = false
             int   end_idx     = s
 
-            for k = s - 1 to 0
+            for k = s - 1 to 1
                 if high[k] > h_s
                     broken := true
                     break
@@ -331,6 +341,13 @@ find_minor_short(int lookback, float min_pct, int max_duration) =>
                             break
             
             if is_dump and not broken
+                if peak_locked
+                    float tp_038 = calc_fib_short(h_s, cur_l, 0.382, use_log)
+                    float sl_lim = show_manip ? calc_fib_short(h_s, cur_l, 2.000, use_log) : calc_fib_short(h_s, cur_l, 0.860, use_log)
+                    if low[0] <= tp_038 or close[0] <= tp_038 or high[0] >= sl_lim
+                        broken := true
+
+            if is_dump and not broken
                 float pct = (h_s - cur_l) / h_s * 100.0
                 if pct >= min_pct
                     if pct > best_pct
@@ -339,7 +356,7 @@ find_minor_short(int lookback, float min_pct, int max_duration) =>
                         best_high  := h_s
                         best_low   := cur_l
 
-    [best_start, best_high, best_low, best_pct]
+    [best_start, best_low, best_high, best_pct]
 
 // ══════════════════════════════════════════════════════════════════════════════
 // 7. ОТРИСОВКА СЕТОК НА ГРАФИКЕ
