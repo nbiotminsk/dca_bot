@@ -61,6 +61,9 @@ min_bars    = input.int(6, "Макс. длительность импульса 
 min_lookb   = input.int(100, "Глубина поиска Младшей (свечей)", minval=10, maxval=300, group=grp_min_set)
 
 grp_min_col = "🎨 Младшая Фиба: Цвета и Толщина уровней"
+col_min_023 = input.color(color.gray, "0.236 (Дальний Тейк)", group=grp_min_col)
+w_min_023   = input.int(1, "Толщина 0.236", minval=1, maxval=4, group=grp_min_col)
+
 col_min_038 = input.color(#10b981, "0.382 (Тейк)", group=grp_min_col)
 w_min_038   = input.int(1, "Толщина 0.382", minval=1, maxval=4, group=grp_min_col)
 
@@ -521,6 +524,9 @@ if barstate.islast
         if show_min and not na(min_l_high) and not na(min_l_low)
             float h = min_l_high, float l = min_l_low, int x_start = min_l_s
             
+            if show_0236
+                float p023 = calc_fib_long(h, l, 0.236, use_log)
+                draw_level(p023, "🎯 TP-2 (0.236) " + str.tostring(p023, "#.####"), col_min_023, w_min_023, "dotted", x_start, x_end, "Справа", lines_arr, labels_arr)
             if show_0382
                 float p038 = calc_fib_long(h, l, 0.382, use_log)
                 draw_level(p038, "🎯 TP (0.382) " + str.tostring(p038, "#.####"), col_min_038, w_min_038, "dotted", x_start, x_end, "Справа", lines_arr, labels_arr)
@@ -594,6 +600,9 @@ if barstate.islast
         if show_min and not na(min_s_high) and not na(min_s_low)
             float h = min_s_high, float l = min_s_low, int x_start = min_s_s
             
+            if show_0236
+                float p023 = calc_fib_short(h, l, 0.236, use_log)
+                draw_level(p023, "🎯 TP-2 (0.236) " + str.tostring(p023, "#.####"), col_min_023, w_min_023, "dotted", x_start, x_end, "Справа", lines_arr, labels_arr)
             if show_0382
                 float p038 = calc_fib_short(h, l, 0.382, use_log)
                 draw_level(p038, "🎯 TP (0.382) " + str.tostring(p038, "#.####"), col_min_038, w_min_038, "dotted", x_start, x_end, "Справа", lines_arr, labels_arr)
