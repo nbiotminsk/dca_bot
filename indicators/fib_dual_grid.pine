@@ -31,6 +31,21 @@ calc_fib(float h, float l, float lvl, bool is_log) =>
     else
         h - lvl * (h - l)
 
+// ─── Функция отрисовки уровня (Вынесена в глобальную область) ─────────────────
+draw_fib_level(float h, float l, float lvl, string name, string pref, color col, int width, string style_type, bool is_log, int x_start, int x_end, line[] lines_arr, label[] labels_arr) =>
+    float price = calc_fib(h, l, lvl, is_log)
+    var line_style = line.style_solid
+    if style_type == "dashed"
+        line_style := line.style_dashed
+    else if style_type == "dotted"
+        line_style := line.style_dotted
+
+    line ln = line.new(x_start, price, x_end, price, color=col, width=width, style=line_style)
+    array.push(lines_arr, ln)
+    string txt = pref + name + " (" + str.tostring(lvl, "#.###") + ") = " + str.tostring(price, "#.###") + " $"
+    label lb = label.new(x_end, price, txt, style=label.style_label_left, color=color.new(color.black, 100), textcolor=col, size=size.small)
+    array.push(labels_arr, lb)
+
 // ─── Поиск импульса (Алгоритм сканирования) ──────────────────────────────────
 find_impulse(int lookback, float min_pct) =>
     int   best_start = na
@@ -76,7 +91,6 @@ var label[] maj_labels = array.new_label()
 var line[] min_lines  = array.new_line()
 var label[] min_labels = array.new_label()
 
-// Очистка предыдущего бара
 if barstate.islast
     for ln in maj_lines
         line.delete(ln)
@@ -101,40 +115,24 @@ if barstate.islast
         int   x_start = maj_s
         string pref = "🏛️ СТАРШАЯ: "
 
-        // Функция отрисовки уровня
-        draw_lvl_maj(float lvl, string name, color col, int width, string style_type) =>
-            float price = calc_fib(h, l, lvl, use_log)
-            var line_style = line.style_solid
-            if style_type == "dashed"
-                line_style := line.style_dashed
-            else if style_type == "dotted"
-                line_style := line.style_dotted
-
-            line ln = line.new(x_start, price, x_end, price, color=col, width=width, style=line_style)
-            array.push(maj_lines, ln)
-            string txt = pref + name + " (" + str.tostring(lvl, "#.###") + ") = " + str.tostring(price, "#.###") + " $"
-            label lb = label.new(x_end, price, txt, style=label.style_label_left, color=color.new(color.black, 100), textcolor=col, size=size.small)
-            array.push(maj_labels, lb)
-
-        draw_lvl_maj(0.000, "TOP (High)", color.gray, 1, "dashed")
+        draw_fib_level(h, l, 0.000, "TOP (High)", pref, color.gray, 1, "dashed", use_log, x_start, x_end, maj_lines, maj_labels)
         if show_0236
-            draw_lvl_maj(0.236, "🎯 Тейк-2", color.teal, 1, "dotted")
+            draw_fib_level(h, l, 0.236, "🎯 Тейк-2", pref, color.teal, 1, "dotted", use_log, x_start, x_end, maj_lines, maj_labels)
         if show_0382
-            draw_lvl_maj(0.382, "🎯 Тейк-1", color.green, 2, "solid")
-        draw_lvl_maj(0.500, "🔹 Вход-1 (0.500)", col_maj, 2, "solid")
-        draw_lvl_maj(0.618, "🔹 Вход-2 (0.618)", color.blue, 2, "solid")
+            draw_fib_level(h, l, 0.382, "🎯 Тейк-1", pref, color.green, 2, "solid", use_log, x_start, x_end, maj_lines, maj_labels)
+        draw_fib_level(h, l, 0.500, "🔹 Вход-1", pref, col_maj, 2, "solid", use_log, x_start, x_end, maj_lines, maj_labels)
+        draw_fib_level(h, l, 0.618, "🔹 Вход-2", pref, color.blue, 2, "solid", use_log, x_start, x_end, maj_lines, maj_labels)
         if show_0786
-            draw_lvl_maj(0.786, "⚡ Вход-3 (0.786)", color.purple, 1, "dotted")
+            draw_fib_level(h, l, 0.786, "⚡ Вход-3", pref, color.purple, 1, "dotted", use_log, x_start, x_end, maj_lines, maj_labels)
         if show_0860
-            draw_lvl_maj(0.860, "🛑 Стоп (0.860)", color.red, 2, "dashed")
-        draw_lvl_maj(1.000, "🛑 Дно (1.000 Low)", color.maroon, 2, "solid")
+            draw_fib_level(h, l, 0.860, "🛑 Стоп", pref, color.red, 2, "dashed", use_log, x_start, x_end, maj_lines, maj_labels)
+        draw_fib_level(h, l, 1.000, "🛑 Дно Low", pref, color.maroon, 2, "solid", use_log, x_start, x_end, maj_lines, maj_labels)
 
         if show_manip
-            draw_lvl_maj(1.618, "🟣 Манипуляция (1.618)", color.fuchsia, 2, "solid")
-            draw_lvl_maj(2.000, "🟠 Добор DCA (2.000)", color.orange, 2, "solid")
+            draw_fib_level(h, l, 1.618, "🟣 Манипуляция", pref, color.fuchsia, 2, "solid", use_log, x_start, x_end, maj_lines, maj_labels)
+            draw_fib_level(h, l, 2.000, "🟠 Добор DCA", pref, color.orange, 2, "solid", use_log, x_start, x_end, maj_lines, maj_labels)
 
     // ── 2. ОТРИСОВКА МЛАДШЕЙ (ЛОКАЛЬНОЙ) ФИБЫ ──
-    // Отрисовываем младшую, только если она отличается от старшей
     bool is_different = na(maj_s) or (min_s != maj_s) or (math.abs(min_l - maj_l) > 0.0001)
 
     if show_min and not na(min_h) and not na(min_l) and is_different
@@ -143,24 +141,10 @@ if barstate.islast
         int   x_start = min_s
         string pref = "⚡ МЛАДШАЯ: "
 
-        draw_lvl_min(float lvl, string name, color col, int width, string style_type) =>
-            float price = calc_fib(h, l, lvl, use_log)
-            var line_style = line.style_solid
-            if style_type == "dashed"
-                line_style := line.style_dashed
-            else if style_type == "dotted"
-                line_style := line.style_dotted
-
-            line ln = line.new(x_start, price, x_end, price, color=col, width=width, style=line_style)
-            array.push(min_lines, ln)
-            string txt = pref + name + " = " + str.tostring(price, "#.###") + " $"
-            label lb = label.new(x_end, price, txt, style=label.style_label_left, color=color.new(color.black, 100), textcolor=col, size=size.small)
-            array.push(min_labels, lb)
-
         if show_0382
-            draw_lvl_min(0.382, "🎯 Тейк (0.382)", color.lime, 1, "dotted")
-        draw_lvl_min(0.500, "🔹 Вход (0.500)", col_min, 2, "solid")
-        draw_lvl_min(0.618, "🔹 Вход (0.618)", color.yellow, 2, "solid")
+            draw_fib_level(h, l, 0.382, "🎯 Тейк (0.382)", pref, color.lime, 1, "dotted", use_log, x_start, x_end, min_lines, min_labels)
+        draw_fib_level(h, l, 0.500, "🔹 Вход (0.500)", pref, col_min, 2, "solid", use_log, x_start, x_end, min_lines, min_labels)
+        draw_fib_level(h, l, 0.618, "🔹 Вход (0.618)", pref, color.yellow, 2, "solid", use_log, x_start, x_end, min_lines, min_labels)
         if show_0860
-            draw_lvl_min(0.860, "🛑 Стоп (0.860)", color.red, 1, "dashed")
-        draw_lvl_min(1.000, "🛑 Дно (1.000)", color.maroon, 1, "solid")
+            draw_fib_level(h, l, 0.860, "🛑 Стоп (0.860)", pref, color.red, 1, "dashed", use_log, x_start, x_end, min_lines, min_labels)
+        draw_fib_level(h, l, 1.000, "🛑 Дно (1.000)", pref, color.maroon, 1, "solid", use_log, x_start, x_end, min_lines, min_labels)
