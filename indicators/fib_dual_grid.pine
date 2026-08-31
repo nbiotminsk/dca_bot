@@ -24,28 +24,28 @@ w_maj_000   = input.int(1, "Толщина 0.000", minval=1, maxval=4, group=grp
 col_maj_023 = input.color(color.teal, "0.236 (Тейк-2)", group=grp_maj_col)
 w_maj_023   = input.int(1, "Толщина 0.236", minval=1, maxval=4, group=grp_maj_col)
 
-col_maj_038 = input.color(color.green, "0.382 (Тейк-1)", group=grp_maj_col)
+col_maj_038 = input.color(#10b981, "0.382 (Тейк-1)", group=grp_maj_col)
 w_maj_038   = input.int(2, "Толщина 0.382", minval=1, maxval=4, group=grp_maj_col)
 
-col_maj_050 = input.color(#3b82f6, "0.500 (Вход-1)", group=grp_maj_col)
+col_maj_050 = input.color(#f59e0b, "0.500 (Вход-1)", group=grp_maj_col)
 w_maj_050   = input.int(2, "Толщина 0.500", minval=1, maxval=4, group=grp_maj_col)
 
-col_maj_061 = input.color(color.blue, "0.618 (Вход-2)", group=grp_maj_col)
+col_maj_061 = input.color(#06b6d4, "0.618 (Вход-2)", group=grp_maj_col)
 w_maj_061   = input.int(2, "Толщина 0.618", minval=1, maxval=4, group=grp_maj_col)
 
-col_maj_078 = input.color(color.purple, "0.786 (Вход-3)", group=grp_maj_col)
+col_maj_078 = input.color(#10b981, "0.786 (Вход-3)", group=grp_maj_col)
 w_maj_078   = input.int(1, "Толщина 0.786", minval=1, maxval=4, group=grp_maj_col)
 
-col_maj_086 = input.color(color.red, "0.860 (Стоп-Лосс)", group=grp_maj_col)
+col_maj_086 = input.color(#ef4444, "0.860 (Стоп-Лосс)", group=grp_maj_col)
 w_maj_086   = input.int(2, "Толщина 0.860", minval=1, maxval=4, group=grp_maj_col)
 
 col_maj_100 = input.color(color.maroon, "1.000 (Дно/Вершина)", group=grp_maj_col)
 w_maj_100   = input.int(2, "Толщина 1.000", minval=1, maxval=4, group=grp_maj_col)
 
-col_maj_141 = input.color(#f43f5e, "1.414 (Манипуляция 1)", group=grp_maj_col)
+col_maj_141 = input.color(#881337, "1.414 (Манипуляция 1)", group=grp_maj_col)
 w_maj_141   = input.int(1, "Толщина 1.414", minval=1, maxval=4, group=grp_maj_col)
 
-col_maj_161 = input.color(color.fuchsia, "1.618 (Манипуляция 2)", group=grp_maj_col)
+col_maj_161 = input.color(#facc15, "1.618 (Манипуляция 2)", group=grp_maj_col)
 w_maj_161   = input.int(2, "Толщина 1.618", minval=1, maxval=4, group=grp_maj_col)
 
 col_maj_200 = input.color(color.orange, "2.000 (Добор DCA)", group=grp_maj_col)
@@ -61,28 +61,28 @@ min_bars    = input.int(6, "Макс. длительность импульса 
 min_lookb   = input.int(100, "Глубина поиска Младшей (свечей)", minval=10, maxval=300, group=grp_min_set)
 
 grp_min_col = "🎨 Младшая Фиба: Цвета и Толщина уровней"
-col_min_038 = input.color(color.lime, "0.382 (Тейк)", group=grp_min_col)
+col_min_038 = input.color(#10b981, "0.382 (Тейк)", group=grp_min_col)
 w_min_038   = input.int(1, "Толщина 0.382", minval=1, maxval=4, group=grp_min_col)
 
-col_min_050 = input.color(#06b6d4, "0.500 (Вход)", group=grp_min_col)
+col_min_050 = input.color(#f59e0b, "0.500 (Вход)", group=grp_min_col)
 w_min_050   = input.int(2, "Толщина 0.500", minval=1, maxval=4, group=grp_min_col)
 
-col_min_061 = input.color(color.yellow, "0.618 (Вход)", group=grp_min_col)
+col_min_061 = input.color(#06b6d4, "0.618 (Вход)", group=grp_min_col)
 w_min_061   = input.int(2, "Толщина 0.618", minval=1, maxval=4, group=grp_min_col)
 
-col_min_078 = input.color(#c084fc, "0.786 (Глубокий Вход)", group=grp_min_col)
+col_min_078 = input.color(#10b981, "0.786 (Глубокий Вход)", group=grp_min_col)
 w_min_078   = input.int(1, "Толщина 0.786", minval=1, maxval=4, group=grp_min_col)
 
-col_min_086 = input.color(color.red, "0.860 (Стоп)", group=grp_min_col)
+col_min_086 = input.color(#ef4444, "0.860 (Стоп)", group=grp_min_col)
 w_min_086   = input.int(1, "Толщина 0.860", minval=1, maxval=4, group=grp_min_col)
 
 col_min_100 = input.color(color.maroon, "1.000 (Дно)", group=grp_min_col)
 w_min_100   = input.int(1, "Толщина 1.000", minval=1, maxval=4, group=grp_min_col)
 
-col_min_141 = input.color(#f43f5e, "1.414 (Манипуляция 1)", group=grp_min_col)
+col_min_141 = input.color(#881337, "1.414 (Манипуляция 1)", group=grp_min_col)
 w_min_141   = input.int(1, "Толщина 1.414", minval=1, maxval=4, group=grp_min_col)
 
-col_min_161 = input.color(#e879f9, "1.618 (Манипуляция 2)", group=grp_min_col)
+col_min_161 = input.color(#facc15, "1.618 (Манипуляция 2)", group=grp_min_col)
 w_min_161   = input.int(2, "Толщина 1.618", minval=1, maxval=4, group=grp_min_col)
 
 col_min_200 = input.color(#fb923c, "2.000 (Добор DCA)", group=grp_min_col)
