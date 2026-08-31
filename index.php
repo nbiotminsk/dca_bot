@@ -68,6 +68,56 @@ function fmt3($val) {
     return number_format((float)$val, 4, '.', '');
 }
 
+function calculateRSI($candles, $period = 14) {
+    $n = count($candles);
+    if ($n <= $period) return 50.0;
+    
+    $gains = 0;
+    $losses = 0;
+    for ($i = 1; $i <= $period; $i++) {
+        $diff = $candles[$i]['close'] - $candles[$i - 1]['close'];
+        if ($diff >= 0) $gains += $diff;
+        else $losses += abs($diff);
+    }
+    $avgGain = $gains / $period;
+    $avgLoss = $losses / $period;
+
+    for ($i = $period + 1; $i < $n; $i++) {
+        $diff = $candles[$i]['close'] - $candles[$i - 1]['close'];
+        $gain = $diff >= 0 ? $diff : 0;
+        $loss = $diff < 0 ? abs($diff) : 0;
+        $avgGain = (($avgGain * ($period - 1)) + $gain) / $period;
+        $avgLoss = (($avgLoss * ($period - 1)) + $loss) / $period;
+    }
+
+    if ($avgLoss == 0) return 100.0;
+    $rs = $avgGain / $avgLoss;
+    return 100.0 - (100.0 / (1.0 + $rs));
+}
+
+function calculateCCI($candles, $period = 14) {
+    $n = count($candles);
+    if ($n < $period) return 0.0;
+
+    $hlc3 = [];
+    foreach ($candles as $c) {
+        $hlc3[] = ($c['high'] + $c['low'] + $c['close']) / 3.0;
+    }
+
+    $lastHLC3 = array_slice($hlc3, -$period);
+    $sma = array_sum($lastHLC3) / $period;
+
+    $meanDev = 0;
+    foreach ($lastHLC3 as $v) {
+        $meanDev += abs($v - $sma);
+    }
+    $meanDev = $meanDev / $period;
+
+    if ($meanDev == 0) return 0.0;
+    $curHLC3 = end($hlc3);
+    return ($curHLC3 - $sma) / (0.015 * $meanDev);
+}
+
 function detectLatestLongImpulse($candles, $min_pct = 1.5) {
     $n = count($candles);
     $best = null;
@@ -472,6 +522,32 @@ if (isset($_GET['ajax'])) {
             'NEARUSDT' => ['wr_normal' => '85.4%', 'wr_manip' => '63.0%', 'sl_fib' => 2.618, 'rr' => '1:2.4'],
             'ENAUSDT'  => ['wr_normal' => '82.0%', 'wr_manip' => '66.7%', 'sl_fib' => 2.291, 'rr' => '1:3.0']
         ];
+        $cur_rsi = calculateRSI($candles, 14);
+        $cur_cci = calculateCCI($candles, 14);
+        $card['rsi'] = number_format($cur_rsi, 1);
+        $card['cci'] = number_format($cur_cci, 1);
+
+        // Оценка риска:
+        if ($cur_cci < -100 || $cur_rsi < 30) {
+            $card['risk_level'] = 'HIGH';
+            $card['risk_text'] = '🔴 Высокий риск (Дамп <-100)';
+            $card['risk_badge_col'] = 'rgba(239, 68, 68, 0.2)';
+            $card['risk_border_col'] = 'rgba(239, 68, 68, 0.5)';
+            $card['risk_txt_col'] = '#ef4444';
+        } else if ($cur_cci >= -100 && $cur_cci <= 0) {
+            $card['risk_level'] = 'LOW';
+            $card['risk_text'] = '🟢 Золотой вход (Винрейт ~90%)';
+            $card['risk_badge_col'] = 'rgba(16, 185, 129, 0.2)';
+            $card['risk_border_col'] = 'rgba(16, 185, 129, 0.5)';
+            $card['risk_txt_col'] = '#10b981';
+        } else {
+            $card['risk_level'] = 'MED';
+            $card['risk_text'] = '🔵 Умеренный риск';
+            $card['risk_badge_col'] = 'rgba(59, 130, 246, 0.2)';
+            $card['risk_border_col'] = 'rgba(59, 130, 246, 0.5)';
+            $card['risk_txt_col'] = '#3b82f6';
+        }
+
         $stats = isset($coinStats[$sym]) ? $coinStats[$sym] : ['wr_normal' => '85%', 'wr_manip' => '75%', 'sl_fib' => 2.500, 'rr' => '1:2.0'];
         $card['wr_normal'] = $stats['wr_normal'];
         $card['wr_manip']  = $stats['wr_manip'];
@@ -1324,9 +1400,12 @@ function renderCards(data) {
             <div class="coin-header" onclick="toggleCard('${c.symbol}')">
                 <div class="coin-header-left">
                     <div class="coin-title">${coinTicker}<span style="color:var(--text-dim); font-size:13px;"> / USDT</span></div>
-                    <div style="display:flex; gap:6px; align-items:center;">
+                    <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
                         <span class="badge-wr" title="Исторический Win Rate обычного Long/Short">Норм: ${c.wr_normal}</span>
                         <span class="badge-wr" style="color:var(--purple); background:rgba(213,0,249,0.12); border-color:rgba(213,0,249,0.3);" title="Исторический Win Rate Манипуляции">Манип: ${c.wr_manip}</span>
+                        <span class="badge-wr" style="color:var(--cyan); background:rgba(6,182,212,0.12); border-color:rgba(6,182,212,0.3);" title="RSI 14">RSI: ${c.rsi}</span>
+                        <span class="badge-wr" style="color:var(--yellow); background:rgba(234,179,8,0.12); border-color:rgba(234,179,8,0.3);" title="CCI 14">CCI: ${c.cci}</span>
+                        <span class="badge-wr" style="color:${c.risk_txt_col}; background:${c.risk_badge_col}; border-color:${c.risk_border_col}; font-weight:700;" title="Оценка риска входа">${c.risk_text}</span>
                         ${c.impulse_summary ? `<span class="badge-impulse" title="Текущий импульс монеты">${c.impulse_summary}</span>` : ''}
                     </div>
                     <div class="coin-quick-summary">${c.best_choice}</div>
