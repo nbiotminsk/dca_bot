@@ -60,17 +60,13 @@ class Impulse:
     impulse_low: float
 
 
-def detect_impulses(df: pd.DataFrame) -> list[Impulse]:
-    """Детектор восходящего импульса.
+def detect_impulses(df: pd.DataFrame, min_pct: float = 1.5) -> list[Impulse]:
+    """Детектор восходящего импульса (100% синхронизирован с скринером и индикатором).
 
     Правила:
-    - Начало: свеча i, её LOW = уровень 1.0 Fib.
-    - Следующая свеча должна обновить HIGH (иначе — не импульс).
-    - Для каждой последующей свечи j:
-        1. Сначала проверяем её LOW против текущего 0.5 Fib (ДО обновления HIGH).
-           Если LOW <= 0.5 → импульс завершён (фиксируем накопленный HIGH).
-        2. Если HIGH обновился → расширяем импульс.
-        3. Если HIGH не обновился, но 0.5 не нарушен → ждём (коррекция допустима).
+    - Начало: свеча i (Low = l_s, High = h_s).
+    - Любая закрытая свеча после i обновляет h_s без предварительного отката до 0.5 -> импульс подтверждён.
+    - Тянем пик за новыми HIGH до первого касания 0.5 Fib.
     """
     highs = df["high"].values
     lows  = df["low"].values
@@ -78,37 +74,50 @@ def detect_impulses(df: pd.DataFrame) -> list[Impulse]:
     impulses: list[Impulse] = []
 
     i = 0
-    while i < n - 1:
-        # Импульс начинается только если следующая свеча обновляет HIGH
-        if highs[i + 1] <= highs[i]:
-            i += 1
-            continue
-
-        start    = i
-        imp_low  = lows[i]
-        imp_high = highs[i]   # начальный HIGH = HIGH первой свечи
-        end      = i          # последняя свеча, обновившая HIGH
+    while i < n - 2:
+        l_s = lows[i]
+        h_s = highs[i]
+        cur_h = h_s
+        is_impulse = False
+        broken = False
+        end_idx = i
 
         j = i + 1
         while j < n:
-            # 1. Проверяем LOW ДО обновления
-            if imp_high > imp_low:
-                if lows[j] <= fib_price(imp_high, imp_low, 0.5):
-                    break  # коррекция достигла 0.5 — импульс завершён
+            l_j = lows[j]
+            h_j = highs[j]
 
-            # 2. Обновляем HIGH если свеча его пробивает
-            if highs[j] > imp_high:
-                imp_high = highs[j]
-                end = j
-
+            if not is_impulse:
+                if l_j < l_s:
+                    broken = True
+                    break
+                fib_05_first = fib_price(h_s, l_s, 0.5)
+                if l_j <= fib_05_first:
+                    broken = True
+                    break
+                if h_j > h_s:
+                    is_impulse = True
+                    cur_h = h_j
+                    end_idx = j
+            else:
+                fib_05_cur = fib_price(cur_h, l_s, 0.5)
+                if l_j <= fib_05_cur:
+                    # Касание 0.5 -> импульс зафиксирован!
+                    break
+                else:
+                    if h_j > cur_h:
+                        cur_h = h_j
+                        end_idx = j
             j += 1
 
-        # Сохраняем: хотя бы 2 свечи участвуют + размах ≥ 2%
-        impulse_pct = (imp_high - imp_low) / imp_low * 100.0
-        if end > start and impulse_pct >= 2.0:
-            impulses.append(Impulse(start, end, imp_high, imp_low))
+        if is_impulse and not broken:
+            pct = (cur_h - l_s) / l_s * 100.0
+            if pct >= min_pct:
+                impulses.append(Impulse(i, end_idx, cur_h, l_s))
+                i = end_idx + 1
+                continue
 
-        i = end + 1 if end > start else i + 1
+        i += 1
 
     return impulses
 
