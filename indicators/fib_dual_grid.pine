@@ -649,8 +649,9 @@ if barstate.islast
 
     if has_active_long or has_active_short
         // Разделитель
-        table.cell(risk_tbl, 0, cur_row, "💰 РАСЧЕТ ОБЪЕМА (Стоп " + str.tostring(i_risk_usd, "$#") + "):", bgcolor=color.new(#1e293b, 30), text_color=color.yellow, text_size=size.small)
-        table.cell(risk_tbl, 1, cur_row, "Стоп: " + i_sl_mode, bgcolor=color.new(#1e293b, 30), text_color=color.silver, text_size=size.small)
+        string sl_mode_str = i_sl_mode
+        table.cell(risk_tbl, 0, cur_row, "💰 РАСЧЕТ ОБЪЕМА (Стоп $" + str.tostring(i_risk_usd, "#.##") + "):", bgcolor=color.new(#1e293b, 30), text_color=color.yellow, text_size=size.small)
+        table.cell(risk_tbl, 1, cur_row, "Стоп: " + sl_mode_str, bgcolor=color.new(#1e293b, 30), text_color=color.silver, text_size=size.small)
         cur_row := cur_row + 1
 
         if has_active_long
