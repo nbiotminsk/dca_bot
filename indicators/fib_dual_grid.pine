@@ -54,7 +54,7 @@ w_maj_200   = input.int(2, "Толщина 2.000", minval=1, maxval=4, group=grp
 grp_min_set = "⚡ Младшая Фиба: Поиск (Основная)"
 show_min    = input.bool(true, "Показывать Младшую Фибу (Локальную)", group=grp_min_set)
 min_min_p   = input.float(2.0, "Мин. размах Младшей (%)", minval=0.5, step=0.5, group=grp_min_set)
-min_bars    = input.int(4, "Макс. длительность импульса (свечей)", minval=2, maxval=12, tooltip="Сколько свечей длился сам безоткатный каскад. Для SOL = 4 свечи ($106.75 -> $100.21)", group=grp_min_set)
+min_bars    = input.int(4, "Макс. длительность импульса (свечей)", minval=2, maxval=12, tooltip="Сколько свечей длился сам безоткатный каскад. Для SOL и HYPE = 4 свечи", group=grp_min_set)
 min_lookb   = input.int(36, "Глубина поиска Младшей (свечей)", minval=10, maxval=100, group=grp_min_set)
 
 grp_min_col = "🎨 Младшая Фиба: Цвета и Толщина уровней"
@@ -161,24 +161,28 @@ find_long_impulse(int lookback, float min_pct, int max_duration) =>
                 float tp_038 = calc_fib_long(h, cand_l, 0.382, use_log)
                 float sl_860 = calc_fib_long(h, cand_l, 0.860, use_log)
 
-                bool entered = false
-                bool tp_hit  = false
-                bool sl_hit  = false
+                bool entered  = false
+                int  entry_p  = -1
+                bool tp_hit   = false
+                bool sl_hit   = false
 
                 for p = b - 1 to 0
-                    if not entered and low[p] <= in_050
-                        entered := true
-                    if entered
-                        if high[p] >= tp_038
-                            tp_hit := true
-                            break
-                        if low[p] <= sl_860 or low[p] < cand_l
-                            sl_hit := true
-                            break
+                    if not entered
+                        if low[p] <= in_050
+                            entered := true
+                            entry_p := p
+                        else
+                            if high[p] > h or low[p] < cand_l
+                                sl_hit := true
+                                break
                     else
-                        if high[p] > h or low[p] < cand_l
-                            sl_hit := true
-                            break
+                        if p < entry_p
+                            if high[p] >= tp_038
+                                tp_hit := true
+                                break
+                            if low[p] <= sl_860 or low[p] < cand_l
+                                sl_hit := true
+                                break
 
                 if not tp_hit and not sl_hit
                     if max_duration <= 12 or cand_pct > best_pct
@@ -226,24 +230,28 @@ find_short_impulse(int lookback, float min_pct, int max_duration) =>
                 float tp_038 = calc_fib_short(cand_h, l, 0.382, use_log)
                 float sl_860 = calc_fib_short(cand_h, l, 0.860, use_log)
 
-                bool entered = false
-                bool tp_hit  = false
-                bool sl_hit  = false
+                bool entered  = false
+                int  entry_p  = -1
+                bool tp_hit   = false
+                bool sl_hit   = false
 
                 for p = b - 1 to 0
-                    if not entered and high[p] >= in_050
-                        entered := true
-                    if entered
-                        if low[p] <= tp_038
-                            tp_hit := true
-                            break
-                        if high[p] >= sl_860 or high[p] > cand_h
-                            sl_hit := true
-                            break
+                    if not entered
+                        if high[p] >= in_050
+                            entered := true
+                            entry_p := p
+                        else
+                            if high[p] > cand_h or low[p] < l
+                                sl_hit := true
+                                break
                     else
-                        if high[p] > cand_h or low[p] < l
-                            sl_hit := true
-                            break
+                        if p < entry_p
+                            if low[p] <= tp_038
+                                tp_hit := true
+                                break
+                            if high[p] >= sl_860 or high[p] > cand_h
+                                sl_hit := true
+                                break
 
                 if not tp_hit and not sl_hit
                     if max_duration <= 12 or cand_pct > best_pct
@@ -391,7 +399,7 @@ if barstate.islast
                 draw_level(p161, "🟣 1.618  " + str.tostring(p161, "#.###"), col_maj_161, w_maj_161, "solid", x_start, x_end, pos, lines_arr, labels_arr)
                 draw_level(p200, "🟠 2.000  " + str.tostring(p200, "#.###"), col_maj_200, w_maj_200, "solid", x_start, x_end, pos, lines_arr, labels_arr)
 
-        // ⚡ Младшая Short (Ровно 106.75 на SOL)
+        // ⚡ Младшая Short (Ровно 83.40 на HYPE и 106.75 на SOL)
         if show_min and not na(min_s_high) and not na(min_s_low)
             float h = min_s_high, float l = min_s_low, int x_start = min_s_s
             
