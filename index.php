@@ -169,6 +169,72 @@ function detectLatestShortImpulse($candles, $min_pct) {
     return $best;
 }
 
+function detectLatestLongManipulation($candles, $min_pct = 2.0, $lookback = 72) {
+    $n = count($candles);
+    $best = null;
+
+    for ($start_idx = max(0, $n - $lookback); $start_idx < $n - 2; $start_idx++) {
+        $imp_low  = $candles[$start_idx]['low'];
+        $imp_high = $candles[$start_idx]['high'];
+        $end_idx  = $start_idx;
+
+        for ($k = $start_idx + 1; $k < $n; $k++) {
+            $fib_05 = calcFibLongLog($imp_high, $imp_low, 0.500);
+            if ($candles[$k]['low'] <= $fib_05 || $candles[$k]['low'] < $imp_low) {
+                break;
+            }
+            if ($candles[$k]['high'] > $imp_high) {
+                $imp_high = $candles[$k]['high'];
+                $end_idx  = $k;
+            }
+        }
+
+        if ($end_idx > $start_idx) {
+            $pct = ($imp_high - $imp_low) / $imp_low * 100.0;
+            if ($pct >= $min_pct) {
+                $m1618 = calcFibLongLog($imp_high, $imp_low, 1.618);
+                $m2000 = calcFibLongLog($imp_high, $imp_low, 2.000);
+                $tp050 = calcFibLongLog($imp_high, $imp_low, 0.500);
+
+                $touched_1618 = false;
+                $tp_hit = false;
+                $sl_hit = false;
+
+                for ($p = $end_idx + 1; $p < $n; $p++) {
+                    if (!$touched_1618) {
+                        if ($candles[$p]['low'] <= $m1618) {
+                            $touched_1618 = true;
+                        }
+                    } else {
+                        if ($candles[$p]['high'] >= $tp050) {
+                            $tp_hit = true;
+                            break;
+                        }
+                        if ($candles[$p]['low'] <= $m2000) {
+                            $sl_hit = true;
+                            break;
+                        }
+                    }
+                }
+
+                if ($touched_1618 && !$tp_hit && !$sl_hit) {
+                    if ($best === null || $pct > $best['pct']) {
+                        $best = [
+                            'start_time' => $candles[$start_idx]['time'],
+                            'end_time'   => $candles[$end_idx]['time'],
+                            'high'       => $imp_high,
+                            'low'        => $imp_low,
+                            'pct'        => $pct,
+                            'is_live'    => true
+                        ];
+                    }
+                }
+            }
+        }
+    }
+    return $best;
+}
+
 if (isset($_GET['ajax'])) {
     header('Content-Type: application/json');
     header('Cache-Control: no-cache, no-store, must-revalidate');
@@ -180,8 +246,8 @@ if (isset($_GET['ajax'])) {
         $candles = fetchBybitKlines($sym, '60', 100);
         if (!$candles) continue;
         $curPrice = end($candles)['close'];
-        $impLN = detectLatestLongImpulse($candles, $MIN_IMP_NORMAL);
-        $impLM = detectLatestLongImpulse($candles, $MIN_IMP_MANIP);
+        $impLN = detectLatestLongImpulse($candles, 1.5);
+        $impLM = detectLatestLongManipulation($candles, $MIN_IMP_MANIP);
         $impSN = detectLatestShortImpulse($candles, $MIN_IMP_NORMAL);
 
         $card = ['symbol' => $sym, 'price' => fmtPrice($curPrice, $sym), 'raw_price' => $curPrice];
