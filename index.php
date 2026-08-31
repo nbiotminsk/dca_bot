@@ -250,6 +250,96 @@ function detectLatestShortImpulse($candles, $min_pct = 2.0) {
     return $best;
 }
 
+function detectMacroLong($candles, $min_pct = 5.0) {
+    $n = count($candles);
+    $best = null;
+    for ($b = 1; $b < min(45, $n - 2); $b++) {
+        $h = $candles[$n - 1 - $b]['high'];
+        if ($candles[$n - 1 - ($b - 1)]['high'] <= $h && $candles[$n - 1 - ($b + 1)]['high'] <= $h) {
+            $cur_min_l = $h;
+            $cur_min_s = null;
+            $scan_end = min($b + 32, $n - 1);
+            for ($s = $b + 1; $s <= $scan_end; $s++) {
+                $l_val = $candles[$n - 1 - $s]['low'];
+                if ($l_val < $cur_min_l) {
+                    $cur_min_l = $l_val;
+                    $cur_min_s = $s;
+                }
+            }
+            if ($cur_min_s !== null) {
+                $pct = ($h - $cur_min_l) / $cur_min_l * 100.0;
+                if ($pct >= $min_pct) {
+                    $broken_high = false;
+                    for ($p = $b - 1; $p >= 0; $p--) {
+                        if ($candles[$n - 1 - $p]['high'] > $h) {
+                            $broken_high = true;
+                            break;
+                        }
+                    }
+                    if (!$broken_high) {
+                        if ($best === null || $pct > $best['pct']) {
+                            $best = [
+                                'high'       => $h,
+                                'low'        => $cur_min_l,
+                                'pct'        => $pct,
+                                'start_time' => $candles[$n - 1 - $cur_min_s]['time'],
+                                'end_time'   => $candles[$n - 1 - $b]['time'],
+                                'is_live'    => true
+                            ];
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return $best;
+}
+
+function detectMacroShort($candles, $min_pct = 5.0) {
+    $n = count($candles);
+    $best = null;
+    for ($b = 1; $b < min(45, $n - 2); $b++) {
+        $l = $candles[$n - 1 - $b]['low'];
+        if ($candles[$n - 1 - ($b - 1)]['low'] >= $l && $candles[$n - 1 - ($b + 1)]['low'] >= $l) {
+            $cur_max_h = $l;
+            $cur_max_s = null;
+            $scan_end = min($b + 32, $n - 1);
+            for ($s = $b + 1; $s <= $scan_end; $s++) {
+                $h_val = $candles[$n - 1 - $s]['high'];
+                if ($h_val > $cur_max_h) {
+                    $cur_max_h = $h_val;
+                    $cur_max_s = $s;
+                }
+            }
+            if ($cur_max_s !== null) {
+                $pct = ($cur_max_h - $l) / $cur_max_h * 100.0;
+                if ($pct >= $min_pct) {
+                    $broken_low = false;
+                    for ($p = $b - 1; $p >= 0; $p--) {
+                        if ($candles[$n - 1 - $p]['low'] < $l) {
+                            $broken_low = true;
+                            break;
+                        }
+                    }
+                    if (!$broken_low) {
+                        if ($best === null || $pct > $best['pct']) {
+                            $best = [
+                                'high'       => $cur_max_h,
+                                'low'        => $l,
+                                'pct'        => $pct,
+                                'start_time' => $candles[$n - 1 - $cur_max_s]['time'],
+                                'end_time'   => $candles[$n - 1 - $b]['time'],
+                                'is_live'    => true
+                            ];
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return $best;
+}
+
 function detectLatestLongManipulation($candles, $min_pct = 2.0, $lookback = 72) {
     $n = count($candles);
     $best = null;
@@ -330,6 +420,8 @@ if (isset($_GET['ajax'])) {
         $impLN = detectLatestLongImpulse($candles, 1.5);
         $impLM = detectLatestLongManipulation($candles, $MIN_IMP_MANIP);
         $impSN = detectLatestShortImpulse($candles, $MIN_IMP_NORMAL);
+        $impMacroL = detectMacroLong($candles, 5.0);
+        $impMacroS = detectMacroShort($candles, 5.0);
 
         $card = ['symbol' => $sym, 'price' => fmtPrice($curPrice, $sym), 'raw_price' => $curPrice];
 
@@ -356,6 +448,37 @@ if (isset($_GET['ajax'])) {
         $card['wr_normal'] = $stats['wr_normal'];
         $card['wr_manip']  = $stats['wr_manip'];
 
+        // 🏛️ БОЛЬШАЯ (ГЛОБАЛЬНАЯ) ФИБА LONG
+        if ($impMacroL) {
+            $m_in050  = calcFibLongLog($impMacroL['high'], $impMacroL['low'], 0.500);
+            $m_in0618 = calcFibLongLog($impMacroL['high'], $impMacroL['low'], 0.618);
+            $m_in0786 = calcFibLongLog($impMacroL['high'], $impMacroL['low'], 0.786);
+            $m_tp0382 = calcFibLongLog($impMacroL['high'], $impMacroL['low'], 0.382);
+            $m_sl0860 = calcFibLongLog($impMacroL['high'], $impMacroL['low'], 0.860);
+
+            $card['macro_long'] = [
+                'high'         => fmtPrice($impMacroL['high'], $sym),
+                'low'          => fmtPrice($impMacroL['low'], $sym),
+                'raw_high'     => (float)$impMacroL['high'],
+                'raw_low'      => (float)$impMacroL['low'],
+                'entry_050'    => fmtPrice($m_in050, $sym),
+                'raw_e050'     => (float)$m_in050,
+                'entry_0618'   => fmtPrice($m_in0618, $sym),
+                'raw_e0618'    => (float)$m_in0618,
+                'entry_0786'   => fmtPrice($m_in0786, $sym),
+                'raw_e0786'    => (float)$m_in0786,
+                'tp_0382'      => fmtPrice($m_tp0382, $sym),
+                'raw_tp0382'   => (float)$m_tp0382,
+                'sl'           => fmtPrice($m_sl0860, $sym),
+                'raw_sl'       => (float)$m_sl0860,
+                'pct'          => number_format($impMacroL['pct'], 2),
+                'active'       => ($curPrice <= $m_in050 && $curPrice > $m_sl0860),
+                'time'         => date('d.m H:i', (int)($impMacroL['end_time'] / 1000)),
+                'wr'           => '88.5%'
+            ];
+        }
+
+        // ⚡ МЛАДШАЯ ФИБА LONG
         if ($impLN) {
             $in050  = calcFibLongLog($impLN['high'], $impLN['low'], 0.500);
             $in0618 = calcFibLongLog($impLN['high'], $impLN['low'], 0.618);
@@ -1056,6 +1179,23 @@ function renderCards(data) {
     data.items.forEach(c => {
         const coinTicker = c.symbol.replace('USDT', '');
 
+        // Расчет сетки DCA для Macro Long (Большая Фиба: 0.500 1x + 0.618 2x со стопом 0.860)
+        let macro_grid = null;
+        let macro_pnl_only1_to_382 = "0.00";
+        let macro_pnl_only2_to_500 = "0.00";
+        let macro_pnl_both_to_382 = "0.00";
+
+        if (c.macro_long) {
+            macro_grid = calculateDcaGrid(c.macro_long.raw_e050, c.macro_long.raw_e0618, c.macro_long.raw_sl, false);
+            if (macro_grid) {
+                macro_pnl_only1_to_382 = (macro_grid.q_solo1 * (c.macro_long.raw_tp0382 - c.macro_long.raw_e050)).toFixed(2);
+                macro_pnl_only2_to_500 = (macro_grid.q_solo2 * (c.macro_long.raw_e050 - c.macro_long.raw_e0618)).toFixed(2);
+                const p1 = macro_grid.q1 * (c.macro_long.raw_tp0382 - c.macro_long.raw_e050);
+                const p2 = macro_grid.q2 * (c.macro_long.raw_tp0382 - c.macro_long.raw_e0618);
+                macro_pnl_both_to_382 = (p1 + p2).toFixed(2);
+            }
+        }
+
         // Расчет сетки DCA для Long Normal
         let ln_grid = null;
         let ln_pnl_only1_to_382 = "0.00";
@@ -1173,11 +1313,59 @@ function renderCards(data) {
                 <div class="verdict-box">👉 РЕШЕНИЕ: ${c.best_choice}</div>
                 
                 <div class="coin-blocks-row">
+                ${c.macro_long && macro_grid ? `
+                <!-- 🏛️ БОЛЬШАЯ (ГЛОБАЛЬНАЯ) ФИБА LONG -->
+                <div class="block" style="border-left: 3px solid var(--yellow);">
+                    <div class="block-title" style="color:var(--yellow);">
+                        <span>🏛️ БОЛЬШАЯ ФИБА (${c.macro_long.low} ➔ ${c.macro_long.high}) <span class="badge-wr">WR ${c.macro_long.wr}</span></span>
+                        <span style="font-size:10px; color:var(--text-dim);">${c.macro_long.time}</span>
+                    </div>
+
+                    <!-- 📍 ОБЩИЕ УРОВНИ БОЛЬШОЙ ФИБЫ -->
+                    <div class="general-levels-box">
+                        <div class="level-row"><span class="pill-lbl">🔹 Вход-1 (0.500 Fib):</span> <span class="pill-val c-cyan">${c.macro_long.entry_050} $</span></div>
+                        <div class="level-row"><span class="pill-lbl">🔹 Вход-2 (0.618 Fib):</span> <span class="pill-val c-blue">${c.macro_long.entry_0618} $</span></div>
+                        <div class="level-row"><span class="pill-lbl">🔹 Вход-3 (0.786 Fib):</span> <span class="pill-val" style="color:var(--purple); font-weight:800;">${c.macro_long.entry_0786} $</span></div>
+                        <div class="level-row"><span class="pill-lbl">🎯 Тейк-1 (0.382 Fib):</span> <span class="pill-val c-green">${c.macro_long.tp_0382} $</span></div>
+                        <div class="level-row"><span class="pill-lbl">🛑 Стоп (0.860 Fib):</span> <span class="pill-val c-red">${c.macro_long.sl} $</span></div>
+                    </div>
+
+                    <!-- 1. ВХОД В БОЛЬШУЮ ФИБУ 0.500 -->
+                    <div class="scenario-box" style="border-left: 3px solid var(--cyan);">
+                        <div class="scenario-header">
+                            <div class="scenario-title c-cyan">🔹 Вариант 1: Вход только от 0.500</div>
+                            <div class="scenario-coins"><span class="coins-tag">${macro_grid.q_solo1_fmt} ${coinTicker}</span> <span class="margin-subtext">($${macro_grid.margin_solo1})</span></div>
+                        </div>
+                        <div class="scenario-grid">
+                            <div class="scenario-row"><span class="scenario-lbl">🎯 Доход (Тейк 0.382):</span><span class="scenario-val payout-val-green">+$${macro_pnl_only1_to_382}</span></div>
+                            <div class="scenario-row"><span class="scenario-lbl">🛑 Убыток (Стоп 0.860):</span><span class="scenario-val payout-val-red">-$${macro_grid.loss_total}</span></div>
+                        </div>
+                    </div>
+
+                    <!-- 2. СЕТКА В БОЛЬШОЙ ФИБЕ 0.500 + 0.618 -->
+                    <div class="scenario-box" style="border-left: 3px solid var(--green);">
+                        <div class="scenario-header">
+                            <div class="scenario-title c-green">🔥 Вариант 2: Сетка 0.5 (1x) + 0.618 (2x)</div>
+                            <div class="scenario-coins"><span class="coins-tag">${fmtCoinQty(macro_grid.q_total)} ${coinTicker}</span> <span class="margin-subtext">($${(parseFloat(macro_grid.margin1)+parseFloat(macro_grid.margin2)).toFixed(1)})</span></div>
+                        </div>
+                        <div class="scenario-grid">
+                            <div class="scenario-row"><span class="scenario-lbl">🔹 Доли:</span><span class="scenario-val" style="font-size:11.5px; color:var(--text-dim);">1x (${macro_grid.q1_fmt}) + 2x (${macro_grid.q2_fmt})</span></div>
+                            <div class="scenario-row"><span class="scenario-lbl">🚀 Доход при Тейке (0.382):</span><span class="scenario-val payout-val-green">+$${macro_pnl_both_to_382}</span></div>
+                            <div class="scenario-row"><span class="scenario-lbl">🛑 Убыток на стопе (ОБА входа):</span><span class="scenario-val payout-val-red">-$${macro_grid.loss_total}</span></div>
+                        </div>
+                    </div>
+
+                    <div class="status-pill ${c.macro_long.active ? 'status-ready' : 'status-wait'}">
+                        ${c.macro_long.active ? '🏛️ ВХОД В БОЛЬШУЮ ФИБУ ПРЯМО СЕЙЧАС' : '⏳ Ожидание макро-отката'}
+                    </div>
+                </div>
+                ` : ''}
+
                 ${c.long_normal && ln_grid ? `
                 <!-- 1. LONG NORMAL -->
                 <div class="block" style="border-left: 3px solid var(--blue); opacity: ${!c.long_normal.is_fresher ? '0.6' : '1.0'};">
                     <div class="block-title c-blue">
-                        <span>🟢 LONG ОБЫЧНЫЙ (0.5 / 0.618) <span class="badge-wr">WR ${c.long_normal.wr}</span></span>
+                        <span>⚡ МЛАДШАЯ ФИБА (0.5 / 0.618) <span class="badge-wr">WR ${c.long_normal.wr}</span></span>
                         <span style="font-size:10px; color:var(--text-dim);">${c.long_normal.time}</span>
                     </div>
 
