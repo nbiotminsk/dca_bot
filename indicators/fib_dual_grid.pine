@@ -450,6 +450,7 @@ find_minor_short(int lookback, float min_pct, int max_duration) =>
 // ══════════════════════════════════════════════════════════════════════════════
 var line[] lines_arr   = array.new_line()
 var label[] labels_arr = array.new_label()
+var table risk_tbl = table.new(position.top_right, 2, 8, bgcolor=color.new(#0b0e14, 15), border_color=color.new(#1e293b, 0), border_width=1)
 
 if barstate.islast
     for ln in lines_arr
@@ -612,36 +613,27 @@ if barstate.islast
             
             if show_manip
                 float p141 = calc_fib_short(h, l, 1.414, use_log)
-                float p161 = calc_fib_short(h, l, 1.618, use_log)
-                float p200 = calc_fib_short(h, l, 2.000, use_log)
                 draw_level(p141, "🔴 1.414  " + str.tostring(p141, "#.####"), col_min_141, w_min_141, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
                 draw_level(p161, "🟣 1.618  " + str.tostring(p161, "#.####"), col_min_161, w_min_161, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
                 draw_level(p200, "🟠 2.000  " + str.tostring(p200, "#.####"), col_min_200, w_min_200, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
 
-// ══════════════════════════════════════════════════════════════════════════════
-// 8. ПАНЕЛЬ ОЦЕНКИ РИСКА ПО RSI 14, CCI 14 И КАЛЬКУЛЯТОР ПОЗИЦИИ
-// ══════════════════════════════════════════════════════════════════════════════
-float cur_rsi = ta.rsi(close, 14)
-float cur_cci = ta.cci(hlc3, 14)
+    // ── 3. ПАНЕЛЬ ОЦЕНКИ РИСКА И КАЛЬКУЛЯТОР ПОЗИЦИИ ──
+    if show_table
+        // Заголовок
+        table.cell(risk_tbl, 0, 0, "⚡ ИНДИКАТОРЫ РИСКА", bgcolor=color.new(#1e293b, 20), text_color=color.white, text_size=size.small)
+        table.cell(risk_tbl, 1, 0, "СТАТУС ВХОДА", bgcolor=color.new(#1e293b, 20), text_color=color.white, text_size=size.small)
 
-var table risk_tbl = table.new(position.top_right, 2, 8, bgcolor=color.new(#0b0e14, 15), border_color=color.new(#1e293b, 0), border_width=1)
+        // Строка RSI 14
+        string rsi_status = cur_rsi < 30 ? "⚠️ Перепродан (<30)" : (cur_rsi > 70 ? "⚠️ Перекуплен (>70)" : "✅ Норма (30-70)")
+        color rsi_col = cur_rsi < 30 ? color.orange : (cur_rsi > 70 ? color.red : color.green)
+        table.cell(risk_tbl, 0, 1, "RSI (14): " + str.tostring(cur_rsi, "#.#"), text_color=color.silver, text_size=size.small)
+        table.cell(risk_tbl, 1, 1, rsi_status, text_color=rsi_col, text_size=size.small)
 
-if barstate.islast and show_table
-    // Заголовок
-    table.cell(risk_tbl, 0, 0, "⚡ ИНДИКАТОРЫ РИСКА", bgcolor=color.new(#1e293b, 20), text_color=color.white, text_size=size.small)
-    table.cell(risk_tbl, 1, 0, "СТАТУС ВХОДА", bgcolor=color.new(#1e293b, 20), text_color=color.white, text_size=size.small)
-
-    // Строка RSI 14
-    string rsi_status = cur_rsi < 30 ? "⚠️ Перепродан (<30)" : (cur_rsi > 70 ? "⚠️ Перекуплен (>70)" : "✅ Норма (30-70)")
-    color rsi_col = cur_rsi < 30 ? color.orange : (cur_rsi > 70 ? color.red : color.green)
-    table.cell(risk_tbl, 0, 1, "RSI (14): " + str.tostring(cur_rsi, "#.#"), text_color=color.silver, text_size=size.small)
-    table.cell(risk_tbl, 1, 1, rsi_status, text_color=rsi_col, text_size=size.small)
-
-    // Строка CCI 14
-    string cci_status = cur_cci < -100 ? "❌ ОПАСНО (Дамп <-100)" : (cur_cci <= 0 ? "👑 ЗОЛОТОЙ ВХОД (-100..0)" : (cur_cci <= 50 ? "✅ Нейтрально (0..50)" : "🚀 Бычий напор (>50)"))
-    color cci_col = cur_cci < -100 ? color.red : (cur_cci <= 0 ? color.lime : (cur_cci <= 50 ? color.teal : color.aqua))
-    table.cell(risk_tbl, 0, 2, "CCI (14): " + str.tostring(cur_cci, "#.#"), text_color=color.silver, text_size=size.small)
-    table.cell(risk_tbl, 1, 2, cci_status, text_color=cci_col, text_size=size.small)
+        // Строка CCI 14
+        string cci_status = cur_cci < -100 ? "❌ ОПАСНО (Дамп <-100)" : (cur_cci <= 0 ? "👑 ЗОЛОТОЙ ВХОД (-100..0)" : (cur_cci <= 50 ? "✅ Нейтрально (0..50)" : "🚀 Бычий напор (>50)"))
+        color cci_col = cur_cci < -100 ? color.red : (cur_cci <= 0 ? color.lime : (cur_cci <= 50 ? color.teal : color.aqua))
+        table.cell(risk_tbl, 0, 2, "CCI (14): " + str.tostring(cur_cci, "#.#"), text_color=color.silver, text_size=size.small)
+        table.cell(risk_tbl, 1, 2, cci_status, text_color=cci_col, text_size=size.small)
 
     // Общий вердикт риска
     string verdict_text = cur_cci < -100 or cur_rsi < 30 ? "🔴 ВЫСОКИЙ РИСК (Ждать откат)" : (cur_cci >= -100 and cur_cci <= 0 ? "🟢 НИЗКИЙ РИСК (Винрейт ~90%)" : "🔵 УМЕРЕННЫЙ РИСК")
