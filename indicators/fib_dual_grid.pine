@@ -1,29 +1,99 @@
-//@version=6
-indicator("Fibonacci Dual Grid (LONG & SHORT)", shorttitle="Fib Dual Grid (L/S)", overlay=true, max_lines_count=500, max_labels_count=500)
+//@version=5
+indicator("Fibonacci Dual Grid (Pro Custom)", shorttitle="Fib Dual Grid Pro", overlay=true, max_lines_count=500, max_labels_count=500)
 
-// ─── 1. Настройки ────────────────────────────────────────────────────────────
-grp_gen   = "Общие настройки"
-i_mode    = input.string("Авто (по тренду)", "Режим торговли", options=["Авто (по тренду)", "Только LONG", "Только SHORT", "Оба направления (L+S)"], group=grp_gen)
-use_log   = input.bool(true, "Логарифмическая шкала (Log Fib)", group=grp_gen)
+// ══════════════════════════════════════════════════════════════════════════════
+// 1. ОБЩИЕ НАСТРОЙКИ
+// ══════════════════════════════════════════════════════════════════════════════
+grp_gen    = "⚙️ Общие настройки"
+i_mode     = input.string("Авто (по тренду)", "Режим торговли", options=["Авто (по тренду)", "Только LONG", "Только SHORT", "Оба направления (L+S)"], group=grp_gen)
+use_log    = input.bool(true, "Логарифмическая шкала (Log Fib)", group=grp_gen)
 
-grp_major = "1. Старшая (Глобальная) Фиба"
-show_maj  = input.bool(true, "Показывать Старшую Фибу", group=grp_major)
-maj_min_p = input.float(5.0, "Мин. размах Старшей Фибы (%)", minval=2.0, step=0.5, group=grp_major)
-maj_lookb = input.int(100, "Глубина поиска Старшей (свечей)", minval=20, maxval=300, group=grp_major)
+// ══════════════════════════════════════════════════════════════════════════════
+// 2. СТАРШАЯ (ГЛОБАЛЬНАЯ) ФИБА — НАСТРОЙКИ И ОТОБРАЖЕНИЕ
+// ══════════════════════════════════════════════════════════════════════════════
+grp_maj_set = "🏛️ Старшая Фиба: Поиск и Позиция"
+show_maj    = input.bool(true, "Показывать Старшую Фибу", group=grp_maj_set)
+maj_min_p   = input.float(5.0, "Мин. размах Старшей (%)", minval=1.0, step=0.5, group=grp_maj_set)
+maj_lookb   = input.int(100, "Глубина поиска Старшей (свечей)", minval=20, maxval=300, group=grp_maj_set)
+maj_lbl_pos = input.string("Справа", "Расположение подписей Старшей", options=["Справа", "Слева"], group=grp_maj_set)
 
-grp_minor = "2. Младшая (Локальная суб-фиба)"
-show_min  = input.bool(true, "Показывать Младшую Фибу", group=grp_minor)
-min_min_p = input.float(2.0, "Мин. размах Младшей Фибы (%)", minval=1.0, step=0.5, group=grp_minor)
-min_lookb = input.int(36, "Глубина поиска Младшей (свечей)", minval=10, maxval=100, group=grp_minor)
+grp_maj_col = "🎨 Старшая Фиба: Цвета и Толщина уровней"
+col_maj_000 = input.color(color.gray, "0.000 (Top/Bottom)", group=grp_maj_col)
+w_maj_000   = input.int(1, "Толщина 0.000", minval=1, maxval=4, group=grp_maj_col)
 
-grp_lvls  = "Отображение уровней"
-show_0236 = input.bool(true, "Показывать 0.236 Fib (Дальний Тейк)", group=grp_lvls)
-show_0382 = input.bool(true, "Показывать 0.382 Fib (Базовый Тейк)", group=grp_lvls)
-show_0786 = input.bool(true, "Показывать 0.786 Fib (Глубокий Вход)", group=grp_lvls)
-show_0860 = input.bool(true, "Показывать 0.860 Fib (Стоп-Лосс)", group=grp_lvls)
-show_manip= input.bool(true, "Показывать 1.618 / 2.0 (Манипуляция)", group=grp_lvls)
+col_maj_023 = input.color(color.teal, "0.236 (Тейк-2)", group=grp_maj_col)
+w_maj_023   = input.int(1, "Толщина 0.236", minval=1, maxval=4, group=grp_maj_col)
 
-// ─── Функции расчета Фибоначчи (LONG & SHORT) ────────────────────────────────
+col_maj_038 = input.color(color.green, "0.382 (Тейк-1)", group=grp_maj_col)
+w_maj_038   = input.int(2, "Толщина 0.382", minval=1, maxval=4, group=grp_maj_col)
+
+col_maj_050 = input.color(#3b82f6, "0.500 (Вход-1)", group=grp_maj_col)
+w_maj_050   = input.int(2, "Толщина 0.500", minval=1, maxval=4, group=grp_maj_col)
+
+col_maj_061 = input.color(color.blue, "0.618 (Вход-2)", group=grp_maj_col)
+w_maj_061   = input.int(2, "Толщина 0.618", minval=1, maxval=4, group=grp_maj_col)
+
+col_maj_078 = input.color(color.purple, "0.786 (Вход-3)", group=grp_maj_col)
+w_maj_078   = input.int(1, "Толщина 0.786", minval=1, maxval=4, group=grp_maj_col)
+
+col_maj_086 = input.color(color.red, "0.860 (Стоп-Лосс)", group=grp_maj_col)
+w_maj_086   = input.int(2, "Толщина 0.860", minval=1, maxval=4, group=grp_maj_col)
+
+col_maj_100 = input.color(color.maroon, "1.000 (Дно/Вершина)", group=grp_maj_col)
+w_maj_100   = input.int(2, "Толщина 1.000", minval=1, maxval=4, group=grp_maj_col)
+
+col_maj_161 = input.color(color.fuchsia, "1.618 (Манипуляция)", group=grp_maj_col)
+w_maj_161   = input.int(2, "Толщина 1.618", minval=1, maxval=4, group=grp_maj_col)
+
+col_maj_200 = input.color(color.orange, "2.000 (Добор DCA)", group=grp_maj_col)
+w_maj_200   = input.int(2, "Толщина 2.000", minval=1, maxval=4, group=grp_maj_col)
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 3. МЛАДШАЯ (ЛОКАЛЬНАЯ) ФИБА — НАСТРОЙКИ И ОТОБРАЖЕНИЕ
+// ══════════════════════════════════════════════════════════════════════════════
+grp_min_set = "⚡ Младшая Фиба: Поиск"
+show_min    = input.bool(true, "Показывать Младшую Фибу", group=grp_min_set)
+min_min_p   = input.float(2.0, "Мин. размах Младшей (%)", minval=0.5, step=0.5, group=grp_min_set)
+min_lookb   = input.int(36, "Глубина поиска Младшей (свечей)", minval=10, maxval=100, group=grp_min_set)
+
+grp_min_col = "🎨 Младшая Фиба: Цвета и Толщина уровней"
+col_min_038 = input.color(color.lime, "0.382 (Тейк)", group=grp_min_col)
+w_min_038   = input.int(1, "Толщина 0.382", minval=1, maxval=4, group=grp_min_col)
+
+col_min_050 = input.color(#06b6d4, "0.500 (Вход)", group=grp_min_col)
+w_min_050   = input.int(2, "Толщина 0.500", minval=1, maxval=4, group=grp_min_col)
+
+col_min_061 = input.color(color.yellow, "0.618 (Вход)", group=grp_min_col)
+w_min_061   = input.int(2, "Толщина 0.618", minval=1, maxval=4, group=grp_min_col)
+
+col_min_078 = input.color(#c084fc, "0.786 (Глубокий Вход)", group=grp_min_col)
+w_min_078   = input.int(1, "Толщина 0.786", minval=1, maxval=4, group=grp_min_col)
+
+col_min_086 = input.color(color.red, "0.860 (Стоп)", group=grp_min_col)
+w_min_086   = input.int(1, "Толщина 0.860", minval=1, maxval=4, group=grp_min_col)
+
+col_min_100 = input.color(color.maroon, "1.000 (Дно)", group=grp_min_col)
+w_min_100   = input.int(1, "Толщина 1.000", minval=1, maxval=4, group=grp_min_col)
+
+col_min_161 = input.color(#e879f9, "1.618 (Манипуляция)", group=grp_min_col)
+w_min_161   = input.int(2, "Толщина 1.618", minval=1, maxval=4, group=grp_min_col)
+
+col_min_200 = input.color(#fb923c, "2.000 (Добор DCA)", group=grp_min_col)
+w_min_200   = input.int(2, "Толщина 2.000", minval=1, maxval=4, group=grp_min_col)
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 4. ТУМБЛЕРЫ ВКЛЮЧЕНИЯ/ВЫКЛЮЧЕНИЯ УРОВНЕЙ
+// ══════════════════════════════════════════════════════════════════════════════
+grp_lvls    = "👁️ Включение/Выключение уровней"
+show_0236   = input.bool(true, "Показывать 0.236 Fib (Дальний Тейк)", group=grp_lvls)
+show_0382   = input.bool(true, "Показывать 0.382 Fib (Базовый Тейк)", group=grp_lvls)
+show_0786   = input.bool(true, "Показывать 0.786 Fib (Глубокий Вход)", group=grp_lvls)
+show_0860   = input.bool(true, "Показывать 0.860 Fib (Стоп-Лосс)", group=grp_lvls)
+show_manip  = input.bool(true, "Показывать 1.618 / 2.000 (Манипуляция)", group=grp_lvls)
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 5. МАТЕМАТИЧЕСКИЕ ФУНКЦИИ И ОТРИСОВКА
+// ══════════════════════════════════════════════════════════════════════════════
 calc_fib_long(float h, float l, float lvl, bool is_log) =>
     if is_log and h > 0 and l > 0
         math.exp(math.log(h) - lvl * (math.log(h) - math.log(l)))
@@ -36,8 +106,7 @@ calc_fib_short(float h, float l, float lvl, bool is_log) =>
     else
         l + lvl * (h - l)
 
-// ─── Функция отрисовки уровня ────────────────────────────────────────────────
-draw_fib_level(float price, float lvl, string name, string pref, color col, int width, string style_type, int x_start, int x_end, line[] lines_arr, label[] labels_arr) =>
+draw_level(float price, float lvl, string name, string pref, color col, int width, string style_type, int x_start, int x_end, string label_align, line[] lines_arr, label[] labels_arr) =>
     var line_style = line.style_solid
     if style_type == "dashed"
         line_style := line.style_dashed
@@ -46,11 +115,17 @@ draw_fib_level(float price, float lvl, string name, string pref, color col, int 
 
     line ln = line.new(x_start, price, x_end, price, color=col, width=width, style=line_style)
     array.push(lines_arr, ln)
+    
     string txt = pref + name + " (" + str.tostring(lvl, "#.###") + ") = " + str.tostring(price, "#.###") + " $"
-    label lb = label.new(x_end, price, txt, style=label.style_label_left, color=color.new(color.black, 100), textcolor=col, size=size.small)
+    int lx = label_align == "Слева" ? x_start : x_end
+    var l_style = label_align == "Слева" ? label.style_label_right : label.style_label_left
+    
+    label lb = label.new(lx, price, txt, style=l_style, color=color.new(color.black, 100), textcolor=col, size=size.small)
     array.push(labels_arr, lb)
 
-// ─── Поиск LONG импульса ─────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+// 6. ПОИСК ИМПУЛЬСОВ
+// ══════════════════════════════════════════════════════════════════════════════
 find_long_impulse(int lookback, float min_pct) =>
     int   best_start = na
     float best_low   = na
@@ -82,7 +157,6 @@ find_long_impulse(int lookback, float min_pct) =>
 
     [best_start, best_low, best_high, best_pct]
 
-// ─── Поиск SHORT импульса (Дамп) ─────────────────────────────────────────────
 find_short_impulse(int lookback, float min_pct) =>
     int   best_start = na
     float best_high  = na
@@ -114,18 +188,19 @@ find_short_impulse(int lookback, float min_pct) =>
 
     [best_start, best_high, best_low, best_pct]
 
-// ─── Расчет импульсов ────────────────────────────────────────────────────────
+// Расчет импульсов
 [maj_l_s, maj_l_low, maj_l_high, maj_l_pct] = find_long_impulse(maj_lookb, maj_min_p)
 [min_l_s, min_l_low, min_l_high, min_l_pct] = find_long_impulse(min_lookb, min_min_p)
 
 [maj_s_s, maj_s_high, maj_s_low, maj_s_pct] = find_short_impulse(maj_lookb, maj_min_p)
 [min_s_s, min_s_high, min_s_low, min_s_pct] = find_short_impulse(min_lookb, min_min_p)
 
-// Определение активных направлений
 bool allow_long  = (i_mode == "Только LONG") or (i_mode == "Оба направления (L+S)") or (i_mode == "Авто (по тренду)" and (na(maj_s_pct) or maj_l_pct >= maj_s_pct))
 bool allow_short = (i_mode == "Только SHORT") or (i_mode == "Оба направления (L+S)") or (i_mode == "Авто (по тренду)" and (na(maj_l_pct) or maj_s_pct > maj_l_pct))
 
-// ─── Отрисовка ───────────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+// 7. ОТРИСОВКА СЕТОК НА ГРАФИКЕ
+// ══════════════════════════════════════════════════════════════════════════════
 var line[] lines_arr   = array.new_line()
 var label[] labels_arr = array.new_label()
 
@@ -139,72 +214,82 @@ if barstate.islast
 
     int x_end = bar_index + 14
 
-    // ── 1. ОТРИСОВКА LONG СЕТОК ──
+    // ── 1. LONG СЕТКИ ──
     if allow_long
-        // Старшая Long
+        // 🏛️ Старшая Long
         if show_maj and not na(maj_l_high) and not na(maj_l_low)
             float h = maj_l_high, float l = maj_l_low, int x_start = maj_l_s
-            string pref = "🟢 СТАРШИЙ LONG: "
-            draw_fib_level(calc_fib_long(h, l, 0.000, use_log), 0.000, "TOP (High)", pref, color.gray, 1, "dashed", x_start, x_end, lines_arr, labels_arr)
+            string pref = "🏛️ СТАРШАЯ: "
+            draw_level(calc_fib_long(h, l, 0.000, use_log), 0.000, "TOP (High)", pref, col_maj_000, w_maj_000, "dashed", x_start, x_end, maj_lbl_pos, lines_arr, labels_arr)
             if show_0236
-                draw_fib_level(calc_fib_long(h, l, 0.236, use_log), 0.236, "🎯 Тейк-2", pref, color.teal, 1, "dotted", x_start, x_end, lines_arr, labels_arr)
+                draw_level(calc_fib_long(h, l, 0.236, use_log), 0.236, "🎯 Тейк-2", pref, col_maj_023, w_maj_023, "dotted", x_start, x_end, maj_lbl_pos, lines_arr, labels_arr)
             if show_0382
-                draw_fib_level(calc_fib_long(h, l, 0.382, use_log), 0.382, "🎯 Тейк-1", pref, color.green, 2, "solid", x_start, x_end, lines_arr, labels_arr)
-            draw_fib_level(calc_fib_long(h, l, 0.500, use_log), 0.500, "🔹 Вход-1", pref, #3b82f6, 2, "solid", x_start, x_end, lines_arr, labels_arr)
-            draw_fib_level(calc_fib_long(h, l, 0.618, use_log), 0.618, "🔹 Вход-2", pref, color.blue, 2, "solid", x_start, x_end, lines_arr, labels_arr)
+                draw_level(calc_fib_long(h, l, 0.382, use_log), 0.382, "🎯 Тейк-1", pref, col_maj_038, w_maj_038, "solid", x_start, x_end, maj_lbl_pos, lines_arr, labels_arr)
+            draw_level(calc_fib_long(h, l, 0.500, use_log), 0.500, "🔹 Вход-1", pref, col_maj_050, w_maj_050, "solid", x_start, x_end, maj_lbl_pos, lines_arr, labels_arr)
+            draw_level(calc_fib_long(h, l, 0.618, use_log), 0.618, "🔹 Вход-2", pref, col_maj_061, w_maj_061, "solid", x_start, x_end, maj_lbl_pos, lines_arr, labels_arr)
             if show_0786
-                draw_fib_level(calc_fib_long(h, l, 0.786, use_log), 0.786, "⚡ Вход-3", pref, color.purple, 1, "dotted", x_start, x_end, lines_arr, labels_arr)
+                draw_level(calc_fib_long(h, l, 0.786, use_log), 0.786, "⚡ Вход-3", pref, col_maj_078, w_maj_078, "dotted", x_start, x_end, maj_lbl_pos, lines_arr, labels_arr)
             if show_0860
-                draw_fib_level(calc_fib_long(h, l, 0.860, use_log), 0.860, "🛑 Стоп", pref, color.red, 2, "dashed", x_start, x_end, lines_arr, labels_arr)
-            draw_fib_level(calc_fib_long(h, l, 1.000, use_log), 1.000, "🛑 Дно Low", pref, color.maroon, 2, "solid", x_start, x_end, lines_arr, labels_arr)
+                draw_level(calc_fib_long(h, l, 0.860, use_log), 0.860, "🛑 Стоп", pref, col_maj_086, w_maj_086, "dashed", x_start, x_end, maj_lbl_pos, lines_arr, labels_arr)
+            draw_level(calc_fib_long(h, l, 1.000, use_log), 1.000, "🛑 Дно Low", pref, col_maj_100, w_maj_100, "solid", x_start, x_end, maj_lbl_pos, lines_arr, labels_arr)
             if show_manip
-                draw_fib_level(calc_fib_long(h, l, 1.618, use_log), 1.618, "🟣 Манипуляция", pref, color.fuchsia, 2, "solid", x_start, x_end, lines_arr, labels_arr)
-                draw_fib_level(calc_fib_long(h, l, 2.000, use_log), 2.000, "🟠 Добор DCA", pref, color.orange, 2, "solid", x_start, x_end, lines_arr, labels_arr)
+                draw_level(calc_fib_long(h, l, 1.618, use_log), 1.618, "🟣 Манипуляция", pref, col_maj_161, w_maj_161, "solid", x_start, x_end, maj_lbl_pos, lines_arr, labels_arr)
+                draw_level(calc_fib_long(h, l, 2.000, use_log), 2.000, "🟠 Добор DCA", pref, col_maj_200, w_maj_200, "solid", x_start, x_end, maj_lbl_pos, lines_arr, labels_arr)
 
-        // Младшая Long
+        // ⚡ Младшая Long
         bool is_diff_l = na(maj_l_s) or (min_l_s != maj_l_s) or (math.abs(min_l_low - maj_l_low) > 0.0001)
         if show_min and not na(min_l_high) and not na(min_l_low) and is_diff_l
             float h = min_l_high, float l = min_l_low, int x_start = min_l_s
-            string pref = "⚡ МЛАДШИЙ LONG: "
+            string pref = "⚡ МЛАДШАЯ: "
             if show_0382
-                draw_fib_level(calc_fib_long(h, l, 0.382, use_log), 0.382, "🎯 Тейк (0.382)", pref, color.lime, 1, "dotted", x_start, x_end, lines_arr, labels_arr)
-            draw_fib_level(calc_fib_long(h, l, 0.500, use_log), 0.500, "🔹 Вход (0.500)", pref, #06b6d4, 2, "solid", x_start, x_end, lines_arr, labels_arr)
-            draw_fib_level(calc_fib_long(h, l, 0.618, use_log), 0.618, "🔹 Вход (0.618)", pref, color.yellow, 2, "solid", x_start, x_end, lines_arr, labels_arr)
+                draw_level(calc_fib_long(h, l, 0.382, use_log), 0.382, "🎯 Тейк (0.382)", pref, col_min_038, w_min_038, "dotted", x_start, x_end, "Справа", lines_arr, labels_arr)
+            draw_level(calc_fib_long(h, l, 0.500, use_log), 0.500, "🔹 Вход (0.500)", pref, col_min_050, w_min_050, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
+            draw_level(calc_fib_long(h, l, 0.618, use_log), 0.618, "🔹 Вход (0.618)", pref, col_min_061, w_min_061, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
+            if show_0786
+                draw_level(calc_fib_long(h, l, 0.786, use_log), 0.786, "⚡ Вход (0.786)", pref, col_min_078, w_min_078, "dotted", x_start, x_end, "Справа", lines_arr, labels_arr)
             if show_0860
-                draw_fib_level(calc_fib_long(h, l, 0.860, use_log), 0.860, "🛑 Стоп (0.860)", pref, color.red, 1, "dashed", x_start, x_end, lines_arr, labels_arr)
-            draw_fib_level(calc_fib_long(h, l, 1.000, use_log), 1.000, "🛑 Дно", pref, color.maroon, 1, "solid", x_start, x_end, lines_arr, labels_arr)
+                draw_level(calc_fib_long(h, l, 0.860, use_log), 0.860, "🛑 Стоп (0.860)", pref, col_min_086, w_min_086, "dashed", x_start, x_end, "Справа", lines_arr, labels_arr)
+            draw_level(calc_fib_long(h, l, 1.000, use_log), 1.000, "🛑 Дно", pref, col_min_100, w_min_100, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
+            if show_manip
+                draw_level(calc_fib_long(h, l, 1.618, use_log), 1.618, "🟣 Манипуляция (1.618)", pref, col_min_161, w_min_161, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
+                draw_level(calc_fib_long(h, l, 2.000, use_log), 2.000, "🟠 Добор (2.000)", pref, col_min_200, w_min_200, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
 
-    // ── 2. ОТРИСОВКА SHORT СЕТОК ──
+    // ── 2. SHORT СЕТКИ ──
     if allow_short
-        // Старшая Short
+        // 🏛️ Старшая Short
         if show_maj and not na(maj_s_high) and not na(maj_s_low)
             float h = maj_s_high, float l = maj_s_low, int x_start = maj_s_s
-            string pref = "🔴 СТАРШИЙ SHORT: "
-            draw_fib_level(calc_fib_short(h, l, 0.000, use_log), 0.000, "BOTTOM (Low)", pref, color.gray, 1, "dashed", x_start, x_end, lines_arr, labels_arr)
+            string pref = "🏛️ СТАРШИЙ SHORT: "
+            draw_level(calc_fib_short(h, l, 0.000, use_log), 0.000, "BOTTOM (Low)", pref, col_maj_000, w_maj_000, "dashed", x_start, x_end, maj_lbl_pos, lines_arr, labels_arr)
             if show_0236
-                draw_fib_level(calc_fib_short(h, l, 0.236, use_log), 0.236, "🎯 Тейк-2", pref, color.teal, 1, "dotted", x_start, x_end, lines_arr, labels_arr)
+                draw_level(calc_fib_short(h, l, 0.236, use_log), 0.236, "🎯 Тейк-2", pref, col_maj_023, w_maj_023, "dotted", x_start, x_end, maj_lbl_pos, lines_arr, labels_arr)
             if show_0382
-                draw_fib_level(calc_fib_short(h, l, 0.382, use_log), 0.382, "🎯 Тейк-1", pref, color.green, 2, "solid", x_start, x_end, lines_arr, labels_arr)
-            draw_fib_level(calc_fib_short(h, l, 0.500, use_log), 0.500, "🔹 Вход в Short (0.500)", pref, color.orange, 2, "solid", x_start, x_end, lines_arr, labels_arr)
-            draw_fib_level(calc_fib_short(h, l, 0.618, use_log), 0.618, "🔹 Вход в Short (0.618)", pref, color.red, 2, "solid", x_start, x_end, lines_arr, labels_arr)
+                draw_level(calc_fib_short(h, l, 0.382, use_log), 0.382, "🎯 Тейк-1", pref, col_maj_038, w_maj_038, "solid", x_start, x_end, maj_lbl_pos, lines_arr, labels_arr)
+            draw_level(calc_fib_short(h, l, 0.500, use_log), 0.500, "🔹 Вход в Short", pref, col_maj_050, w_maj_050, "solid", x_start, x_end, maj_lbl_pos, lines_arr, labels_arr)
+            draw_level(calc_fib_short(h, l, 0.618, use_log), 0.618, "🔹 Вход в Short", pref, col_maj_061, w_maj_061, "solid", x_start, x_end, maj_lbl_pos, lines_arr, labels_arr)
             if show_0786
-                draw_fib_level(calc_fib_short(h, l, 0.786, use_log), 0.786, "⚡ Вход-3", pref, color.purple, 1, "dotted", x_start, x_end, lines_arr, labels_arr)
+                draw_level(calc_fib_short(h, l, 0.786, use_log), 0.786, "⚡ Вход-3", pref, col_maj_078, w_maj_078, "dotted", x_start, x_end, maj_lbl_pos, lines_arr, labels_arr)
             if show_0860
-                draw_fib_level(calc_fib_short(h, l, 0.860, use_log), 0.860, "🛑 Стоп Short", pref, color.red, 2, "dashed", x_start, x_end, lines_arr, labels_arr)
-            draw_fib_level(calc_fib_short(h, l, 1.000, use_log), 1.000, "🛑 Вершина High", pref, color.maroon, 2, "solid", x_start, x_end, lines_arr, labels_arr)
+                draw_level(calc_fib_short(h, l, 0.860, use_log), 0.860, "🛑 Стоп Short", pref, col_maj_086, w_maj_086, "dashed", x_start, x_end, maj_lbl_pos, lines_arr, labels_arr)
+            draw_level(calc_fib_short(h, l, 1.000, use_log), 1.000, "🛑 Вершина High", pref, col_maj_100, w_maj_100, "solid", x_start, x_end, maj_lbl_pos, lines_arr, labels_arr)
             if show_manip
-                draw_fib_level(calc_fib_short(h, l, 1.618, use_log), 1.618, "🟣 Short Манипуляция", pref, color.fuchsia, 2, "solid", x_start, x_end, lines_arr, labels_arr)
-                draw_fib_level(calc_fib_short(h, l, 2.000, use_log), 2.000, "🟠 Добор DCA Short", pref, color.orange, 2, "solid", x_start, x_end, lines_arr, labels_arr)
+                draw_level(calc_fib_short(h, l, 1.618, use_log), 1.618, "🟣 Short Манипуляция", pref, col_maj_161, w_maj_161, "solid", x_start, x_end, maj_lbl_pos, lines_arr, labels_arr)
+                draw_level(calc_fib_short(h, l, 2.000, use_log), 2.000, "🟠 Добор DCA Short", pref, col_maj_200, w_maj_200, "solid", x_start, x_end, maj_lbl_pos, lines_arr, labels_arr)
 
-        // Младшая Short
+        // ⚡ Младшая Short
         bool is_diff_s = na(maj_s_s) or (min_s_s != maj_s_s) or (math.abs(min_s_high - maj_s_high) > 0.0001)
         if show_min and not na(min_s_high) and not na(min_s_low) and is_diff_s
             float h = min_s_high, float l = min_s_low, int x_start = min_s_s
             string pref = "⚡ МЛАДШИЙ SHORT: "
             if show_0382
-                draw_fib_level(calc_fib_short(h, l, 0.382, use_log), 0.382, "🎯 Тейк (0.382)", pref, color.lime, 1, "dotted", x_start, x_end, lines_arr, labels_arr)
-            draw_fib_level(calc_fib_short(h, l, 0.500, use_log), 0.500, "🔹 Вход (0.500)", pref, color.orange, 2, "solid", x_start, x_end, lines_arr, labels_arr)
-            draw_fib_level(calc_fib_short(h, l, 0.618, use_log), 0.618, "🔹 Вход (0.618)", pref, color.red, 2, "solid", x_start, x_end, lines_arr, labels_arr)
+                draw_level(calc_fib_short(h, l, 0.382, use_log), 0.382, "🎯 Тейк (0.382)", pref, col_min_038, w_min_038, "dotted", x_start, x_end, "Справа", lines_arr, labels_arr)
+            draw_level(calc_fib_short(h, l, 0.500, use_log), 0.500, "🔹 Вход (0.500)", pref, col_min_050, w_min_050, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
+            draw_level(calc_fib_short(h, l, 0.618, use_log), 0.618, "🔹 Вход (0.618)", pref, col_min_061, w_min_061, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
+            if show_0786
+                draw_level(calc_fib_short(h, l, 0.786, use_log), 0.786, "⚡ Вход (0.786)", pref, col_min_078, w_min_078, "dotted", x_start, x_end, "Справа", lines_arr, labels_arr)
             if show_0860
-                draw_fib_level(calc_fib_short(h, l, 0.860, use_log), 0.860, "🛑 Стоп (0.860)", pref, color.red, 1, "dashed", x_start, x_end, lines_arr, labels_arr)
-            draw_fib_level(calc_fib_short(h, l, 1.000, use_log), 1.000, "🛑 Вершина", pref, color.maroon, 1, "solid", x_start, x_end, lines_arr, labels_arr)
+                draw_level(calc_fib_short(h, l, 0.860, use_log), 0.860, "🛑 Стоп (0.860)", pref, col_min_086, w_min_086, "dashed", x_start, x_end, "Справа", lines_arr, labels_arr)
+            draw_level(calc_fib_short(h, l, 1.000, use_log), 1.000, "🛑 Вершина", pref, col_min_100, w_min_100, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
+            if show_manip
+                draw_level(calc_fib_short(h, l, 1.618, use_log), 1.618, "🟣 Short Манипуляция (1.618)", pref, col_min_161, w_min_161, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
+                draw_level(calc_fib_short(h, l, 2.000, use_log), 2.000, "🟠 Добор DCA (2.000)", pref, col_min_200, w_min_200, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
