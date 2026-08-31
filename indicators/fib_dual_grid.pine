@@ -613,6 +613,8 @@ if barstate.islast
             
             if show_manip
                 float p141 = calc_fib_short(h, l, 1.414, use_log)
+                float p161 = calc_fib_short(h, l, 1.618, use_log)
+                float p200 = calc_fib_short(h, l, 2.000, use_log)
                 draw_level(p141, "🔴 1.414  " + str.tostring(p141, "#.####"), col_min_141, w_min_141, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
                 draw_level(p161, "🟣 1.618  " + str.tostring(p161, "#.####"), col_min_161, w_min_161, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
                 draw_level(p200, "🟠 2.000  " + str.tostring(p200, "#.####"), col_min_200, w_min_200, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
