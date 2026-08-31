@@ -58,7 +58,7 @@ grp_min_set = "⚡ Младшая Фиба: Поиск (Основная)"
 show_min    = input.bool(true, "Показывать Младшую Фибу (Локальную)", group=grp_min_set)
 min_min_p   = input.float(1.5, "Мин. размах Младшей (%)", minval=0.5, step=0.5, tooltip="Минимальный процент движения от старта до текущей вершины", group=grp_min_set)
 min_bars    = input.int(6, "Макс. длительность импульса (свечей)", minval=2, maxval=20, tooltip="Сколько свечей развивался сам импульс до вершины", group=grp_min_set)
-min_lookb   = input.int(36, "Глубина поиска Младшей (свечей)", minval=10, maxval=100, group=grp_min_set)
+min_lookb   = input.int(100, "Глубина поиска Младшей (свечей)", minval=10, maxval=300, group=grp_min_set)
 
 grp_min_col = "🎨 Младшая Фиба: Цвета и Толщина уровней"
 col_min_038 = input.color(color.lime, "0.382 (Тейк)", group=grp_min_col)
@@ -236,7 +236,7 @@ find_minor_long(int lookback, float min_pct, int max_duration) =>
     int   max_s      = math.min(lookback, bar_index)
 
     if max_s >= 3
-        for s = math.min(35, max_s - 1) to 2
+        for s = max_s - 1 to 2
             float l_s = low[s]
             float h_s = high[s]
             float cur_h = h_s
@@ -348,7 +348,7 @@ find_minor_short(int lookback, float min_pct, int max_duration) =>
     int   max_s      = math.min(lookback, bar_index)
 
     if max_s >= 3
-        for s = math.min(35, max_s - 1) to 2
+        for s = max_s - 1 to 2
             float h_s = high[s]
             float l_s = low[s]
             float cur_l = l_s
