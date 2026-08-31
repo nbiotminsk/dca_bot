@@ -82,15 +82,15 @@ function detectLatestLongImpulse($candles, $min_pct = 1.5) {
         $end_idx = $s;
 
         for ($k = $s + 1; $k < $n; $k++) {
-            $fib_05 = calcFibLongLog($cur_h, $l_s, 0.500);
             if ($candles[$k]['low'] < $l_s) {
                 $broken_early = true;
                 break;
             }
 
             if (!$is_impulse) {
-                // Если свеча опустилась до 0.500 первой свечи ДО пробоя хая — импульс забракован
-                if ($candles[$k]['low'] <= $fib_05) {
+                // Цена не должна опуститься <= 0.500 первой свечи ДО первого пробоя ее High
+                $fib_05_first = calcFibLongLog($h_s, $l_s, 0.500);
+                if ($candles[$k]['low'] <= $fib_05_first) {
                     $broken_early = true;
                     break;
                 }
@@ -100,15 +100,10 @@ function detectLatestLongImpulse($candles, $min_pct = 1.5) {
                     $end_idx = $k;
                 }
             } else {
-                // Импульс развивается: если растет — растягиваем фибу
+                // Импульс уже запущен: если обновляет максимум — поднимаем фибу выше
                 if ($candles[$k]['high'] > $cur_h) {
                     $cur_h = $candles[$k]['high'];
                     $end_idx = $k;
-                } else {
-                    if ($candles[$k]['low'] <= $fib_05) {
-                        // Начат откат к уровням входа
-                        break;
-                    }
                 }
             }
         }
@@ -118,13 +113,13 @@ function detectLatestLongImpulse($candles, $min_pct = 1.5) {
             if ($pct >= $min_pct) {
                 $tp_038 = calcFibLongLog($cur_h, $l_s, 0.382);
                 $sl_lim = calcFibLongLog($cur_h, $l_s, 0.860);
+                $fib_05_final = calcFibLongLog($cur_h, $l_s, 0.500);
 
                 $entered = false;
                 $tp_hit  = false;
                 $sl_hit  = false;
 
                 for ($p = $end_idx + 1; $p < $n; $p++) {
-                    $fib_05_final = calcFibLongLog($cur_h, $l_s, 0.500);
                     if (!$entered) {
                         if ($candles[$p]['low'] <= $fib_05_final) {
                             $entered = true;
@@ -174,14 +169,14 @@ function detectLatestShortImpulse($candles, $min_pct = 2.0) {
         $end_idx = $s;
 
         for ($k = $s + 1; $k < $n; $k++) {
-            $fib_05 = calcFibShortLog($h_s, $cur_l, 0.500);
             if ($candles[$k]['high'] > $h_s) {
                 $broken_early = true;
                 break;
             }
 
             if (!$is_dump) {
-                if ($candles[$k]['high'] >= $fib_05) {
+                $fib_05_first = calcFibShortLog($h_s, $l_s, 0.500);
+                if ($candles[$k]['high'] >= $fib_05_first) {
                     $broken_early = true;
                     break;
                 }
@@ -194,10 +189,6 @@ function detectLatestShortImpulse($candles, $min_pct = 2.0) {
                 if ($candles[$k]['low'] < $cur_l) {
                     $cur_l = $candles[$k]['low'];
                     $end_idx = $k;
-                } else {
-                    if ($candles[$k]['high'] >= $fib_05) {
-                        break;
-                    }
                 }
             }
         }
@@ -207,13 +198,13 @@ function detectLatestShortImpulse($candles, $min_pct = 2.0) {
             if ($pct >= $min_pct) {
                 $tp_038 = calcFibShortLog($h_s, $cur_l, 0.382);
                 $sl_lim = calcFibShortLog($h_s, $cur_l, 0.860);
+                $fib_05_final = calcFibShortLog($h_s, $cur_l, 0.500);
 
                 $entered = false;
                 $tp_hit  = false;
                 $sl_hit  = false;
 
                 for ($p = $end_idx + 1; $p < $n; $p++) {
-                    $fib_05_final = calcFibShortLog($h_s, $cur_l, 0.500);
                     if (!$entered) {
                         if ($candles[$p]['high'] >= $fib_05_final) {
                             $entered = true;

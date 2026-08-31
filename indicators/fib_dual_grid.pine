@@ -210,11 +210,11 @@ find_macro_short(int lookback, float min_pct) =>
 
     [best_start, best_high, best_low, best_pct]
 
-// Поиск Младшей (Локальной) Фибы по строгому правилу пользователя:
-// 1. Первая свеча импульса s (low = l_s, high = h_s).
-// 2. Следующие свечи НЕ должны опускаться ниже 0.500 уровня текущей растущей фибы и не ниже l_s.
-// 3. Следующие свечи должны обновить high (h_s). Пока обновляют — фиба растет.
-// 4. Как только происходит касание 0.500 уровня — импульс зафиксирован и начинается откат к входам/тейкам.
+// Поиск Младшей (Локальной) Фибы по строгому правилу:
+// 1. Начальная свеча s (low = l_s, high = h_s).
+// 2. Свечи k проверяются: цена НЕ должна опускаться <= 0.500 первой свечи ДО первого пробоя ее High.
+// 3. Как только High первой свечи пробит (без касания 0.500) — импульс запущен!
+// 4. Фиба растет вслед за каждым новым High. При откате к 0.500 фиба активна, пока не собран Тейк или Стоп.
 find_minor_long(int lookback, float min_pct, int max_duration) =>
     int   best_start = na
     float best_low   = na
@@ -231,15 +231,14 @@ find_minor_long(int lookback, float min_pct, int max_duration) =>
             bool  broken_early = false
             int   end_idx = s
 
-            // Идем вперед от s к текущей свече (от s-1 до 0)
             for k = s - 1 to 0
-                float fib_05 = calc_fib_long(cur_h, l_s, 0.500, use_log)
                 if low[k] < l_s
                     broken_early := true
                     break
                 
                 if not is_impulse
-                    if low[k] <= fib_05
+                    float fib_05_first = calc_fib_long(h_s, l_s, 0.500, use_log)
+                    if low[k] <= fib_05_first
                         broken_early := true
                         break
                     if high[k] > h_s
@@ -250,16 +249,13 @@ find_minor_long(int lookback, float min_pct, int max_duration) =>
                     if high[k] > cur_h
                         cur_h := high[k]
                         end_idx := k
-                    else
-                        if low[k] <= fib_05
-                            // Начат откат к входам
-                            break
             
             if is_impulse and not broken_early
                 float pct = (cur_h - l_s) / l_s * 100.0
                 if pct >= min_pct
                     float tp_038 = calc_fib_long(cur_h, l_s, 0.382, use_log)
                     float sl_lim = show_manip ? calc_fib_long(cur_h, l_s, 2.000, use_log) : calc_fib_long(cur_h, l_s, 0.860, use_log)
+                    float fib_05_final = calc_fib_long(cur_h, l_s, 0.500, use_log)
 
                     bool entered  = false
                     bool tp_hit   = false
@@ -267,7 +263,6 @@ find_minor_long(int lookback, float min_pct, int max_duration) =>
 
                     if end_idx > 0
                         for p = end_idx - 1 to 0
-                            float fib_05_final = calc_fib_long(cur_h, l_s, 0.500, use_log)
                             if not entered
                                 if low[p] <= fib_05_final
                                     entered := true
@@ -305,13 +300,13 @@ find_minor_short(int lookback, float min_pct, int max_duration) =>
             int   end_idx = s
 
             for k = s - 1 to 0
-                float fib_05 = calc_fib_short(h_s, cur_l, 0.500, use_log)
                 if high[k] > h_s
                     broken_early := true
                     break
                 
                 if not is_dump
-                    if high[k] >= fib_05
+                    float fib_05_first = calc_fib_short(h_s, l_s, 0.500, use_log)
+                    if high[k] >= fib_05_first
                         broken_early := true
                         break
                     if low[k] < l_s
@@ -322,15 +317,13 @@ find_minor_short(int lookback, float min_pct, int max_duration) =>
                     if low[k] < cur_l
                         cur_l := low[k]
                         end_idx := k
-                    else
-                        if high[k] >= fib_05
-                            break
             
             if is_dump and not broken_early
                 float pct = (h_s - cur_l) / h_s * 100.0
                 if pct >= min_pct
                     float tp_038 = calc_fib_short(h_s, cur_l, 0.382, use_log)
                     float sl_lim = show_manip ? calc_fib_short(h_s, cur_l, 2.000, use_log) : calc_fib_short(h_s, cur_l, 0.860, use_log)
+                    float fib_05_final = calc_fib_short(h_s, cur_l, 0.500, use_log)
 
                     bool entered  = false
                     bool tp_hit   = false
@@ -338,7 +331,6 @@ find_minor_short(int lookback, float min_pct, int max_duration) =>
 
                     if end_idx > 0
                         for p = end_idx - 1 to 0
-                            float fib_05_final = calc_fib_short(h_s, cur_l, 0.500, use_log)
                             if not entered
                                 if high[p] >= fib_05_final
                                     entered := true
