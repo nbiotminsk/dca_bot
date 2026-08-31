@@ -1,5 +1,5 @@
 //@version=6
-indicator("Fibonacci Dual Grid (Clean Labels)", shorttitle="Fib Dual Grid Pro v6", overlay=true, max_lines_count=500, max_labels_count=500)
+indicator("Fibonacci Dual Grid (Pro Live Only)", shorttitle="Fib Dual Grid Pro v6", overlay=true, max_lines_count=500, max_labels_count=500)
 
 // ══════════════════════════════════════════════════════════════════════════════
 // 1. ОБЩИЕ НАСТРОЙКИ
@@ -92,7 +92,7 @@ show_0860   = input.bool(true, "Показывать 0.860 Fib (Стоп-Лос�
 show_manip  = input.bool(true, "Показывать 1.618 / 2.000 (Манипуляция)", group=grp_lvls)
 
 // ══════════════════════════════════════════════════════════════════════════════
-// 5. МАТЕМАТИЧЕСКИЕ ФУНКЦИИ И ЧИСТАЯ ОТРИСОВКА
+// 5. МАТЕМАТИЧЕСКИЕ ФУНКЦИИ И ОТРИСОВКА
 // ══════════════════════════════════════════════════════════════════════════════
 calc_fib_long(float h, float l, float lvl, bool is_log) =>
     if is_log and h > 0 and l > 0
@@ -123,7 +123,7 @@ draw_level(float price, string label_text, color col, int width, string style_ty
     array.push(labels_arr, lb)
 
 // ══════════════════════════════════════════════════════════════════════════════
-// 6. ПОИСК ТОЛЬКО АКТИВНЫХ (ЖИВЫХ) ИМПУЛЬСОВ
+// 6. НАДЕЖНЫЙ ПОИСК АКТИВНЫХ ИМПУЛЬСОВ
 // ══════════════════════════════════════════════════════════════════════════════
 find_long_impulse(int lookback, float min_pct) =>
     int   best_start = na
@@ -133,55 +133,49 @@ find_long_impulse(int lookback, float min_pct) =>
     int   max_s      = math.min(lookback, bar_index)
 
     if max_s >= 2
-        for s = max_s to 1
+        for s = max_s to 2
             float l = low[s]
-            float h = high[s]
-            int peak_bar = s
-            bool broken = false
-            bool growth = false
-
-            for k = s - 1 to 0
-                float cur_05 = calc_fib_long(h, l, 0.500, use_log)
-                if low[k] <= cur_05
-                    peak_bar := k + 1
-                    break
-                if low[k] < l
-                    broken := true
-                    break
-                if high[k] > h
-                    h := high[k]
-                    peak_bar := k
-                    growth := true
-
-            if not broken and growth and peak_bar < s
-                float in_050 = calc_fib_long(h, l, 0.500, use_log)
-                float tp_038 = calc_fib_long(h, l, 0.382, use_log)
-                float sl_860 = calc_fib_long(h, l, 0.860, use_log)
+            for b = s - 1 to 1
+                float h = high[b]
+                // Проверка формирования: b - наивысшая точка диапазона [s..b], l - дно
+                bool valid_imp = true
+                for m = s to b
+                    if high[m] > h or low[m] < l
+                        valid_imp := false
+                        break
                 
-                bool entered = false
-                bool tp_hit  = false
-                bool sl_hit  = false
-
-                if peak_bar > 0
-                    for p = peak_bar - 1 to 0
-                        if not entered and low[p] <= in_050
-                            entered := true
-                        
-                        if entered
-                            if high[p] >= tp_038
-                                tp_hit := true
-                                break
-                            if low[p] <= sl_860 or low[p] < l
-                                sl_hit := true
-                                break
-                
-                if not tp_hit and not sl_hit
+                if valid_imp
                     float pct = (h - l) / l * 100.0
-                    if pct >= min_pct and (pct > best_pct or na(best_pct))
-                        best_pct   := pct
-                        best_start := bar_index - s
-                        best_low   := l
-                        best_high  := h
+                    if pct >= min_pct and pct > best_pct
+                        // Проверка текущей коррекции от b-1 до 0 (текущего бара)
+                        float in_050 = calc_fib_long(h, l, 0.500, use_log)
+                        float tp_038 = calc_fib_long(h, l, 0.382, use_log)
+                        float sl_860 = calc_fib_long(h, l, 0.860, use_log)
+
+                        bool entered = false
+                        bool tp_hit  = false
+                        bool sl_hit  = false
+
+                        for p = b - 1 to 0
+                            if not entered and low[p] <= in_050
+                                entered := true
+                            if entered
+                                if high[p] >= tp_038
+                                    tp_hit := true
+                                    break
+                                if low[p] <= sl_860 or low[p] < l
+                                    sl_hit := true
+                                    break
+                            else
+                                if high[p] > h or low[p] < l
+                                    sl_hit := true
+                                    break
+
+                        if not tp_hit and not sl_hit
+                            best_pct   := pct
+                            best_start := bar_index - s
+                            best_low   := l
+                            best_high  := h
 
     [best_start, best_low, best_high, best_pct]
 
@@ -193,60 +187,54 @@ find_short_impulse(int lookback, float min_pct) =>
     int   max_s      = math.min(lookback, bar_index)
 
     if max_s >= 2
-        for s = max_s to 1
+        for s = max_s to 2
             float h = high[s]
-            float l = low[s]
-            int bottom_bar = s
-            bool broken = false
-            bool drop   = false
-
-            for k = s - 1 to 0
-                float cur_05 = calc_fib_short(h, l, 0.500, use_log)
-                if high[k] >= cur_05
-                    bottom_bar := k + 1
-                    break
-                if high[k] > h
-                    broken := true
-                    break
-                if low[k] < l
-                    l := low[k]
-                    drop := true
-                    bottom_bar := k
-
-            if not broken and drop and bottom_bar < s
-                float in_050 = calc_fib_short(h, l, 0.500, use_log)
-                float tp_038 = calc_fib_short(h, l, 0.382, use_log)
-                float sl_860 = calc_fib_short(h, l, 0.860, use_log)
+            for b = s - 1 to 1
+                float l = low[b]
+                // Проверка формирования дампа: b - наинизшая точка [s..b], h - вершина
+                bool valid_dump = true
+                for m = s to b
+                    if high[m] > h or low[m] < l
+                        valid_dump := false
+                        break
                 
-                bool entered = false
-                bool tp_hit  = false
-                bool sl_hit  = false
-
-                if bottom_bar > 0
-                    for p = bottom_bar - 1 to 0
-                        if not entered and high[p] >= in_050
-                            entered := true
-                        
-                        if entered
-                            if low[p] <= tp_038
-                                tp_hit := true
-                                break
-                            if high[p] >= sl_860 or high[p] > h
-                                sl_hit := true
-                                break
-                
-                if not tp_hit and not sl_hit
+                if valid_dump
                     float pct = (h - l) / h * 100.0
-                    if pct >= min_pct and (pct > best_pct or na(best_pct))
-                        best_pct   := pct
-                        best_start := bar_index - s
-                        best_high  := h
-                        best_low   := l
+                    if pct >= min_pct and pct > best_pct
+                        // Проверка текущего отскока от b-1 до 0 (текущего бара)
+                        float in_050 = calc_fib_short(h, l, 0.500, use_log)
+                        float tp_038 = calc_fib_short(h, l, 0.382, use_log)
+                        float sl_860 = calc_fib_short(h, l, 0.860, use_log)
+
+                        bool entered = false
+                        bool tp_hit  = false
+                        bool sl_hit  = false
+
+                        for p = b - 1 to 0
+                            if not entered and high[p] >= in_050
+                                entered := true
+                            if entered
+                                if low[p] <= tp_038
+                                    tp_hit := true
+                                    break
+                                if high[p] >= sl_860 or high[p] > h
+                                    sl_hit := true
+                                    break
+                            else
+                                if high[p] > h or low[p] < l
+                                    sl_hit := true
+                                    break
+
+                        if not tp_hit and not sl_hit
+                            best_pct   := pct
+                            best_start := bar_index - s
+                            best_high  := h
+                            best_low   := l
 
     [best_start, best_high, best_low, best_pct]
 
 // ══════════════════════════════════════════════════════════════════════════════
-// 7. ОТРИСОВКА СЕТОК НА ГРАФИКЕ (ЛАКОНИЧНЫЙ И ЧИСТЫЙ СТИЛЬ)
+// 7. ОТРИСОВКА СЕТОК НА ГРАФИКЕ
 // ══════════════════════════════════════════════════════════════════════════════
 var line[] lines_arr   = array.new_line()
 var label[] labels_arr = array.new_label()
@@ -309,7 +297,7 @@ if barstate.islast
                 draw_level(p161, "🟣 1.618  " + str.tostring(p161, "#.###"), col_maj_161, w_maj_161, "solid", x_start, x_end, pos, lines_arr, labels_arr)
                 draw_level(p200, "🟠 2.000  " + str.tostring(p200, "#.###"), col_maj_200, w_maj_200, "solid", x_start, x_end, pos, lines_arr, labels_arr)
 
-        // ⚡ Младшая Long (Без слова 'Младшая', чисто стрелочка и цена)
+        // ⚡ Младшая Long
         bool is_diff_l = na(maj_l_s) or (min_l_s != maj_l_s) or (math.abs(min_l_low - maj_l_low) > 0.0001)
         if show_min and not na(min_l_high) and not na(min_l_low) and is_diff_l
             float h = min_l_high, float l = min_l_low, int x_start = min_l_s
@@ -379,7 +367,7 @@ if barstate.islast
                 draw_level(p161, "🟣 1.618  " + str.tostring(p161, "#.###"), col_maj_161, w_maj_161, "solid", x_start, x_end, pos, lines_arr, labels_arr)
                 draw_level(p200, "🟠 2.000  " + str.tostring(p200, "#.###"), col_maj_200, w_maj_200, "solid", x_start, x_end, pos, lines_arr, labels_arr)
 
-        // ⚡ Младшая Short (Без слова 'Младшая', чисто стрелочка и цена)
+        // ⚡ Младшая Short
         bool is_diff_s = na(maj_s_s) or (min_s_s != maj_s_s) or (math.abs(min_s_high - maj_s_high) > 0.0001)
         if show_min and not na(min_s_high) and not na(min_s_low) and is_diff_s
             float h = min_s_high, float l = min_s_low, int x_start = min_s_s
