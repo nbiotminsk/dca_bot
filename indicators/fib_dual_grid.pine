@@ -97,7 +97,13 @@ show_0382   = input.bool(true, "Показывать 0.382 Fib (Базовый �
 show_0786   = input.bool(true, "Показывать 0.786 Fib (Глубокий Вход)", group=grp_lvls)
 show_0860   = input.bool(true, "Показывать 0.860 Fib (Стоп-Лосс)", group=grp_lvls)
 show_manip  = input.bool(true, "Показывать 1.414 / 1.618 / 2.000 (Манипуляция)", group=grp_lvls)
-show_table  = input.bool(true, "Показывать Инфо-Панель Риска (RSI + CCI 14)", group=grp_lvls)
+show_table  = input.bool(true, "Показывать Инфо-Панель Риска и Калькулятор", group=grp_lvls)
+
+grp_calc    = "💰 Калькулятор размера позиции (Риск в $)"
+i_risk_usd  = input.float(10.0, "Риск / Стоп на сделку ($)", minval=1.0, step=1.0, group=grp_calc)
+i_sl_mode   = input.string("0.860 Fib", "Уровень Стоп-Лосса для расчета", options=["0.860 Fib", "1.000 Fib"], group=grp_calc)
+show_calc_618 = input.bool(true, "Показывать расчет для Входа 0.618", group=grp_calc)
+show_calc_786 = input.bool(true, "Показывать расчет для Входа 0.786", group=grp_calc)
 
 // ══════════════════════════════════════════════════════════════════════════════
 // 5. МАТЕМАТИЧЕСКИЕ ФУНКЦИИ И ОТРИСОВКА
@@ -611,12 +617,12 @@ if barstate.islast
                 draw_level(p200, "🟠 2.000  " + str.tostring(p200, "#.####"), col_min_200, w_min_200, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
 
 // ══════════════════════════════════════════════════════════════════════════════
-// 8. ПАНЕЛЬ ОЦЕНКИ РИСКА ПО RSI 14 И CCI 14 (В ПРАВОМ ВЕРХНЕМ УГЛУ)
+// 8. ПАНЕЛЬ ОЦЕНКИ РИСКА ПО RSI 14, CCI 14 И КАЛЬКУЛЯТОР ПОЗИЦИИ
 // ══════════════════════════════════════════════════════════════════════════════
 float cur_rsi = ta.rsi(close, 14)
 float cur_cci = ta.cci(hlc3, 14)
 
-var table risk_tbl = table.new(position.top_right, 2, 4, bgcolor=color.new(#0b0e14, 15), border_color=color.new(#1e293b, 0), border_width=1)
+var table risk_tbl = table.new(position.top_right, 2, 8, bgcolor=color.new(#0b0e14, 15), border_color=color.new(#1e293b, 0), border_width=1)
 
 if barstate.islast and show_table
     // Заголовок
@@ -640,3 +646,62 @@ if barstate.islast and show_table
     color verdict_col = cur_cci < -100 or cur_rsi < 30 ? color.red : (cur_cci >= -100 and cur_cci <= 0 ? color.green : color.blue)
     table.cell(risk_tbl, 0, 3, "🎯 ОБЩИЙ РИСК:", bgcolor=color.new(#1e293b, 40), text_color=color.white, text_size=size.small)
     table.cell(risk_tbl, 1, 3, verdict_text, bgcolor=color.new(#1e293b, 40), text_color=verdict_col, text_size=size.small)
+
+    // ── 💰 РИСК-КАЛЬКУЛЯТОР ОБЪЕМА ПОЗИЦИИ ──
+    bool has_active_long = allow_long and not na(min_l_high) and not na(min_l_low)
+    bool has_active_short = allow_short and not na(min_s_high) and not na(min_s_low)
+
+    int cur_row = 4
+
+    if has_active_long or has_active_short
+        // Разделитель
+        table.cell(risk_tbl, 0, cur_row, "💰 РАСЧЕТ ОБЪЕМА (Стоп " + str.tostring(i_risk_usd, "$#") + "):", bgcolor=color.new(#1e293b, 30), text_color=color.yellow, text_size=size.small)
+        table.cell(risk_tbl, 1, cur_row, "Стоп: " + i_sl_mode, bgcolor=color.new(#1e293b, 30), text_color=color.silver, text_size=size.small)
+        cur_row := cur_row + 1
+
+        if has_active_long
+            float h = min_l_high, float l = min_l_low
+            float e618 = calc_fib_long(h, l, 0.618, use_log)
+            float e786 = calc_fib_long(h, l, 0.786, use_log)
+            float sl_p = (i_sl_mode == "0.860 Fib") ? calc_fib_long(h, l, 0.860, use_log) : calc_fib_long(h, l, 1.000, use_log)
+
+            if show_calc_618
+                float diff618 = math.abs(e618 - sl_p)
+                float qty618  = diff618 > 0 ? (i_risk_usd / diff618) : 0.0
+                float notional618 = qty618 * e618
+                table.cell(risk_tbl, 0, cur_row, "🟢 Long 0.618 (" + str.tostring(e618, "#.####") + "):", text_color=color.yellow, text_size=size.small)
+                table.cell(risk_tbl, 1, cur_row, str.tostring(qty618, "#.##") + " шт. ($" + str.tostring(notional618, "#.#") + ")", text_color=color.lime, text_size=size.small)
+                cur_row := cur_row + 1
+
+            if show_calc_786
+                float diff786 = math.abs(e786 - sl_p)
+                float qty786  = diff786 > 0 ? (i_risk_usd / diff786) : 0.0
+                float notional786 = qty786 * e786
+                table.cell(risk_tbl, 0, cur_row, "🟣 Long 0.786 (" + str.tostring(e786, "#.####") + "):", text_color=#c084fc, text_size=size.small)
+                table.cell(risk_tbl, 1, cur_row, str.tostring(qty786, "#.##") + " шт. ($" + str.tostring(notional786, "#.#") + ")", text_color=color.aqua, text_size=size.small)
+                cur_row := cur_row + 1
+
+        else if has_active_short
+            float h = min_s_high, float l = min_s_low
+            float e618 = calc_fib_short(h, l, 0.618, use_log)
+            float e786 = calc_fib_short(h, l, 0.786, use_log)
+            float sl_p = (i_sl_mode == "0.860 Fib") ? calc_fib_short(h, l, 0.860, use_log) : calc_fib_short(h, l, 1.000, use_log)
+
+            if show_calc_618
+                float diff618 = math.abs(sl_p - e618)
+                float qty618  = diff618 > 0 ? (i_risk_usd / diff618) : 0.0
+                float notional618 = qty618 * e618
+                table.cell(risk_tbl, 0, cur_row, "🔴 Short 0.618 (" + str.tostring(e618, "#.####") + "):", text_color=color.yellow, text_size=size.small)
+                table.cell(risk_tbl, 1, cur_row, str.tostring(qty618, "#.##") + " шт. ($" + str.tostring(notional618, "#.#") + ")", text_color=color.lime, text_size=size.small)
+                cur_row := cur_row + 1
+
+            if show_calc_786
+                float diff786 = math.abs(sl_p - e786)
+                float qty786  = diff786 > 0 ? (i_risk_usd / diff786) : 0.0
+                float notional786 = qty786 * e786
+                table.cell(risk_tbl, 0, cur_row, "🟣 Short 0.786 (" + str.tostring(e786, "#.####") + "):", text_color=#c084fc, text_size=size.small)
+                table.cell(risk_tbl, 1, cur_row, str.tostring(qty786, "#.##") + " шт. ($" + str.tostring(notional786, "#.#") + ")", text_color=color.aqua, text_size=size.small)
+                cur_row := cur_row + 1
+    else
+        table.cell(risk_tbl, 0, cur_row, "💰 РАСЧЕТ ОБЪЕМА:", bgcolor=color.new(#1e293b, 30), text_color=color.silver, text_size=size.small)
+        table.cell(risk_tbl, 1, cur_row, "Ожидание активной фибы", bgcolor=color.new(#1e293b, 30), text_color=color.gray, text_size=size.small)
