@@ -54,6 +54,7 @@ w_maj_200   = input.int(2, "Толщина 2.000", minval=1, maxval=4, group=grp
 grp_min_set = "⚡ Младшая Фиба: Поиск (Основная)"
 show_min    = input.bool(true, "Показывать Младшую Фибу (Локальную)", group=grp_min_set)
 min_min_p   = input.float(2.0, "Мин. размах Младшей (%)", minval=0.5, step=0.5, group=grp_min_set)
+min_bars    = input.int(4, "Макс. длительность импульса (свечей)", minval=2, maxval=12, tooltip="Сколько свечей длился сам безоткатный каскад. Для SOL = 4 свечи ($106.75 -> $100.21)", group=grp_min_set)
 min_lookb   = input.int(36, "Глубина поиска Младшей (свечей)", minval=10, maxval=100, group=grp_min_set)
 
 grp_min_col = "🎨 Младшая Фиба: Цвета и Толщина уровней"
@@ -125,7 +126,7 @@ draw_level(float price, string label_text, color col, int width, string style_ty
 // ══════════════════════════════════════════════════════════════════════════════
 // 6. НАДЕЖНЫЙ ПОИСК АКТИВНЫХ ИМПУЛЬСОВ
 // ══════════════════════════════════════════════════════════════════════════════
-find_long_impulse(int lookback, float min_pct, bool is_minor) =>
+find_long_impulse(int lookback, float min_pct, int max_duration) =>
     int   best_start = na
     float best_low   = na
     float best_high  = na
@@ -139,7 +140,7 @@ find_long_impulse(int lookback, float min_pct, bool is_minor) =>
             float cand_l = low[b]
             float cand_pct = 0.0
 
-            int scan_limit = is_minor ? math.min(b + 7, max_s) : max_s
+            int scan_limit = math.min(b + max_duration, max_s)
             for s = b + 1 to scan_limit
                 float l = low[s]
                 bool valid_imp = true
@@ -180,17 +181,17 @@ find_long_impulse(int lookback, float min_pct, bool is_minor) =>
                             break
 
                 if not tp_hit and not sl_hit
-                    if is_minor or cand_pct > best_pct
+                    if max_duration <= 12 or cand_pct > best_pct
                         best_pct   := cand_pct
                         best_start := bar_index - cand_s
                         best_low   := cand_l
                         best_high  := h
-                        if is_minor
+                        if max_duration <= 12
                             break
 
     [best_start, best_low, best_high, best_pct]
 
-find_short_impulse(int lookback, float min_pct, bool is_minor) =>
+find_short_impulse(int lookback, float min_pct, int max_duration) =>
     int   best_start = na
     float best_high  = na
     float best_low   = na
@@ -204,7 +205,7 @@ find_short_impulse(int lookback, float min_pct, bool is_minor) =>
             float cand_h = high[b]
             float cand_pct = 0.0
 
-            int scan_limit = is_minor ? math.min(b + 7, max_s) : max_s
+            int scan_limit = math.min(b + max_duration, max_s)
             for s = b + 1 to scan_limit
                 float h = high[s]
                 bool valid_dump = true
@@ -245,12 +246,12 @@ find_short_impulse(int lookback, float min_pct, bool is_minor) =>
                             break
 
                 if not tp_hit and not sl_hit
-                    if is_minor or cand_pct > best_pct
+                    if max_duration <= 12 or cand_pct > best_pct
                         best_pct   := cand_pct
                         best_start := bar_index - cand_s
                         best_high  := cand_h
                         best_low   := l
-                        if is_minor
+                        if max_duration <= 12
                             break
 
     [best_start, best_high, best_low, best_pct]
@@ -269,13 +270,13 @@ if barstate.islast
         label.delete(lb)
     labels_arr.clear()
 
-    // Старшая ищет максимальную глобальную волну (is_minor=false)
-    // Младшая ищет точную вершину непосредственного каскадного импульса (is_minor=true)
-    [maj_l_s, maj_l_low, maj_l_high, maj_l_pct] = find_long_impulse(maj_lookb, maj_min_p, false)
-    [min_l_s, min_l_low, min_l_high, min_l_pct] = find_long_impulse(min_lookb, min_min_p, true)
+    // Старшая ищет максимальную глобальную волну (длительность до 200 свечей)
+    // Младшая ищет быстрый каскадный импульс (длительность min_bars свечей = 4 по умолчанию)
+    [maj_l_s, maj_l_low, maj_l_high, maj_l_pct] = find_long_impulse(maj_lookb, maj_min_p, 200)
+    [min_l_s, min_l_low, min_l_high, min_l_pct] = find_long_impulse(min_lookb, min_min_p, min_bars)
 
-    [maj_s_s, maj_s_high, maj_s_low, maj_s_pct] = find_short_impulse(maj_lookb, maj_min_p, false)
-    [min_s_s, min_s_high, min_s_low, min_s_pct] = find_short_impulse(min_lookb, min_min_p, true)
+    [maj_s_s, maj_s_high, maj_s_low, maj_s_pct] = find_short_impulse(maj_lookb, maj_min_p, 200)
+    [min_s_s, min_s_high, min_s_low, min_s_pct] = find_short_impulse(min_lookb, min_min_p, min_bars)
 
     bool allow_long  = (i_mode == "Только LONG") or (i_mode == "Оба направления (L+S)") or (i_mode == "Авто (по тренду)" and (na(min_s_pct) or min_l_pct >= min_s_pct))
     bool allow_short = (i_mode == "Только SHORT") or (i_mode == "Оба направления (L+S)") or (i_mode == "Авто (по тренду)" and (na(min_l_pct) or min_s_pct > min_l_pct))
@@ -353,7 +354,7 @@ if barstate.islast
 
     // ── 2. SHORT СЕТКИ ──
     if allow_short
-        // 🏛️ Старшая Short (Глобальная, по умолчанию выключена)
+        // 🏛️ Старшая Short
         if show_maj and not na(maj_s_high) and not na(maj_s_low)
             float h = maj_s_high, float l = maj_s_low, int x_start = maj_s_s
             string pos = maj_lbl_pos
@@ -390,7 +391,7 @@ if barstate.islast
                 draw_level(p161, "🟣 1.618  " + str.tostring(p161, "#.###"), col_maj_161, w_maj_161, "solid", x_start, x_end, pos, lines_arr, labels_arr)
                 draw_level(p200, "🟠 2.000  " + str.tostring(p200, "#.###"), col_maj_200, w_maj_200, "solid", x_start, x_end, pos, lines_arr, labels_arr)
 
-        // ⚡ Младшая Short (Точная вершина каскада 106.75)
+        // ⚡ Младшая Short (Ровно 106.75 на SOL)
         if show_min and not na(min_s_high) and not na(min_s_low)
             float h = min_s_high, float l = min_s_low, int x_start = min_s_s
             
