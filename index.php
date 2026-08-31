@@ -73,44 +73,86 @@ function detectLatestLongImpulse($candles, $min_pct = 1.5) {
     $n = count($candles);
     $best = null;
 
-    // Ищем только подтвержденные сформированные вершины (b < n - 1), чтобы не натягивать фибу на растущую в моменте свечу
-    for ($b = $n - 2; $b >= max(0, $n - 45); $b--) {
-        $max_high = $candles[$b]['high'];
-        if ($candles[$b + 1]['high'] > $max_high) {
-            continue; // пик еще не подтвержден, свеча растет
-        }
+    for ($s = max(0, $n - 35); $s < $n - 1; $s++) {
+        $l_s = $candles[$s]['low'];
+        $h_s = $candles[$s]['high'];
+        $cur_h = $h_s;
+        $is_impulse = false;
+        $broken_early = false;
+        $end_idx = $s;
 
-        $cur_min_l = $max_high;
-        $cur_min_s = $b;
-
-        for ($s = $b - 1; $s >= max(0, $b - 35); $s--) {
-            if ($candles[$s]['low'] < $cur_min_l) {
-                $cur_min_l = $candles[$s]['low'];
-                $cur_min_s = $s;
+        for ($k = $s + 1; $k < $n; $k++) {
+            $fib_05 = calcFibLongLog($cur_h, $l_s, 0.500);
+            if ($candles[$k]['low'] < $l_s) {
+                $broken_early = true;
+                break;
             }
-        }
 
-        $pct = ($max_high - $cur_min_l) / $cur_min_l * 100.0;
-        if ($pct >= $min_pct) {
-            $broken = false;
-            $fib_086 = calcFibLongLog($max_high, $cur_min_l, 0.860);
-            for ($k = $b + 1; $k < $n; $k++) {
-                if ($candles[$k]['high'] > $max_high || $candles[$k]['low'] <= $fib_086) {
-                    $broken = true;
+            if (!$is_impulse) {
+                // Если свеча опустилась до 0.500 первой свечи ДО пробоя хая — импульс забракован
+                if ($candles[$k]['low'] <= $fib_05) {
+                    $broken_early = true;
                     break;
                 }
+                if ($candles[$k]['high'] > $h_s) {
+                    $is_impulse = true;
+                    $cur_h = $candles[$k]['high'];
+                    $end_idx = $k;
+                }
+            } else {
+                // Импульс развивается: если растет — растягиваем фибу
+                if ($candles[$k]['high'] > $cur_h) {
+                    $cur_h = $candles[$k]['high'];
+                    $end_idx = $k;
+                } else {
+                    if ($candles[$k]['low'] <= $fib_05) {
+                        // Начат откат к уровням входа
+                        break;
+                    }
+                }
             }
+        }
 
-            if (!$broken) {
-                if ($best === null || $pct > $best['pct']) {
-                    $best = [
-                        'start_time' => $candles[$cur_min_s]['time'],
-                        'end_time'   => $candles[$b]['time'],
-                        'high'       => $max_high,
-                        'low'        => $cur_min_l,
-                        'pct'        => $pct,
-                        'is_live'    => true
-                    ];
+        if ($is_impulse && !$broken_early) {
+            $pct = ($cur_h - $l_s) / $l_s * 100.0;
+            if ($pct >= $min_pct) {
+                $tp_038 = calcFibLongLog($cur_h, $l_s, 0.382);
+                $sl_lim = calcFibLongLog($cur_h, $l_s, 0.860);
+
+                $entered = false;
+                $tp_hit  = false;
+                $sl_hit  = false;
+
+                for ($p = $end_idx + 1; $p < $n; $p++) {
+                    $fib_05_final = calcFibLongLog($cur_h, $l_s, 0.500);
+                    if (!$entered) {
+                        if ($candles[$p]['low'] <= $fib_05_final) {
+                            $entered = true;
+                        }
+                    }
+                    if ($entered) {
+                        if ($candles[$p]['high'] >= $tp_038) {
+                            $tp_hit = true;
+                            break;
+                        }
+                        if ($candles[$p]['low'] <= $sl_lim) {
+                            $sl_hit = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (!$tp_hit && !$sl_hit) {
+                    if ($best === null || $pct > $best['pct']) {
+                        $best = [
+                            'start_time' => $candles[$s]['time'],
+                            'end_time'   => $candles[$end_idx]['time'],
+                            'high'       => $cur_h,
+                            'low'        => $l_s,
+                            'pct'        => $pct,
+                            'is_live'    => true
+                        ];
+                    }
                 }
             }
         }
@@ -123,43 +165,83 @@ function detectLatestShortImpulse($candles, $min_pct = 2.0) {
     $n = count($candles);
     $best = null;
 
-    for ($b = $n - 2; $b >= max(0, $n - 45); $b--) {
-        $min_low = $candles[$b]['low'];
-        if ($candles[$b + 1]['low'] < $min_low) {
-            continue;
-        }
+    for ($s = max(0, $n - 35); $s < $n - 1; $s++) {
+        $h_s = $candles[$s]['high'];
+        $l_s = $candles[$s]['low'];
+        $cur_l = $l_s;
+        $is_dump = false;
+        $broken_early = false;
+        $end_idx = $s;
 
-        $cur_max_h = $min_low;
-        $cur_max_s = $b;
-
-        for ($s = $b - 1; $s >= max(0, $b - 35); $s--) {
-            if ($candles[$s]['high'] > $cur_max_h) {
-                $cur_max_h = $candles[$s]['high'];
-                $cur_max_s = $s;
+        for ($k = $s + 1; $k < $n; $k++) {
+            $fib_05 = calcFibShortLog($h_s, $cur_l, 0.500);
+            if ($candles[$k]['high'] > $h_s) {
+                $broken_early = true;
+                break;
             }
-        }
 
-        $pct = ($cur_max_h - $min_low) / $cur_max_h * 100.0;
-        if ($pct >= $min_pct) {
-            $broken = false;
-            $fib_086 = calcFibShortLog($cur_max_h, $min_low, 0.860);
-            for ($k = $b + 1; $k < $n; $k++) {
-                if ($candles[$k]['low'] < $min_low || $candles[$k]['high'] >= $fib_086) {
-                    $broken = true;
+            if (!$is_dump) {
+                if ($candles[$k]['high'] >= $fib_05) {
+                    $broken_early = true;
                     break;
                 }
+                if ($candles[$k]['low'] < $l_s) {
+                    $is_dump = true;
+                    $cur_l = $candles[$k]['low'];
+                    $end_idx = $k;
+                }
+            } else {
+                if ($candles[$k]['low'] < $cur_l) {
+                    $cur_l = $candles[$k]['low'];
+                    $end_idx = $k;
+                } else {
+                    if ($candles[$k]['high'] >= $fib_05) {
+                        break;
+                    }
+                }
             }
+        }
 
-            if (!$broken) {
-                if ($best === null || $pct > $best['pct']) {
-                    $best = [
-                        'start_time' => $candles[$cur_max_s]['time'],
-                        'end_time'   => $candles[$b]['time'],
-                        'high'       => $cur_max_h,
-                        'low'        => $min_low,
-                        'pct'        => $pct,
-                        'is_live'    => true
-                    ];
+        if ($is_dump && !$broken_early) {
+            $pct = ($h_s - $cur_l) / $h_s * 100.0;
+            if ($pct >= $min_pct) {
+                $tp_038 = calcFibShortLog($h_s, $cur_l, 0.382);
+                $sl_lim = calcFibShortLog($h_s, $cur_l, 0.860);
+
+                $entered = false;
+                $tp_hit  = false;
+                $sl_hit  = false;
+
+                for ($p = $end_idx + 1; $p < $n; $p++) {
+                    $fib_05_final = calcFibShortLog($h_s, $cur_l, 0.500);
+                    if (!$entered) {
+                        if ($candles[$p]['high'] >= $fib_05_final) {
+                            $entered = true;
+                        }
+                    }
+                    if ($entered) {
+                        if ($candles[$p]['low'] <= $tp_038) {
+                            $tp_hit = true;
+                            break;
+                        }
+                        if ($candles[$p]['high'] >= $sl_lim) {
+                            $sl_hit = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (!$tp_hit && !$sl_hit) {
+                    if ($best === null || $pct > $best['pct']) {
+                        $best = [
+                            'start_time' => $candles[$s]['time'],
+                            'end_time'   => $candles[$end_idx]['time'],
+                            'high'       => $h_s,
+                            'low'        => $cur_l,
+                            'pct'        => $pct,
+                            'is_live'    => true
+                        ];
+                    }
                 }
             }
         }
