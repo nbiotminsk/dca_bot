@@ -214,7 +214,9 @@ find_macro_short(int lookback, float min_pct) =>
 // 1. Начальная свеча s (low = l_s, high = h_s).
 // 2. Свечи k проверяются: цена НЕ должна опускаться <= 0.500 первой свечи ДО первого пробоя ее High.
 // 3. Как только High первой свечи пробит (без касания 0.500) — импульс запущен!
-// 4. Фиба растет вслед за каждым новым High. При откате к 0.500 фиба активна, пока не собран Тейк или Стоп.
+// 4. Пока цена не коснулась 0.500 текущей растущей волны — вершина поднимается при новых High.
+// 5. Как только цена коснулась 0.500 (как в 11:00 на NEAR) — вершина БЛОКИРУЕТСЯ навсегда!
+// 6. Дальше при достижении Тейка 0.382 или Стопа 0.860 — сделка завершается и фиба удаляется.
 find_minor_long(int lookback, float min_pct, int max_duration) =>
     int   best_start = na
     float best_low   = na
@@ -227,59 +229,53 @@ find_minor_long(int lookback, float min_pct, int max_duration) =>
             float l_s = low[s]
             float h_s = high[s]
             float cur_h = h_s
-            bool  is_impulse = false
-            bool  broken_early = false
-            int   end_idx = s
+            bool  is_impulse   = false
+            bool  broken       = false
+            bool  peak_locked  = false
+            int   end_idx      = s
 
             for k = s - 1 to 0
                 if low[k] < l_s
-                    broken_early := true
+                    broken := true
                     break
                 
                 if not is_impulse
                     float fib_05_first = calc_fib_long(h_s, l_s, 0.500, use_log)
                     if low[k] <= fib_05_first
-                        broken_early := true
+                        broken := true
                         break
                     if high[k] > h_s
                         is_impulse := true
                         cur_h := high[k]
                         end_idx := k
                 else
-                    if high[k] > cur_h
-                        cur_h := high[k]
-                        end_idx := k
+                    if not peak_locked
+                        float fib_05_cur = calc_fib_long(cur_h, l_s, 0.500, use_log)
+                        if low[k] <= fib_05_cur
+                            peak_locked := true
+                        else
+                            if high[k] > cur_h
+                                cur_h := high[k]
+                                end_idx := k
+                    
+                    if peak_locked
+                        float tp_038 = calc_fib_long(cur_h, l_s, 0.382, use_log)
+                        float sl_lim = show_manip ? calc_fib_long(cur_h, l_s, 2.000, use_log) : calc_fib_long(cur_h, l_s, 0.860, use_log)
+                        if high[k] >= tp_038 or close[k] >= tp_038
+                            broken := true
+                            break
+                        if low[k] <= sl_lim
+                            broken := true
+                            break
             
-            if is_impulse and not broken_early
+            if is_impulse and not broken
                 float pct = (cur_h - l_s) / l_s * 100.0
                 if pct >= min_pct
-                    float tp_038 = calc_fib_long(cur_h, l_s, 0.382, use_log)
-                    float sl_lim = show_manip ? calc_fib_long(cur_h, l_s, 2.000, use_log) : calc_fib_long(cur_h, l_s, 0.860, use_log)
-                    float fib_05_final = calc_fib_long(cur_h, l_s, 0.500, use_log)
-
-                    bool entered  = false
-                    bool tp_hit   = false
-                    bool sl_hit   = false
-
-                    if end_idx >= 0
-                        for p = end_idx to 0
-                            if not entered
-                                if low[p] <= fib_05_final
-                                    entered := true
-                            if entered
-                                if high[p] >= tp_038 or close[p] >= tp_038
-                                    tp_hit := true
-                                    break
-                                if low[p] <= sl_lim
-                                    sl_hit := true
-                                    break
-
-                    if not tp_hit and not sl_hit
-                        if pct > best_pct
-                            best_pct   := pct
-                            best_start := bar_index - s
-                            best_low   := l_s
-                            best_high  := cur_h
+                    if pct > best_pct
+                        best_pct   := pct
+                        best_start := bar_index - s
+                        best_low   := l_s
+                        best_high  := cur_h
 
     [best_start, best_low, best_high, best_pct]
 
@@ -295,59 +291,53 @@ find_minor_short(int lookback, float min_pct, int max_duration) =>
             float h_s = high[s]
             float l_s = low[s]
             float cur_l = l_s
-            bool  is_dump = false
-            bool  broken_early = false
-            int   end_idx = s
+            bool  is_dump     = false
+            bool  broken      = false
+            bool  peak_locked = false
+            int   end_idx     = s
 
             for k = s - 1 to 0
                 if high[k] > h_s
-                    broken_early := true
+                    broken := true
                     break
                 
                 if not is_dump
                     float fib_05_first = calc_fib_short(h_s, l_s, 0.500, use_log)
                     if high[k] >= fib_05_first
-                        broken_early := true
+                        broken := true
                         break
                     if low[k] < l_s
                         is_dump := true
                         cur_l := low[k]
                         end_idx := k
                 else
-                    if low[k] < cur_l
-                        cur_l := low[k]
-                        end_idx := k
+                    if not peak_locked
+                        float fib_05_cur = calc_fib_short(h_s, cur_l, 0.500, use_log)
+                        if high[k] >= fib_05_cur
+                            peak_locked := true
+                        else
+                            if low[k] < cur_l
+                                cur_l := low[k]
+                                end_idx := k
+                    
+                    if peak_locked
+                        float tp_038 = calc_fib_short(h_s, cur_l, 0.382, use_log)
+                        float sl_lim = show_manip ? calc_fib_short(h_s, cur_l, 2.000, use_log) : calc_fib_short(h_s, cur_l, 0.860, use_log)
+                        if low[k] <= tp_038 or close[k] <= tp_038
+                            broken := true
+                            break
+                        if high[k] >= sl_lim
+                            broken := true
+                            break
             
-            if is_dump and not broken_early
+            if is_dump and not broken
                 float pct = (h_s - cur_l) / h_s * 100.0
                 if pct >= min_pct
-                    float tp_038 = calc_fib_short(h_s, cur_l, 0.382, use_log)
-                    float sl_lim = show_manip ? calc_fib_short(h_s, cur_l, 2.000, use_log) : calc_fib_short(h_s, cur_l, 0.860, use_log)
-                    float fib_05_final = calc_fib_short(h_s, cur_l, 0.500, use_log)
-
-                    bool entered  = false
-                    bool tp_hit   = false
-                    bool sl_hit   = false
-
-                    if end_idx >= 0
-                        for p = end_idx to 0
-                            if not entered
-                                if high[p] >= fib_05_final
-                                    entered := true
-                            if entered
-                                if low[p] <= tp_038 or close[p] <= tp_038
-                                    tp_hit := true
-                                    break
-                                if high[p] >= sl_lim
-                                    sl_hit := true
-                                    break
-
-                    if not tp_hit and not sl_hit
-                        if pct > best_pct
-                            best_pct   := pct
-                            best_start := bar_index - s
-                            best_high  := h_s
-                            best_low   := cur_l
+                    if pct > best_pct
+                        best_pct   := pct
+                        best_start := bar_index - s
+                        best_high  := h_s
+                        best_low   := cur_l
 
     [best_start, best_high, best_low, best_pct]
 
