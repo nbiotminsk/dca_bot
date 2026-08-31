@@ -450,7 +450,10 @@ find_minor_short(int lookback, float min_pct, int max_duration) =>
 // ══════════════════════════════════════════════════════════════════════════════
 var line[] lines_arr   = array.new_line()
 var label[] labels_arr = array.new_label()
-var table risk_tbl = table.new(position.top_right, 2, 8, bgcolor=color.new(#0b0e14, 15), border_color=color.new(#1e293b, 0), border_width=1)
+var table risk_tbl     = table.new(position.top_right, 2, 8, bgcolor=color.new(#0b0e14, 15), border_color=color.new(#1e293b, 0), border_width=1)
+
+float cur_rsi = ta.rsi(close, 14)
+float cur_cci = ta.cci(hlc3, 14)
 
 if barstate.islast
     for ln in lines_arr
