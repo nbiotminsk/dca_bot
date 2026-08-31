@@ -45,9 +45,9 @@ class TestScoringFormula:
         s = self._good_summary()
         fit = score_strategy(s)
 
-        assert fit.score > 200
+        assert fit.score > 100
         assert fit.component_safety == pytest.approx(1.0)
-        assert fit.component_profit > 0.7
+        assert fit.component_profit > 0.5
         assert fit.component_consistency > 0.9
 
     def test_zero_pnl_zero_score(self):

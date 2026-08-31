@@ -1,0 +1,76 @@
+# ═══════════════════════════════════════════════════════════════
+# HYPE 10-order FAST EXIT — оптимизированный под $200 deposit 1x
+# ═══════════════════════════════════════════════════════════════
+# Grid search 90д HYPEUSDT (2160 свечей), step=4h, non-overlap:
+#   100 вариантов (5 ps × 4 vs × 5 tp), base_qty=0.19 (как у бота)
+#
+# Winners по hold и PnL:
+#   ps=1.012 vs=1.10 tp=0.7%  → win 100%, PnL +318.5%, DD 0.00, hold 2.9ч, entr 1.67
+#   ps=1.012 vs=1.10 tp=1.0%  → win 100%, PnL +339.3%, DD 0.00, hold 4.4ч, entr 1.92  ★
+#   ps=1.015 vs=1.10 tp=1.0%  → win 99.7%, PnL +299.7%, DD -0.12, hold 5.0ч, entr 1.78
+#   ps=1.018 vs=1.10 tp=1.0%  → win 100%, PnL +313.6%, DD 0.00, hold 4.9ч, entr 1.55
+#
+# Capital load (vs=1.10, base=0.19, средняя цена ~$63.5):
+#   total=3.03 HYPE notional ~$192 → 96.1% от $200 (запас 4% на fee/funding)
+#   При vs=1.15 уже 122.5% — не влезает в 1x плечо
+# ═══════════════════════════════════════════════════════════════
+# ВЫБРАН: ps=1.012, vs=1.10, tp=1.0%
+#   - Win 100%, DD 0%, hold 4.4ч (-Sharpe) — vs 8.1ч при старой сетке
+#   - Coverage 10.2% (узкая сетка, почти нет глубоких ордеров)
+#   - Capital 96% от $200 (запас есть, но vs=1.10 максимум для 1x)
+# ═══════════════════════════════════════════════════════════════
+
+exchange: bybit
+market_type: linear
+timeframe: 1h
+history_days: 90
+horizons_hours: [24, 72, 168]
+safety_factor: 1.2
+leverage: 1
+maintenance_margin_rate: 0.005
+fee_pct: 0.0004
+
+dca:
+  orders_range: [10, 10]
+  price_scale_range: [1.01, 1.05]
+  volume_scale_thresholds:
+    conservative: 1.20
+    moderate: 1.15
+
+current_settings:
+  long:
+    # Coverage: 10.2% (узкая сетка, только мелкие откаты)
+    # Шаг цены: 1.2% между ордерами (68.73 → 67.92 → 67.11 → 66.31 → 65.52 ...)
+    # vs=1.10 → мягкий мартингейл: 0.19 / 0.21 / 0.23 / 0.25 / 0.28 / 0.30 / 0.34 / 0.37 / 0.40 / 0.44
+    # Total notional ~$192 (96% от $200), запас 4% на fee
+    # Hold ~4.4ч, win 100%, PnL backtest 90д = +339%
+    orders: 10
+    price_coverage: 0.102
+    price_scale: 1.012         # шаг 1.2%
+    volume_scale: 1.10
+    base_qty: 0.19            # $13.06 1-й ордер
+    horizon_h: 168
+
+  short:
+    # Симметрично long: шаг 1.2%, 10 ордеров, vs=1.10
+    # Grid search 90д: win 99.5%, PnL +237.9%, DD -1.06%, hold 4.3ч, cap 6.2%
+    # Hedge: small base_qty (0.012) — asymmetric 10:1 vs long
+    #   long = основной заработок, short = подстраховка на пампах
+    # Альтернатива max PnL: vs=1.20, tp=0.007 → PnL +280.8%, hold 3.0ч, cap 10.1%
+    orders: 10
+    price_coverage: 0.102
+    price_scale: 1.012         # шаг 1.2% (как long)
+    volume_scale: 1.10         # мягкий мартингейл 0.012/0.013/0.015/0.016/0.018...
+    base_qty: 0.012           # ~$0.78 1-й ордер; total ~$12 при полном заполнении (6% от $200)
+    horizon_h: 168
+
+  tp: 0.008                   # 0.8% TP — быстрый выход, баланс long/short
+
+recommendation_horizon: 168
+
+cache:
+  enabled: true
+  dir: data/cache
+trades_journal:
+  csv_path: data/trades/journal.csv
+  json_path: data/trades/journal.json

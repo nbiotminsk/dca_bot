@@ -1,0 +1,101 @@
+//@version=6
+indicator("DCA Grid", overlay=true, max_lines_count=500, max_labels_count=500)
+
+// ── Inputs ────────────────────────────────────────────────────────────────────
+i_side        = input.string("Long", "Side", options=["Long", "Short"])
+i_entryPrice  = input.float(0.0, "Entry Price (0 = last close)", minval=0.0)
+i_orders      = input.int(5, "Orders", minval=1, maxval=100)
+i_priceScale  = input.float(1.20, "Price Scale", minval=1.001, step=0.01)
+i_volumeScale = input.float(1.50, "Volume Scale", minval=1.0, step=0.1)
+i_baseQty     = input.float(1.0, "Base Qty", minval=0.00000001, step=0.1)
+i_tpPct       = input.float(1.0, "TP %", minval=0.0, step=0.1)
+i_deposit     = input.float(100.0, "Deposit $", minval=0.0, step=10.0)
+i_leverage    = input.int(10, "Leverage", minval=1, maxval=125)
+i_mmr         = input.float(0.005, "MMR", minval=0.0, step=0.001)
+i_showTp      = input.bool(true, "Show TP")
+i_showLiq     = input.bool(true, "Show Liq")
+i_showZone    = input.bool(true, "Show Zone")
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+float anchor = i_entryPrice > 0 ? i_entryPrice : close
+bool isLong = i_side == "Long"
+int xEnd = bar_index
+int xStart = bar_index - 300
+
+// ── State ────────────────────────────────────────────────────────────────────
+var line[] lines = array.new_line()
+var label[] labels = array.new_label()
+
+// ── Draw ─────────────────────────────────────────────────────────────────────
+if barstate.islast
+    for l in lines
+        line.delete(l)
+    lines.clear()
+    for lb in labels
+        label.delete(lb)
+    labels.clear()
+
+    float totalQty = 0.0
+    float totalNotional = 0.0
+    float firstLvl = na
+    float lastLvl = na
+
+    for i = 0 to i_orders - 1
+        float lvl = isLong ? anchor * math.pow(1.0 / i_priceScale, i) : anchor * math.pow(i_priceScale, i)
+        float qty = i_baseQty * math.pow(i_volumeScale, i)
+        totalQty := totalQty + qty
+        totalNotional := totalNotional + qty * lvl
+
+        if i == 0
+            firstLvl := lvl
+        lastLvl := lvl
+
+        float cumAvg = totalNotional / totalQty
+        float tpForLvl = cumAvg * (isLong ? 1.0 + i_tpPct / 100.0 : 1.0 - i_tpPct / 100.0)
+        float dropPct = isLong ? (anchor - lvl) / anchor * 100.0 : (lvl - anchor) / anchor * 100.0
+        float notional = qty * lvl
+        color lc = i == 0 ? color.yellow : (isLong ? color.teal : color.orange)
+
+        line ln = line.new(xStart, lvl, xEnd, lvl, xloc.bar_index, color=lc, width=1)
+        array.push(lines, ln)
+
+        string txt = "#" + str.tostring(i) + "  in:" + str.tostring(lvl, format.mintick) + " $" + str.tostring(notional, "#.#") + "\navg:" + str.tostring(cumAvg, format.mintick) + "  tp:" + str.tostring(tpForLvl, format.mintick) + "\nprofit:$" + str.tostring((tpForLvl - cumAvg) * totalQty, "#.##") + "  (" + str.tostring(dropPct, "#.#") + "%)"
+        label lb = label.new(xEnd, lvl, txt, xloc.bar_index, yloc.price, style=label.style_label_right, color=color.yellow, textcolor=color.black, size=size.small)
+        array.push(labels, lb)
+
+    float avgAll = totalNotional / totalQty
+    float tpAll = avgAll * (isLong ? 1.0 + i_tpPct / 100.0 : 1.0 - i_tpPct / 100.0)
+    float liqAll = avgAll * (isLong ? 1.0 - (1.0 / float(i_leverage) - i_mmr) : 1.0 + (1.0 / float(i_leverage) - i_mmr))
+    float cov = firstLvl != 0 ? (isLong ? (firstLvl - lastLvl) / firstLvl : (lastLvl - firstLvl) / firstLvl) * 100.0 : 0.0
+    float totalProfit = (tpAll - avgAll) * totalQty
+
+    if i_showZone and not na(firstLvl) and not na(lastLvl)
+        line lnL = line.new(xStart, firstLvl, xStart, lastLvl, xloc.bar_index, color=isLong ? color.teal : color.orange, width=1)
+        line lnR = line.new(xEnd, firstLvl, xEnd, lastLvl, xloc.bar_index, color=isLong ? color.teal : color.orange, width=1)
+        line lnT = line.new(xStart, firstLvl, xEnd, firstLvl, xloc.bar_index, color=isLong ? color.teal : color.orange, width=1)
+        line lnB = line.new(xStart, lastLvl, xEnd, lastLvl, xloc.bar_index, color=isLong ? color.teal : color.orange, width=1)
+        array.push(lines, lnL)
+        array.push(lines, lnR)
+        array.push(lines, lnT)
+        array.push(lines, lnB)
+
+    line lnEntry = line.new(xStart, anchor, xEnd, anchor, xloc.bar_index, color=color.yellow, width=2, style=line.style_dashed)
+    array.push(lines, lnEntry)
+    label lbEntry = label.new(xEnd, anchor, "  ENTRY  " + str.tostring(anchor, format.mintick), xloc.bar_index, yloc.price, style=label.style_label_right, color=color.yellow, textcolor=color.black, size=size.small)
+    array.push(labels, lbEntry)
+
+    if i_showTp
+        line lnTp = line.new(xStart, tpAll, xEnd, tpAll, xloc.bar_index, color=color.lime, width=2, style=line.style_dotted)
+        array.push(lines, lnTp)
+        label lbTp = label.new(xEnd, tpAll, "  TP  " + str.tostring(tpAll, format.mintick) + " (+" + str.tostring(i_tpPct, "#.##") + "%)", xloc.bar_index, yloc.price, style=label.style_label_right, color=color.yellow, textcolor=color.black, size=size.small)
+        array.push(labels, lbTp)
+
+    if i_showLiq and i_leverage > 1
+        line lnLiq = line.new(xStart, liqAll, xEnd, liqAll, xloc.bar_index, color=color.red, width=2, style=line.style_dashed)
+        array.push(lines, lnLiq)
+        label lbLiq = label.new(xEnd, liqAll, "  LIQ  " + str.tostring(liqAll, format.mintick), xloc.bar_index, yloc.price, style=label.style_label_right, color=color.yellow, textcolor=color.black, size=size.small)
+        array.push(labels, lbLiq)
+
+    string summary = i_side + "  n=" + str.tostring(i_orders) + "  ps=" + str.tostring(i_priceScale, "#.##") + "  vs=" + str.tostring(i_volumeScale, "#.##") + "\ndeposit: $" + str.tostring(i_deposit, "#.#") + "  needed: $" + str.tostring(totalNotional, "#.#") + "\ncov:" + str.tostring(cov, "#.#") + "%  roi: $" + str.tostring(totalProfit, "#.##") + "  qty:" + str.tostring(totalQty, "#.####")
+    label lbSummary = label.new(xStart, firstLvl, summary, xloc.bar_index, yloc.price, style=label.style_label_left, color=color.new(color.blue, 20), textcolor=color.white, size=size.normal)
+    array.push(labels, lbSummary)

@@ -1,0 +1,737 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bybit Martingale Grid Calculator</title>
+<style>
+:root {
+  --bg: #0f1117;
+  --surface: #1a1d2b;
+  --surface2: #242838;
+  --border: #2d3148;
+  --text: #e2e4eb;
+  --text2: #8b8fa7;
+  --accent: #5b7aff;
+  --green: #3dd68c;
+  --red: #f6465d;
+  --yellow: #f0b90b;
+  --radius: 8px;
+  --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+  padding: 20px;
+  min-height: 100vh;
+}
+.container { max-width: 1400px; margin: 0 auto; }
+h1 {
+  font-size: 24px;
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: var(--text);
+}
+h1 span { color: var(--accent); }
+.subtitle { color: var(--text2); font-size: 13px; margin-bottom: 24px; }
+
+/* Inputs */
+.inputs-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  margin-bottom: 20px;
+}
+.input-group { display: flex; flex-direction: column; gap: 4px; }
+.input-group label {
+  font-size: 12px;
+  color: var(--text2);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+.input-group input, .input-group select {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 15px;
+  color: var(--text);
+  font-family: var(--font);
+  outline: none;
+  transition: border-color 0.15s;
+  width: 100%;
+}
+.input-group select { cursor: pointer; }
+.input-group input:focus, .input-group select:focus { border-color: var(--accent); }
+.input-group .hint { font-size: 11px; color: var(--text2); margin-top: 2px; line-height: 1.3; }
+
+/* Summary */
+.summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+  margin-bottom: 20px;
+}
+.summary-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+}
+.summary-card .label {
+  font-size: 11px;
+  color: var(--text2);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  font-weight: 500;
+}
+.summary-card .value {
+  font-size: 17px;
+  font-weight: 600;
+  margin-top: 4px;
+  font-variant-numeric: tabular-nums;
+}
+.summary-card .value.green { color: var(--green); }
+.summary-card .value.red { color: var(--red); }
+.summary-card .value.accent { color: var(--accent); }
+.summary-card .sub { font-size: 11px; color: var(--text2); margin-top: 2px; }
+
+/* Table */
+.table-wrap {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  margin-bottom: 20px;
+}
+.table-wrap .table-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.table-wrap .table-header h2 { font-size: 16px; font-weight: 600; }
+.table-wrap .table-header .controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.table-wrap .table-header .controls input,
+.table-wrap .table-header .controls select {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 13px;
+  color: var(--text);
+  font-family: var(--font);
+  outline: none;
+}
+.table-wrap .table-header .controls input:focus,
+.table-wrap .table-header .controls select:focus { border-color: var(--accent); }
+.table-wrap .table-header .controls label { font-size: 12px; color: var(--text2); }
+
+.table-scroll {
+  overflow-x: auto;
+  max-height: 600px;
+  overflow-y: auto;
+}
+.table-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
+.table-scroll::-webkit-scrollbar-track { background: var(--bg); }
+.table-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+thead th {
+  background: var(--surface2);
+  padding: 10px 10px;
+  font-weight: 500;
+  color: var(--text2);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  border-bottom: 1px solid var(--border);
+}
+thead th:nth-child(2) { text-align: left; }
+thead th:first-child { text-align: center; width: 36px; }
+tbody td {
+  padding: 9px 10px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  border-bottom: 1px solid rgba(45,49,72,0.4);
+  white-space: nowrap;
+}
+tbody td:first-child { text-align: center; color: var(--text2); font-size: 12px; }
+tbody td:nth-child(2) { text-align: left; font-weight: 500; }
+tbody tr:hover { background: rgba(91,122,255,0.05); }
+tbody tr.level-fresh td { color: var(--text); }
+tbody tr.level-active { background: rgba(61,214,140,0.04); }
+
+.footer-note { color: var(--text2); font-size: 12px; text-align: right; padding: 8px 20px; border-top: 1px solid var(--border); }
+
+/* Preset buttons */
+.preset-bar { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+.preset-bar button {
+  background: var(--surface2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  padding: 8px 16px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-size: 13px;
+  font-family: var(--font);
+  transition: background 0.15s;
+}
+.preset-bar button:hover { background: var(--border); }
+
+@media (max-width: 768px) {
+  body { padding: 12px; }
+  .inputs-grid { grid-template-columns: 1fr 1fr; padding: 14px; gap: 8px; }
+  .summary { grid-template-columns: repeat(2, 1fr); }
+  table { font-size: 12px; }
+  thead th, tbody td { padding: 6px 5px; }
+  .table-wrap .table-header { padding: 10px 14px; }
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <h1><span>Bybit</span> Martingale Grid Calculator</h1>
+  <div class="subtitle">Расчёт сетки ордеров по официальным формулам Bybit Futures Martingale Bot</div>
+
+  <div class="inputs-grid">
+    <div class="input-group" style="grid-column: 1 / -1;">
+      <label>Пресеты и Режим расчета</label>
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <select id="botMode" onchange="toggleBotMode()" style="flex:2; min-width:200px;">
+          <option value="bybit">Bybit Futures Martingale (Фикс. депозит USDT)</option>
+          <option value="custom">Custom DCA Bot (Фикс. base_qty в монетах)</option>
+        </select>
+        <button type="button" onclick="loadHypeFastPreset()" style="background:var(--surface2); color:var(--text); border:1px solid var(--border); padding:8px 12px; border-radius:6px; font-size:13px; cursor:pointer; flex:1;">
+          ⚡ HYPE Calibrated Fast (8 ord)
+        </button>
+      </div>
+    </div>
+    <div class="input-group">
+      <label>Монета</label>
+      <select id="coinSelect" onchange="fetchMarketPrice()">
+        <option value="UNI">UNI / USDT</option>
+        <option value="HYPE" selected>HYPE / USDT</option>
+        <option value="SOL">SOL / USDT</option>
+        <option value="LINK">LINK / USDT</option>
+        <option value="ETH">ETH / USDT</option>
+        <option value="MNT">MNT / USDT</option>
+        <option value="GRAM">GRAM / USDT</option>
+      </select>
+    </div>
+    <div class="input-group">
+      <label>Направление</label>
+      <select id="direction">
+        <option value="long">Long</option>
+        <option value="short">Short</option>
+      </select>
+    </div>
+    <div class="input-group">
+      <label>Цена входа (USDT)</label>
+      <input type="number" id="entryPrice" value="100" step="any">
+      <div class="hint">Начальная цена для первого ордера</div>
+    </div>
+    <div class="input-group" id="invGroup">
+      <label>Инвестиции (USDT)</label>
+      <input type="number" id="investment" value="500" step="any">
+      <div class="hint">Общая сумма в USDT на всю сетку</div>
+    </div>
+    <div class="input-group" id="baseQtyGroup" style="display:none">
+      <label>1-й объем (base_qty)</label>
+      <input type="number" id="baseQty" value="0.19" step="0.001">
+      <div class="hint">Размер 1-го ордера в монетах</div>
+    </div>
+    <div class="input-group">
+      <label>Шаг цены (%)</label>
+      <input type="number" id="priceDeviation" value="2" step="0.1" min="0.1">
+      <div class="hint">Начальный % отклонения цены (long: ↓, short: ↑)</div>
+    </div>
+    <div class="input-group">
+      <label>Множитель шага цены</label>
+      <input type="number" id="priceScale" value="1.0" step="0.1" min="1">
+      <div class="hint">Множитель расстояния между ордерами (1.0–2.0)</div>
+    </div>
+    <div class="input-group">
+      <label>База шага цены</label>
+      <select id="stepBase">
+        <option value="last">От пред. ордера (Bybit std)</option>
+        <option value="avg">От средней цены</option>
+      </select>
+      <div class="hint">От какой цены считать % отклонения</div>
+    </div>
+    <div class="input-group">
+      <label>Множитель позиции</label>
+      <input type="number" id="multiplier" value="1.5" step="0.1" min="1">
+      <div class="hint">Маржа след. ордера = маржа пред. × множитель (1–2)</div>
+    </div>
+    <div class="input-group">
+      <label>Макс. доп. ордеров</label>
+      <input type="number" id="maxOrders" value="6" step="1" min="1" max="50">
+      <div class="hint">Количество safety order (не считая первый)</div>
+    </div>
+    <div class="input-group">
+      <label>Кредитное плечо (x)</label>
+      <input type="number" id="leverage" value="10" step="1" min="1" max="50">
+    </div>
+    <div class="input-group">
+      <label>Режим Take Profit</label>
+      <select id="tpType">
+        <option value="investment">% от инвестиций (ROI)</option>
+        <option value="price">% от средней цены</option>
+      </select>
+    </div>
+    <div class="input-group">
+      <label>Целевая прибыль (%)</label>
+      <input type="number" id="targetProfit" value="3" step="0.1" min="0">
+      <div class="hint">Целевой % прибыли согласно режиму TP</div>
+    </div>
+    <div class="input-group">
+      <label>Стоп-лосс (%)</label>
+      <input type="number" id="stopLoss" value="20" step="1" min="1" max="100">
+      <div class="hint">% от инвестиций — макс. допустимый убыток</div>
+    </div>
+    <div class="input-group">
+      <label>Подд. маржа (MMR %)</label>
+      <input type="number" id="mmr" value="0.5" step="0.1" min="0.1" max="10">
+      <div class="hint">Maintenance Margin Rate (default 0.5%)</div>
+    </div>
+  </div>
+
+  <div class="summary" id="summary"></div>
+
+  <div class="table-wrap">
+    <div class="table-header">
+      <h2>Сетка ордеров</h2>
+      <div class="controls">
+        <label for="pricePrecision">Точность:</label>
+        <select id="pricePrecision">
+          <option value="2">0.00</option>
+          <option value="4" selected>0.0000</option>
+          <option value="6">0.000000</option>
+        </select>
+        <label for="viewMode">Вид:</label>
+        <select id="viewMode">
+          <option value="full">Полный</option>
+          <option value="compact">Компактный</option>
+        </select>
+      </div>
+    </div>
+    <div class="table-scroll">
+      <table>
+        <thead id="tableHead"></thead>
+        <tbody id="tableBody"></tbody>
+      </table>
+    </div>
+    <div class="footer-note" id="footerNote"></div>
+  </div>
+
+  <div class="preset-bar">
+    <button onclick="savePreset()">Сохранить preset</button>
+    <button onclick="loadPreset()">Загрузить preset</button>
+    <input type="file" id="presetFile" accept=".json" style="display:none" onchange="handlePresetFile(event)">
+  </div>
+</div>
+
+<script>
+const TAKER_FEE = 0.00055; // 0.055%
+
+const inputIds = [
+  'direction','entryPrice','investment','baseQty','priceDeviation','priceScale','stepBase',
+  'multiplier','maxOrders','leverage','tpType','targetProfit','stopLoss','mmr'
+];
+
+function toggleBotMode() {
+  const botMode = document.getElementById('botMode').value;
+  if (botMode === 'custom') {
+    document.getElementById('invGroup').style.display = 'none';
+    document.getElementById('baseQtyGroup').style.display = 'flex';
+  } else {
+    document.getElementById('invGroup').style.display = 'flex';
+    document.getElementById('baseQtyGroup').style.display = 'none';
+  }
+  render();
+}
+
+function loadHypeFastPreset() {
+  document.getElementById('botMode').value = 'custom';
+  toggleBotMode();
+  document.getElementById('coinSelect').value = 'HYPE';
+  document.getElementById('direction').value = 'long';
+  document.getElementById('baseQty').value = 0.19;
+  document.getElementById('leverage').value = 1;
+  document.getElementById('maxOrders').value = 7; // 8 total (1 initial + 7 safety)
+  document.getElementById('priceDeviation').value = 2.28;
+  document.getElementById('priceScale').value = 1.0228;
+  document.getElementById('multiplier').value = 1.10;
+  document.getElementById('tpType').value = 'price';
+  document.getElementById('targetProfit').value = 1.0;
+  document.getElementById('stopLoss').value = 20;
+  
+  fetchMarketPrice();
+}
+
+async function fetchMarketPrice() {
+  const coin = document.getElementById('coinSelect').value;
+  const symbolMap = {
+    UNI: 'UNIUSDT', HYPE: 'HYPEUSDT', SOL: 'SOLUSDT',
+    LINK: 'LINKUSDT', ETH: 'ETHUSDT', MNT: 'MNTUSDT', GRAM: 'GRAMUSDT'
+  };
+  const sym = symbolMap[coin] || 'SOLUSDT';
+  try {
+    const res = await fetch(`https://api.bybit.com/v5/market/kline?category=linear&symbol=${sym}&interval=D&limit=1`);
+    const data = await res.json();
+    if (data.retCode === 0 && data.result.list.length > 0) {
+      const price = parseFloat(data.result.list[0][4]);
+      document.getElementById('entryPrice').value = price;
+      render();
+    }
+  } catch(e) { console.error(e); }
+}
+
+function getVals() {
+  return {
+    botMode: document.getElementById('botMode').value,
+    direction: document.getElementById('direction').value,
+    entryPrice: +document.getElementById('entryPrice').value,
+    investment: +document.getElementById('investment').value,
+    baseQty: +document.getElementById('baseQty').value,
+    priceDeviation: +document.getElementById('priceDeviation').value,
+    priceScale: +document.getElementById('priceScale').value || 1.0,
+    stepBase: document.getElementById('stepBase').value,
+    multiplier: +document.getElementById('multiplier').value,
+    maxOrders: +document.getElementById('maxOrders').value,
+    leverage: +document.getElementById('leverage').value,
+    tpType: document.getElementById('tpType').value,
+    targetProfit: +document.getElementById('targetProfit').value,
+    stopLoss: +document.getElementById('stopLoss').value,
+    mmr: +document.getElementById('mmr').value || 0.5,
+    precision: +document.getElementById('pricePrecision').value,
+    viewMode: document.getElementById('viewMode').value,
+  };
+}
+
+function calculate() {
+  const v = getVals();
+  if (!v.entryPrice || !v.leverage || !v.maxOrders) return null;
+
+  const isLong = v.direction === 'long';
+  const N = v.maxOrders;  // number of additional (safety) orders
+  const total = N + 1;    // total orders including initial
+  const m = v.multiplier;
+  const mmr = v.mmr / 100;
+
+  // Initial margin calculation
+  let initMargin;
+  if (v.botMode === 'bybit') {
+    if (!v.investment) return null;
+    if (Math.abs(m - 1) < 1e-9) {
+      initMargin = v.investment / total;
+    } else {
+      initMargin = v.investment * (m - 1) / (Math.pow(m, total) - 1);
+    }
+  }
+
+  const rows = [];
+  let totalCoins = 0, totalMargin = 0, totalEntryValue = 0;
+  let avgCost = v.entryPrice;
+  let prevPrice = v.entryPrice;
+
+  for (let i = 0; i < total; i++) {
+    // Price for this order
+    let price;
+    if (i === 0) {
+      price = v.entryPrice;
+    } else {
+      const currentStepDev = (v.priceDeviation / 100) * Math.pow(v.priceScale, i - 1);
+      const basePrice = v.stepBase === 'avg' ? avgCost : prevPrice;
+      price = isLong ? basePrice * (1 - currentStepDev) : basePrice * (1 + currentStepDev);
+    }
+    if (price <= 0) break;
+    prevPrice = price;
+
+    let margin, coins, notional;
+    if (v.botMode === 'custom') {
+      coins = v.baseQty * Math.pow(m, i);
+      notional = coins * price;
+      margin = notional / v.leverage;
+    } else {
+      margin = initMargin * Math.pow(m, i);
+      notional = margin * v.leverage;
+      coins = notional / price;
+    }
+
+    totalCoins += coins;
+    totalMargin += margin;
+    totalEntryValue += coins * price;
+
+    // Update avg cost AFTER including this order
+    avgCost = totalEntryValue / totalCoins;
+
+    // Liquidation price (isolated long/short)
+    let liqPrice = 0;
+    if (isLong) {
+      liqPrice = (totalEntryValue - totalMargin) / (totalCoins * (1 - mmr));
+    } else {
+      liqPrice = (totalEntryValue + totalMargin) / (totalCoins * (1 + mmr));
+    }
+    if (liqPrice <= 0) liqPrice = 0;
+
+    const priceChange = isLong
+      ? (1 - price / v.entryPrice) * 100
+      : (price / v.entryPrice - 1) * 100;
+
+    const distToLiq = liqPrice > 0
+      ? (isLong ? (avgCost - liqPrice) / avgCost * 100 : (liqPrice - avgCost) / avgCost * 100)
+      : 0;
+
+    const curDistToLiq = liqPrice > 0
+      ? (isLong ? (price - liqPrice) / price * 100 : (liqPrice - price) / price * 100)
+      : 0;
+
+    // Take Profit calculation
+    const tpSign = isLong ? 1 : -1;
+    let tpPrice, profitAtTp, roiOnInvestment;
+
+    if (v.tpType === 'investment') {
+      profitAtTp = v.investment * (v.targetProfit / 100);
+      tpPrice = avgCost + tpSign * (profitAtTp / totalCoins);
+      roiOnInvestment = v.targetProfit;
+    } else {
+      tpPrice = avgCost * (1 + tpSign * (v.targetProfit / 100));
+      profitAtTp = totalCoins * Math.abs(tpPrice - avgCost);
+      roiOnInvestment = v.investment > 0 ? (profitAtTp / v.investment) * 100 : 0;
+    }
+
+    const roiAtTp = totalMargin > 0 ? profitAtTp / totalMargin * 100 : 0;
+
+    // SL: loss = stopLoss% of investment
+    const stopLossUsdt = v.investment * v.stopLoss / 100;
+    const slPrice = isLong
+      ? Math.max(0, avgCost - stopLossUsdt / totalCoins)
+      : avgCost + stopLossUsdt / totalCoins;
+
+    const lossAtSl = totalCoins * (slPrice - avgCost) * (isLong ? 1 : -1);
+    const roiAtSl = totalMargin > 0 ? lossAtSl / totalMargin * 100 : 0;
+    const roiOnInvSl = v.investment > 0 ? lossAtSl / v.investment * 100 : 0;
+
+    rows.push({
+      level: i,
+      price,
+      priceChange,
+      margin,
+      notional,
+      coins,
+      cumMargin: totalMargin,
+      cumCoins: totalCoins,
+      avgCost,
+      liqPrice,
+      distToLiq,
+      curDistToLiq,
+      tpPrice,
+      profitAtTp,
+      roiAtTp,
+      roiOnInvestment,
+      slPrice,
+      lossAtSl,
+      roiAtSl,
+      roiOnInvSl,
+    });
+  }
+  return rows;
+}
+
+function fmt(n, d = 2) {
+  if (n === undefined || n === null || isNaN(n)) return '—';
+  return Number(n).toLocaleString('ru-RU', { minimumFractionDigits: d, maximumFractionDigits: d });
+}
+
+function fmtSz(n) {
+  if (n === undefined || n === null || isNaN(n)) return '—';
+  if (Math.abs(n) >= 1e6) return fmt(n / 1e6, 2) + 'M';
+  if (Math.abs(n) >= 1e3) return fmt(n / 1e3, 1) + 'K';
+  return fmt(n, 2);
+}
+
+const COLUMNS = {
+  full: [
+    { key: 'level', label: '#', align: 'center' },
+    { key: 'price', label: 'Цена', align: 'left', cls: 'price-col' },
+    { key: 'priceChange', label: 'Δ от входа %' },
+    { key: 'margin', label: 'Маржа' },
+    { key: 'coins', label: 'Монеты', fmt: (v) => fmt(v, 4) },
+    { key: 'notional', label: 'Номинал', fmt: fmtSz },
+    { key: 'cumMargin', label: 'Маржа всего' },
+    { key: 'cumCoins', label: 'Монет всего', fmt: (v) => fmt(v, 4) },
+    { key: 'avgCost', label: 'Сред. вход' },
+    { key: 'liqPrice', label: 'Ликвидация', fmt: (v) => v > 0 ? fmt(v, 4) : '—', cls: 'red' },
+    { key: 'curDistToLiq', label: 'До ликв. %', fmt: (v) => v > 0 ? fmt(v, 2) + '%' : '—' },
+    { key: 'tpPrice', label: 'Цена TP', fmt: (v) => fmt(v, 4), cls: 'green' },
+    { key: 'profitAtTp', label: 'Профит', fmt: (v) => fmt(v, 2), cls: 'green' },
+    { key: 'roiOnInvestment', label: 'ROI инв.', fmt: (v) => fmt(v, 2) + '%', cls: 'green' },
+  ],
+  compact: [
+    { key: 'level', label: '#', align: 'center' },
+    { key: 'price', label: 'Цена', align: 'left', cls: 'price-col' },
+    { key: 'priceChange', label: 'Δ%' },
+    { key: 'margin', label: 'Маржа', fmt: (v) => fmt(v, 1) },
+    { key: 'cumMargin', label: '↕Маржа', fmt: (v) => fmt(v, 1) },
+    { key: 'avgCost', label: 'Сред.', fmt: (v) => fmt(v, 4) },
+    { key: 'liqPrice', label: 'Ликв.', fmt: (v) => v > 0 ? fmt(v, 4) : '—', cls: 'red' },
+    { key: 'curDistToLiq', label: 'До ликв.%', fmt: (v) => v > 0 ? fmt(v, 1) + '%' : '—' },
+    { key: 'tpPrice', label: 'Цена TP', fmt: (v) => fmt(v, 4) },
+    { key: 'profitAtTp', label: 'Профит', fmt: (v) => fmt(v, 2) },
+  ]
+};
+
+function render() {
+  const grid = calculate();
+  const v = getVals();
+  const mode = v.viewMode;
+  const cols = COLUMNS[mode] || COLUMNS.full;
+
+  // Summary
+  if (!grid || grid.length === 0) {
+    document.getElementById('summary').innerHTML = '';
+    document.getElementById('tableHead').innerHTML = '';
+    document.getElementById('tableBody').innerHTML =
+      '<tr><td colspan="20" style="text-align:center;padding:40px;color:var(--text2)">Заполните параметры для расчёта</td></tr>';
+    document.getElementById('footerNote').textContent = '';
+    return;
+  }
+
+  const last = grid[grid.length - 1];
+  const dirLabel = v.direction === 'long' ? 'Long' : 'Short';
+  const dirSign = v.direction === 'long' ? 1 : -1;
+
+  const sumHTML = `
+    <div class="summary-card">
+      <div class="label">Направление</div>
+      <div class="value accent">${dirLabel}</div>
+      <div class="sub">${grid.length} ордеров (${grid.length - 1} safety)</div>
+    </div>
+    <div class="summary-card">
+      <div class="label">Всего маржи</div>
+      <div class="value accent">${fmt(last.cumMargin)} USDT</div>
+      <div class="sub">из ${fmt(v.investment)} USDT инвестиций</div>
+    </div>
+    <div class="summary-card">
+      <div class="label">Размер позиции</div>
+      <div class="value">${fmt(last.cumCoins, 4)}</div>
+      <div class="sub">номинал ${fmtSz(last.cumCoins * last.avgCost)} USDT</div>
+    </div>
+    <div class="summary-card">
+      <div class="label">Средняя цена входа</div>
+      <div class="value">${fmt(last.avgCost, 4)}</div>
+    </div>
+    <div class="summary-card">
+      <div class="label">Цена ликвидации</div>
+      <div class="value ${last.liqPrice > 0 ? 'red' : ''}">${last.liqPrice > 0 ? fmt(last.liqPrice, 4) : '—'}</div>
+      <div class="sub">дист. от сред. ${fmt(last.distToLiq, 2)}%</div>
+    </div>
+    <div class="summary-card">
+      <div class="label">Цена TP (${fmt(v.targetProfit)}%)</div>
+      <div class="value green">${fmt(last.tpPrice, 4)}</div>
+      <div class="sub">профит ${fmt(last.profitAtTp)} USDT (ROI: ${fmt(last.roiAtTp, 2)}%)</div>
+    </div>
+    <div class="summary-card">
+      <div class="label">Стоп-лосс (${fmt(v.stopLoss)}%)</div>
+      <div class="value red">${fmt(last.slPrice, 4)}</div>
+      <div class="sub">убыток ${fmt(last.lossAtSl)} USDT (${fmt(last.roiOnInvSl, 2)}%)</div>
+    </div>
+  `;
+  document.getElementById('summary').innerHTML = sumHTML;
+
+  // Headers
+  let th = '<tr>';
+  cols.forEach(c => {
+    const a = c.align || 'right';
+    th += `<th style="text-align:${a}">${c.label}</th>`;
+  });
+  th += '</tr>';
+  document.getElementById('tableHead').innerHTML = th;
+
+  // Body
+  let tb = '';
+  grid.forEach((r, idx) => {
+    tb += '<tr>';
+    cols.forEach(c => {
+      const a = c.align || 'right';
+      let val = r[c.key];
+      let display;
+      if (c.fmt) {
+        display = c.fmt(val, r);
+      } else if (typeof val === 'number') {
+        display = fmt(val);
+      } else {
+        display = val !== undefined && val !== null ? String(val) : '—';
+      }
+      const cls = c.cls ? ` class="${c.cls}"` : '';
+      tb += `<td style="text-align:${a}"${cls}>${display}</td>`;
+    });
+    tb += '</tr>';
+  });
+  document.getElementById('tableBody').innerHTML = tb;
+
+  // Fees note
+  const totalFees = last.cumMargin * 2 * TAKER_FEE;
+  document.getElementById('footerNote').textContent =
+    `* Комиссия taker ~${fmt(totalFees)} USDT. Ликвидация при MMR ${fmt(v.mmr)}%. TP/SL — ориентировочные цены.`;
+}
+
+// Auto-calc
+inputIds.forEach(id => {
+  const el = document.getElementById(id);
+  if (el) el.addEventListener('input', render);
+});
+document.getElementById('pricePrecision').addEventListener('change', render);
+document.getElementById('viewMode').addEventListener('change', render);
+
+render();
+
+// Presets
+function savePreset() {
+  const data = {};
+  inputIds.forEach(id => { data[id] = document.getElementById(id).value; });
+  data.pricePrecision = document.getElementById('pricePrecision').value;
+  data.viewMode = document.getElementById('viewMode').value;
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'bybit_martingale_preset.json';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+function loadPreset() { document.getElementById('presetFile').click(); }
+function handlePresetFile(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    try {
+      const data = JSON.parse(ev.target.result);
+      inputIds.forEach(id => { if (data[id] !== undefined) document.getElementById(id).value = data[id]; });
+      if (data.pricePrecision) document.getElementById('pricePrecision').value = data.pricePrecision;
+      if (data.viewMode) document.getElementById('viewMode').value = data.viewMode;
+      render();
+    } catch (_) { alert('Ошибка загрузки preset'); }
+  };
+  reader.readAsText(file);
+  e.target.value = '';
+}
+</script>
+</body>
+</html>

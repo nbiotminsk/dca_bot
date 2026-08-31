@@ -1,0 +1,55 @@
+# ═══════════════════════════════════════════════════════════════
+# HYPE BEST — оптимизированный пресет по актуальным 90-дневным данным
+# (перебор без ограничения ps_min=1.10)
+# ═══════════════════════════════════════════════════════════════
+# Long: ps=1.06, 8 ордеров, coverage ~33.5%, TP 0.5%, vs=1.20
+#   Backtest 90д: win 99.7%, PnL +117%, DD -0.28%, hold 5.8ч, 0 ликвидаций
+# Short: ps=1.05, 10 ордеров, coverage ~35.5%, TP 1.0%, vs=1.20
+#   Backtest 90д: win 99.4%, PnL +138%, DD -0.17%, hold 11.8ч, 0 ликвидаций
+# ═══════════════════════════════════════════════════════════════
+
+exchange: bybit
+market_type: linear
+timeframe: 1h
+history_days: 90
+horizons_hours: [24, 72, 168]
+safety_factor: 1.2
+leverage: 1
+maintenance_margin_rate: 0.005
+fee_pct: 0.0004
+
+dca:
+  orders_range: [7, 10]
+  price_scale_range: [1.05, 1.07]
+  volume_scale_thresholds:
+    conservative: 1.20
+    moderate: 1.15
+
+current_settings:
+  long:
+    orders: 8
+    price_coverage: 0.335
+    price_scale: 1.06
+    volume_scale: 1.20
+    base_qty: 0.19
+    horizon_h: 168
+
+  short:
+    orders: 10
+    price_coverage: 0.355
+    price_scale: 1.05
+    volume_scale: 1.20
+    base_qty: 0.012
+    horizon_h: 168
+
+  tp: 0.007
+
+recommendation_horizon: 168
+
+cache:
+  enabled: true
+  dir: data/cache
+
+trades_journal:
+  csv_path: data/trades/journal.csv
+  json_path: data/trades/journal.json

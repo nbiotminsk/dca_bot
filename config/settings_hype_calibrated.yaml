@@ -1,0 +1,60 @@
+# ═══════════════════════════════════════════════════════════════
+# ВАРИАНТ 1: horizon 168ч — БЫСТРЫЙ (max profit)
+# ═══════════════════════════════════════════════════════════════
+# КАЛИБРОВКА под реальный бот (входы по HYPE 68.73→58.59, qty 0.19→0.47):
+#   price_scale:  avg 1.0407  → 1.041
+#   volume_scale:  avg 1.2542 → 1.254
+#   base_qty:      0.19 HYPE (1-й ордер = $13.06)
+# Total notional при полном заполнении ≈ $88.68 → 44.3% от $200 депозита
+# ═══════════════════════════════════════════════════════════════
+
+exchange: bybit
+market_type: linear
+timeframe: 1h
+history_days: 90
+horizons_hours: [24, 72, 168]
+safety_factor: 1.2
+leverage: 1
+maintenance_margin_rate: 0.005
+fee_pct: 0.0004             # maker 0.02% × 2 стороны = 0.04% за цикл
+
+dca:
+  orders_range: [5, 5]
+  price_scale_range: [1.03, 1.10]
+  volume_scale_thresholds:
+    conservative: 1.20
+    moderate: 1.15
+
+current_settings:
+  long:
+    # Coverage (actual): 1 - (1/1.041)^4 = 0.1462 ≈ 14.6%
+    # Шаг цены: ~3.9% между ордерами (avg 1.0407)
+    # Мартингейл: ~25.4% (avg 1.2542)
+    # Total notional при полном заполнении: ~$88.68 (44.3% от $200)
+    orders: 5
+    price_coverage: 0.146
+    price_scale: 1.041         # 68.73 → 66.04 → 63.45 → 60.96 → 58.57
+    volume_scale: 1.254        # 0.19 / 0.24 / 0.30 / 0.37 / 0.47
+    base_qty: 0.19            # $13.06 1-й ордер; total ~$88.68 при полном заполнении
+    horizon_h: 168           # 7 дней на закрытие сделки
+
+  short:
+    # оставлено без изменений — реальные данные только для long
+    orders: 5
+    price_coverage: 0.126
+    price_scale: 1.03
+    volume_scale: 1.20
+    base_qty: 0.015
+    horizon_h: 168
+
+  tp: 0.010                   # 1.0% TP
+
+recommendation_horizon: 168
+
+cache:
+  enabled: true
+  dir: data/cache
+
+trades_journal:
+  csv_path: data/trades/journal.csv
+  json_path: data/trades/journal.json

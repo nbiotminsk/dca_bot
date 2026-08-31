@@ -1,0 +1,1058 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bybit Futures Grid Calculator</title>
+<style>
+:root {
+  --bg: #0f1117;
+  --surface: #1a1d2b;
+  --surface2: #242838;
+  --border: #2d3148;
+  --text: #e2e4eb;
+  --text2: #8b8fa7;
+  --accent: #5b7aff;
+  --green: #3dd68c;
+  --red: #f6465d;
+  --yellow: #ffd700;
+  --radius: 8px;
+  --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+  padding: 20px;
+  min-height: 100vh;
+}
+.container { max-width: 1400px; margin: 0 auto; }
+h1 { font-size: 24px; font-weight: 600; margin-bottom: 8px; }
+h1 span { color: var(--accent); }
+.subtitle { color: var(--text2); font-size: 13px; margin-bottom: 24px; }
+
+.inputs-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  margin-bottom: 12px;
+}
+.input-group { display: flex; flex-direction: column; gap: 4px; }
+.input-group label {
+  font-size: 11px; color: var(--text2); font-weight: 500;
+  text-transform: uppercase; letter-spacing: 0.3px;
+}
+.input-group input, .input-group select {
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: 6px; padding: 10px 12px; font-size: 15px;
+  color: var(--text); font-family: var(--font);
+  outline: none; transition: border-color 0.15s; width: 100%;
+}
+.input-group select { cursor: pointer; }
+.input-group input:focus, .input-group select:focus { border-color: var(--accent); }
+.input-group .hint { font-size: 11px; color: var(--text2); margin-top: 2px; line-height: 1.3; }
+
+/* Trailing section */
+.trailing-section {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 20px;
+  margin-bottom: 12px;
+}
+.trailing-section .trailing-header {
+  display: flex; justify-content: space-between; align-items: center;
+  flex-wrap: wrap; gap: 8px; margin-bottom: 12px;
+}
+.trailing-section .trailing-header h3 {
+  font-size: 14px; font-weight: 600; color: var(--text);
+}
+.trailing-section .trailing-header label { font-size: 12px; color: var(--text2); display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.trailing-section .trailing-header input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; }
+.trailing-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px;
+}
+.trailing-grid .input-group input:disabled { opacity: 0.4; cursor: not-allowed; }
+.trailing-vis { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); display: none; }
+.trailing-vis.active { display: block; }
+.trailing-vis .sim-slider { width: 100%; margin: 8px 0; accent-color: var(--accent); }
+.trailing-vis .sim-row { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
+.trailing-vis .sim-row span { font-size: 13px; color: var(--text2); }
+.trailing-vis .sim-row .val { color: var(--text); font-weight: 600; }
+
+/* Range bar */
+.range-bar-wrap {
+  position: relative; height: 40px; margin: 8px 0; overflow: visible;
+}
+.range-bar-track {
+  position: absolute; left: 0; right: 0; top: 50%; height: 4px;
+  background: var(--border); border-radius: 2px; transform: translateY(-50%);
+}
+.range-bar-fill {
+  position: absolute; top: 50%; height: 4px; border-radius: 2px;
+  transform: translateY(-50%); background: var(--accent); opacity: 0.6;
+  transition: left 0.2s, right 0.2s;
+}
+.range-bar-ticks { position: absolute; top: 0; left: 0; right: 0; height: 100%; }
+.range-tick {
+  position: absolute; top: 50%; width: 2px; height: 12px;
+  background: var(--text2); transform: translate(-50%, -50%); border-radius: 1px;
+  opacity: 0.5;
+}
+.range-tick.tick-buy { background: var(--green); opacity: 0.8; }
+.range-tick.tick-sell { background: var(--red); opacity: 0.8; }
+.range-tick.tick-cur { background: var(--yellow); opacity: 1; width: 4px; height: 16px; z-index: 2; }
+.range-label {
+  position: absolute; font-size: 10px; color: var(--text2); white-space: nowrap;
+  transform: translateX(-50%);
+}
+.range-label.lo { top: 100%; }
+.range-label.hi { top: 100%; }
+.range-label.cur { top: -16px; color: var(--yellow); font-weight: 600; }
+.range-label.traillo { top: -16px; color: var(--red); font-size: 10px; display: none; }
+.range-label.trailhi { top: -16px; color: var(--green); font-size: 10px; display: none; }
+
+.summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px; margin-bottom: 20px;
+}
+.summary-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 12px 14px;
+}
+.summary-card .label {
+  font-size: 11px; color: var(--text2); text-transform: uppercase;
+  letter-spacing: 0.3px; font-weight: 500;
+}
+.summary-card .value {
+  font-size: 17px; font-weight: 600; margin-top: 4px;
+  font-variant-numeric: tabular-nums;
+}
+.summary-card .value.green { color: var(--green); }
+.summary-card .value.red { color: var(--red); }
+.summary-card .value.accent { color: var(--accent); }
+.summary-card .sub { font-size: 11px; color: var(--text2); margin-top: 2px; }
+
+.table-wrap {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); overflow: hidden; margin-bottom: 20px;
+}
+.table-wrap .table-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 14px 20px; border-bottom: 1px solid var(--border); flex-wrap: wrap; gap: 8px;
+}
+.table-wrap .table-header h2 { font-size: 16px; font-weight: 600; }
+.table-wrap .table-header .controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.table-wrap .table-header .controls select {
+  background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+  padding: 6px 10px; font-size: 13px; color: var(--text); font-family: var(--font); outline: none;
+}
+.table-wrap .table-header .controls select:focus { border-color: var(--accent); }
+.table-scroll { overflow-x: auto; max-height: 500px; overflow-y: auto; }
+.table-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
+.table-scroll::-webkit-scrollbar-track { background: var(--bg); }
+.table-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+thead th {
+  background: var(--surface2); padding: 10px 10px; font-weight: 500;
+  color: var(--text2); font-size: 11px; text-transform: uppercase;
+  letter-spacing: 0.3px; white-space: nowrap; position: sticky; top: 0;
+  z-index: 1; border-bottom: 1px solid var(--border);
+}
+thead th:first-child { text-align: center; width: 36px; }
+tbody td {
+  padding: 9px 10px; text-align: right; font-variant-numeric: tabular-nums;
+  border-bottom: 1px solid rgba(45,49,72,0.4); white-space: nowrap;
+}
+tbody td:first-child { text-align: center; color: var(--text2); font-size: 12px; }
+tbody td:nth-child(2) { text-align: left; font-weight: 500; }
+tbody tr:hover { background: rgba(91,122,255,0.05); }
+tbody .order-buy td { color: var(--green); }
+tbody .order-sell td { color: var(--red); }
+tbody .order-init td { background: rgba(91,122,255,0.06); }
+tbody .order-none td { color: var(--text2); }
+tbody .order-trailed { opacity: 0.5; }
+tbody .order-shift { border-top: 2px dashed var(--accent); }
+.type-badge {
+  display: inline-block; padding: 2px 8px; border-radius: 4px;
+  font-size: 11px; font-weight: 600; text-transform: uppercase;
+}
+.type-badge.buy { background: rgba(61,214,140,0.15); color: var(--green); }
+.type-badge.sell { background: rgba(246,70,93,0.15); color: var(--red); }
+.type-badge.init { background: rgba(91,122,255,0.15); color: var(--accent); }
+.type-badge.none { background: rgba(139,143,167,0.1); color: var(--text2); }
+.type-badge.trailed { background: rgba(139,143,167,0.15); color: var(--text2); }
+.footer-note { color: var(--text2); font-size: 12px; text-align: right; padding: 8px 20px; border-top: 1px solid var(--border); }
+.preset-bar { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+.preset-bar button {
+  background: var(--surface2); color: var(--text); border: 1px solid var(--border);
+  padding: 8px 16px; border-radius: var(--radius); cursor: pointer;
+  font-size: 13px; font-family: var(--font); transition: background 0.15s;
+}
+.preset-bar button:hover { background: var(--border); }
+@media (max-width: 768px) {
+  body { padding: 12px; }
+  .inputs-grid { grid-template-columns: 1fr 1fr; padding: 14px; gap: 8px; }
+  .trailing-grid { grid-template-columns: 1fr 1fr; }
+  .summary { grid-template-columns: repeat(2, 1fr); }
+  table { font-size: 12px; }
+  thead th, tbody td { padding: 6px 5px; }
+  .table-wrap .table-header { padding: 10px 14px; }
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <h1><span>Bybit</span> Futures Grid Bot — полный расчёт</h1>
+  <div class="subtitle">Арифметический / Геометрический режимы. Трейлинг вверх/вниз. Симуляция смещения диапазона.</div>
+
+  <div class="inputs-grid">
+    <div class="input-group">
+      <label>Направление</label>
+      <select id="direction">
+        <option value="neutral">Нейтральный</option>
+        <option value="long">Long</option>
+        <option value="short">Short</option>
+      </select>
+    </div>
+    <div class="input-group">
+      <label>Текущая цена (USDT)</label>
+      <input type="number" id="currentPrice" value="26500" step="any">
+    </div>
+    <div class="input-group">
+      <label>Цена открытия (USDT)</label>
+      <input type="number" id="priceOpening" value="26500" step="any">
+      <div class="hint">Или оставьте как текущую для автоматического выбора ближайшего уровня</div>
+    </div>
+    <div class="input-group">
+      <label>Верхняя граница (USDT)</label>
+      <input type="number" id="upperPrice" value="30000" step="any">
+    </div>
+    <div class="input-group">
+      <label>Нижняя граница (USDT)</label>
+      <input type="number" id="lowerPrice" value="25000" step="any">
+    </div>
+    <div class="input-group">
+      <label>Количество сеток</label>
+      <input type="number" id="gridCount" value="5" step="1" min="2" max="400">
+    </div>
+    <div class="input-group">
+      <label>Режим сетки</label>
+      <select id="gridMode">
+        <option value="arithmetic">Арифметический</option>
+        <option value="geometric">Геометрический</option>
+      </select>
+      <div class="hint" id="gridModeHint">Равные ценовые интервалы</div>
+    </div>
+    <div class="input-group">
+      <label>Кредитное плечо (x)</label>
+      <input type="number" id="leverage" value="2" step="1" min="1" max="50">
+    </div>
+    <div class="input-group">
+      <label>Инвестиции (USDT)</label>
+      <input type="number" id="investment" value="10000" step="any">
+    </div>
+    <div class="input-group">
+      <label>Стоп-лосс цена (USDT)</label>
+      <input type="number" id="stopLossPrice" value="" placeholder="Не задана" step="any">
+      <div class="hint">Остановка сетки по SL</div>
+    </div>
+    <div class="input-group">
+      <label>Тейк-профит цена (USDT)</label>
+      <input type="number" id="takeProfitPrice" value="" placeholder="Не задана" step="any">
+      <div class="hint">Остановка сетки по TP</div>
+    </div>
+    <div class="input-group">
+      <label>Подд. маржа (MMR %)</label>
+      <input type="number" id="mmr" value="0.5" step="0.1" min="0.1" max="10">
+      <div class="hint">Maintenance Margin Rate (default 0.5%)</div>
+    </div>
+  </div>
+
+  <!-- Trailing Up/Down -->
+  <div class="trailing-section">
+    <div class="trailing-header">
+      <h3>↕ Трейлинг диапазона</h3>
+      <label><input type="checkbox" id="trailingEnabled"> Включить трейлинг</label>
+    </div>
+    <div class="trailing-grid">
+      <div class="input-group">
+        <label>Трейлинг вверх</label>
+        <select id="trailingUp">
+          <option value="1">Включён</option>
+          <option value="0">Выключен</option>
+        </select>
+      </div>
+      <div class="input-group">
+        <label>Стоп-цена трейлинга вверх</label>
+        <input type="number" id="trailingUpStop" value="32000" step="any">
+        <div class="hint">Верхний предел смещения</div>
+      </div>
+      <div class="input-group">
+        <label>Трейлинг вниз</label>
+        <select id="trailingDown">
+          <option value="1">Включён</option>
+          <option value="0">Выключен</option>
+        </select>
+      </div>
+      <div class="input-group">
+        <label>Стоп-цена трейлинга вниз</label>
+        <input type="number" id="trailingDownStop" value="23000" step="any">
+        <div class="hint">Нижний предел смещения</div>
+      </div>
+    </div>
+    <div class="trailing-vis" id="trailingVis">
+      <div class="sim-row">
+        <span>Симуляция цены: <strong class="val" id="simPriceLabel">—</strong></span>
+        <span>Диапазон: <strong class="val" id="simRangeLabel">—</strong></span>
+        <span>Смещений вверх: <strong class="val" id="simUpCount">0</strong></span>
+        <span>Смещений вниз: <strong class="val" id="simDownCount">0</strong></span>
+      </div>
+      <input type="range" class="sim-slider" id="simPriceSlider" min="0" max="100" value="50" step="0.1">
+      <div class="range-bar-wrap" id="rangeBar"></div>
+    </div>
+  </div>
+
+  <div class="summary" id="summary"></div>
+
+  <div class="table-wrap">
+    <div class="table-header">
+      <h2>Grid уровни <span id="tableTitleExtra" style="font-weight:400;font-size:13px;color:var(--text2)"></span></h2>
+      <div class="controls">
+        <label for="pricePrecision">Точность:</label>
+        <select id="pricePrecision">
+          <option value="0">0</option>
+          <option value="2">0.00</option>
+          <option value="4" selected>0.0000</option>
+        </select>
+        <label for="viewMode">Вид:</label>
+        <select id="viewMode">
+          <option value="full">Полный</option>
+          <option value="compact">Компакт</option>
+        </select>
+      </div>
+    </div>
+    <div class="table-scroll">
+      <table>
+        <thead id="tableHead"></thead>
+        <tbody id="tableBody"></tbody>
+      </table>
+    </div>
+    <div class="footer-note" id="footerNote"></div>
+  </div>
+
+  <div class="preset-bar">
+    <button onclick="savePreset()">Сохранить preset</button>
+    <button onclick="loadPreset()">Загрузить preset</button>
+    <input type="file" id="presetFile" accept=".json" style="display:none" onchange="handlePresetFile(event)">
+  </div>
+</div>
+
+<script>
+const TAKER_FEE = 0.00055;
+const SNAP = 15;
+
+const inputIds = [
+  'direction','currentPrice','priceOpening','upperPrice','lowerPrice',
+  'gridCount','gridMode','leverage','investment','stopLossPrice','takeProfitPrice','mmr',
+  'trailingEnabled','trailingUp','trailingDown','trailingUpStop','trailingDownStop'
+];
+
+function getVals() {
+  const currentPrice = +document.getElementById('currentPrice').value;
+  const priceOpening = +document.getElementById('priceOpening').value;
+  const upperPrice = +document.getElementById('upperPrice').value;
+  const lowerPrice = +document.getElementById('lowerPrice').value;
+
+  let openingPrice = priceOpening;
+  if (openingPrice > 0) {
+    const limitLow = currentPrice * 0.7;
+    const limitHigh = currentPrice * 1.3;
+    if (openingPrice < limitLow || openingPrice > limitHigh) {
+      openingPrice = currentPrice;
+    }
+    if (openingPrice < lowerPrice || openingPrice > upperPrice) {
+      openingPrice = currentPrice;
+    }
+  } else {
+    openingPrice = currentPrice;
+  }
+
+  return {
+    direction: document.getElementById('direction').value,
+    currentPrice: currentPrice,
+    priceOpening: openingPrice,
+    upperPrice: upperPrice,
+    lowerPrice: lowerPrice,
+    gridCount: +document.getElementById('gridCount').value,
+    gridMode: document.getElementById('gridMode').value,
+    leverage: +document.getElementById('leverage').value,
+    investment: +document.getElementById('investment').value,
+    stopLossPrice: +document.getElementById('stopLossPrice').value || null,
+    takeProfitPrice: +document.getElementById('takeProfitPrice').value || null,
+    mmr: +document.getElementById('mmr').value || 0.5,
+    trailingEnabled: document.getElementById('trailingEnabled').checked,
+    trailingUp: +document.getElementById('trailingUp').value,
+    trailingDown: +document.getElementById('trailingDown').value,
+    trailingUpStop: +document.getElementById('trailingUpStop').value,
+    trailingDownStop: +document.getElementById('trailingDownStop').value,
+    precision: +document.getElementById('pricePrecision').value,
+    viewMode: document.getElementById('viewMode').value,
+    simPrice: null,
+  };
+}
+
+// Compute trailing shift count for a given market price
+// Trigger conditions per Bybit docs:
+//   Trailing Up:   Neutral — price >= upper;   Long — price >= upper+interval;   Short — price >= upper
+//   Trailing Down: Neutral — price <= lower;   Long — price <= lower;            Short — price <= lower-interval
+function calcTrail(v, marketPrice, isFillStateProvided = false, fillState = null) {
+  const isArith = v.gridMode === 'arithmetic';
+  const N = v.gridCount;
+  let intervalPrice, geomRatio;
+  if (isArith) {
+    intervalPrice = (v.upperPrice - v.lowerPrice) / N;
+  } else {
+    geomRatio = Math.pow(v.upperPrice / v.lowerPrice, 1 / N);
+    intervalPrice = v.lowerPrice * geomRatio - v.lowerPrice;
+  }
+
+  let lower = v.lowerPrice, upper = v.upperPrice;
+  let upShifts = 0, downShifts = 0;
+
+  const trailUpOn = v.trailingEnabled && v.trailingUp === 1;
+  const trailDownOn = v.trailingEnabled && v.trailingDown === 1;
+
+  // Trailing Up trigger: Neutral/Short use upper; Long uses upper+interval
+  const upTrigger = (lo, hi) => {
+    if (v.direction === 'long') {
+      return isArith ? hi + intervalPrice : hi * geomRatio;
+    }
+    return hi;
+  };
+  // Trailing Down trigger: Neutral/Long use lower; Short uses lower-interval
+  const downTrigger = (lo, hi) => {
+    if (v.direction === 'short') {
+      return isArith ? lo - intervalPrice : lo / geomRatio;
+    }
+    return lo;
+  };
+
+  // Determine if trailing should be allowed based on fill states
+  const canTrailUp = () => {
+    if (v.direction === 'long') {
+      // Long trailing up requires trigger price reached
+      return marketPrice >= upTrigger(lower, upper);
+    }
+    if (v.direction === 'short') {
+      // Short trailing up requires highest sell filled
+      if (!isFillStateProvided) return marketPrice >= upTrigger(lower, upper);
+      // Simplified: treat as price >= upper (ultimate upper bound)
+      return marketPrice >= upper;
+    }
+    // Neutral
+    return marketPrice >= upper;
+  };
+
+  const canTrailDown = () => {
+    if (v.direction === 'long') {
+      // Long trailing down requires lowest buy filled
+      if (!isFillStateProvided) return marketPrice <= downTrigger(lower, upper);
+      return marketPrice <= lower;
+    }
+    if (v.direction === 'short') {
+      // Short trailing down requires trigger price reached
+      return marketPrice <= downTrigger(lower, upper);
+    }
+    // Neutral
+    return marketPrice <= lower;
+  };
+
+  if (isArith) {
+    while (trailUpOn && canTrailUp() && upShifts < SNAP) {
+      const newUpper = upper + intervalPrice;
+      if (newUpper > v.trailingUpStop) break;
+      lower += intervalPrice; upper = newUpper; upShifts++;
+    }
+    while (trailDownOn && canTrailDown() && downShifts < SNAP) {
+      const newLower = lower - intervalPrice;
+      if (newLower < v.trailingDownStop) break;
+      upper -= intervalPrice; lower = newLower; downShifts++;
+    }
+  } else {
+    while (trailUpOn && canTrailUp() && upShifts < SNAP) {
+      const newUpper = upper * geomRatio;
+      if (newUpper > v.trailingUpStop) break;
+      lower *= geomRatio; upper = newUpper; upShifts++;
+    }
+    while (trailDownOn && canTrailDown() && downShifts < SNAP) {
+      const newLower = lower / geomRatio;
+      if (newLower < v.trailingDownStop) break;
+      upper /= geomRatio; lower = newLower; downShifts++;
+    }
+  }
+  return { lower, upper, upShifts, downShifts, intervalPrice };
+}
+
+function calcGrid(marketPriceOverride) {
+  const v = getVals();
+  if (!v.currentPrice || !v.upperPrice || !v.lowerPrice || !v.gridCount || !v.leverage || !v.investment) return null;
+  if (v.upperPrice <= v.lowerPrice || v.gridCount < 2) return null;
+
+  const marketPrice = marketPriceOverride || v.currentPrice;
+  const priceOutsideRange = marketPrice < v.lowerPrice || marketPrice > v.upperPrice;
+  const isArithmetic = v.gridMode === 'arithmetic';
+  const N = v.gridCount;
+  const origLower = v.lowerPrice;
+  const origUpper = v.upperPrice;
+
+  const levels = N + 1;
+  // Build initial prices from original range (before trailing shift)
+  const initPrices = [];
+  if (isArithmetic) {
+    const interval = (origUpper - origLower) / N;
+    for (let i = 0; i < levels; i++) initPrices.push(origLower + i * interval);
+  } else {
+    const ratio = Math.pow(origUpper / origLower, 1 / N);
+    for (let i = 0; i < levels; i++) initPrices.push(origLower * Math.pow(ratio, i));
+  }
+
+  // Determine starting price: use priceOpening if valid, otherwise currentPrice
+  const startPrice = v.priceOpening;
+
+  // Find grid level closest to startPrice for initial position
+  let bestIndex = -1;
+  let bestDiff = Infinity;
+  for (let i = 0; i < levels; i++) {
+    const diff = v.direction === 'short' ? initPrices[i] - startPrice : startPrice - initPrices[i];
+    if (diff >= 0 && diff < bestDiff) {
+      bestDiff = diff;
+      bestIndex = i;
+    }
+  }
+
+  // Trailing shift
+  const trail = calcTrail(v, marketPrice);
+  const { lower, upper, upShifts, downShifts, intervalPrice } = trail;
+
+  // Final prices after trailing shift
+  const prices = [];
+  if (isArithmetic) {
+    const interval = (upper - lower) / N;
+    for (let i = 0; i < levels; i++) prices.push(lower + i * interval);
+  } else {
+    const ratio = Math.pow(upper / lower, 1 / N);
+    for (let i = 0; i < levels; i++) prices.push(lower * Math.pow(ratio, i));
+  }
+
+  const displayInterval = isArithmetic
+    ? (upper - lower) / N
+    : (Math.pow(upper / lower, 1 / N) - 1) * 100;
+
+  // Pre-compute closest grid level on each side of market price
+  let closestAbove = -1, closestBelow = -1;
+  for (let i = 0; i < levels; i++) {
+    if (prices[i] > marketPrice && (closestAbove < 0 || prices[i] < prices[closestAbove])) closestAbove = i;
+    if (prices[i] < marketPrice && (closestBelow < 0 || prices[i] > prices[closestBelow])) closestBelow = i;
+  }
+  // Order types per Bybit: Neutral/Long — first level above market skipped;
+  // Short — first level below market skipped.
+  const orders = [];
+  for (let i = 0; i < levels; i++) {
+    let type = 'none';
+    const p = prices[i];
+    if (v.direction === 'neutral' || v.direction === 'long') {
+      if (p < marketPrice) type = 'buy';
+      else if (p > marketPrice && closestAbove >= 0 && i !== closestAbove) type = 'sell';
+    } else if (v.direction === 'short') {
+      if (p > marketPrice) type = 'sell';
+      else if (p < marketPrice && closestBelow >= 0 && i !== closestBelow) type = 'buy';
+    }
+    orders.push(type);
+  }
+
+  // Mark which prices are original vs new from trailing
+  const isOrig = prices.map((p, i) => Math.abs(p - initPrices[i]) < (isArithmetic ? 0.001 : 0.01));
+
+  // Qty
+  let marginDenom = 0;
+  let buySellCount = { buy: 0, sell: 0 };
+
+  if (v.direction === 'neutral') {
+    for (let i = 0; i < levels; i++) {
+      if (orders[i] !== 'none') {
+        marginDenom += prices[i];
+        orders[i] === 'buy' ? buySellCount.buy++ : buySellCount.sell++;
+      }
+    }
+  } else if (v.direction === 'long') {
+    marginDenom += marketPrice;
+    for (let i = 0; i < levels; i++) {
+      if (orders[i] === 'buy') { marginDenom += prices[i]; buySellCount.buy++; }
+      else if (orders[i] === 'sell') buySellCount.sell++;
+    }
+  } else if (v.direction === 'short') {
+    marginDenom += marketPrice;
+    for (let i = 0; i < levels; i++) {
+      if (orders[i] === 'sell') { marginDenom += prices[i]; buySellCount.sell++; }
+      else if (orders[i] === 'buy') buySellCount.buy++;
+    }
+  }
+
+  const qty = v.investment * v.leverage / marginDenom;
+
+  // Collect buy/sell prices in order for profit pairing
+  const buyPrices = [], sellPrices = [];
+  for (let i = 0; i < levels; i++) {
+    if (orders[i] === 'buy') buyPrices.push(prices[i]);
+    if (orders[i] === 'sell') sellPrices.push(prices[i]);
+  }
+
+  // Build rows
+  const rows = [];
+  let totalMargin = 0;
+  for (let i = 0; i < levels; i++) {
+    const price = prices[i];
+    const order = orders[i];
+    const pctFromCurr = (price / marketPrice - 1) * 100;
+
+    let margin = 0;
+    let position = '—';
+    if (v.direction === 'neutral') {
+      if (order === 'buy') { margin = qty * price / v.leverage; position = 'Long'; }
+      else if (order === 'sell') { margin = qty * price / v.leverage; position = 'Short'; }
+    } else if (v.direction === 'long') {
+      if (i === bestIndex) {
+        margin = qty * marketPrice / v.leverage;
+        position = 'Long (init)';
+      } else if (order === 'buy') {
+        margin = qty * price / v.leverage; position = 'Long';
+      } else if (order === 'sell') { margin = 0; position = 'Close'; }
+    } else if (v.direction === 'short') {
+      if (i === bestIndex) {
+        margin = qty * marketPrice / v.leverage;
+        position = 'Short (init)';
+      } else if (order === 'sell') {
+        margin = qty * price / v.leverage; position = 'Short';
+      } else if (order === 'buy') { margin = 0; position = 'Close'; }
+    }
+
+    // Per-level profit
+    let levelProfit = null;
+    let profitType = null; // 'realized' | 'unrealized'
+    if (order === 'sell') {
+      // Realized profit: sell price - paired buy price
+      const sellIdx = sellPrices.indexOf(price);
+      if (sellIdx >= 0 && sellIdx < buyPrices.length) {
+        levelProfit = qty * (price - buyPrices[sellIdx]);
+        profitType = 'realized';
+      }
+    } else if (order === 'buy') {
+      // Unrealized profit: current price - buy price (what you'd get if closed now)
+      if (v.direction === 'long') {
+        levelProfit = qty * (marketPrice - price);
+        profitType = 'unrealized';
+      } else if (v.direction === 'neutral') {
+        // For neutral: profit = interval (approximation)
+        const interval = isArithmetic ? (upper - lower) / N : lower * (Math.pow(upper / lower, 1 / N) - 1);
+        levelProfit = qty * interval;
+        profitType = 'unrealized';
+      }
+    }
+
+    totalMargin += margin;
+    rows.push({
+      level: i, price, pctFromCurr, order, position, margin, qty,
+      profit: levelProfit,
+      profitType,
+      isOrig: isOrig[i],
+      origPrice: initPrices[i],
+    });
+  }
+
+  // Profit: pair each buy with a sell (skip 'none' levels)
+  let maxGridTrades = Math.min(buySellCount.buy, buySellCount.sell);
+  let gridProfitPerTrade = 0;
+  if (maxGridTrades > 0) {
+    let totalProfit = 0, pairs = 0;
+    for (let i = 0; i < maxGridTrades; i++) {
+      totalProfit += qty * (sellPrices[i] - buyPrices[i]); pairs++;
+    }
+    gridProfitPerTrade = pairs > 0 ? totalProfit / pairs : 0;
+  }
+
+  const feesPerTrade = qty * TAKER_FEE * 2;
+  const totalGridProfit = maxGridTrades * (gridProfitPerTrade - feesPerTrade);
+  const annualApr = totalGridProfit > 0 && v.investment > 0
+    ? (totalGridProfit / v.investment) * 365 * 100 : 0;
+
+  // Liquidation price calculation for max position load
+  const mmr = (v.mmr || 0.5) / 100;
+  let fullCoins = 0;
+  let fullEntryVal = 0;
+
+  if (v.direction === 'long' || v.direction === 'neutral') {
+    if (v.direction === 'long' && bestIndex >= 0) {
+      fullCoins += qty;
+      fullEntryVal += qty * marketPrice;
+    }
+    for (let i = 0; i < levels; i++) {
+      if (orders[i] === 'buy') {
+        fullCoins += qty;
+        fullEntryVal += qty * prices[i];
+      }
+    }
+  } else if (v.direction === 'short') {
+    if (bestIndex >= 0) {
+      fullCoins += qty;
+      fullEntryVal += qty * marketPrice;
+    }
+    for (let i = 0; i < levels; i++) {
+      if (orders[i] === 'sell') {
+        fullCoins += qty;
+        fullEntryVal += qty * prices[i];
+      }
+    }
+  }
+
+  let liqPrice = 0;
+  if (fullCoins > 0 && v.investment > 0) {
+    if (v.direction === 'short') {
+      liqPrice = (fullEntryVal + v.investment) / (fullCoins * (1 + mmr));
+    } else {
+      liqPrice = (fullEntryVal - v.investment) / (fullCoins * (1 - mmr));
+    }
+    if (liqPrice <= 0) liqPrice = 0;
+  }
+
+  const distToLiq = liqPrice > 0
+    ? (v.direction === 'short' ? (liqPrice - marketPrice) / marketPrice * 100 : (marketPrice - liqPrice) / marketPrice * 100)
+    : 0;
+
+  return {
+    rows, prices, displayInterval, isArithmetic, qty,
+    maxGridTrades, gridProfitPerTrade, feesPerTrade,
+    totalGridProfit, annualApr, totalMargin,
+    buyCount: buySellCount.buy, sellCount: buySellCount.sell,
+    lower, upper, upShifts, downShifts,
+    origLower, origUpper, marketPrice,
+    priceOutsideRange, liqPrice, distToLiq,
+  };
+}
+
+function fmt(n, d = 2) {
+  if (n === undefined || n === null || isNaN(n)) return '—';
+  return Number(n).toLocaleString('ru-RU', { minimumFractionDigits: d, maximumFractionDigits: d });
+}
+function fmtSz(n) {
+  if (!n || isNaN(n)) return '—';
+  if (Math.abs(n) >= 1e6) return fmt(n / 1e6, 2) + 'M';
+  if (Math.abs(n) >= 1e3) return fmt(n / 1e3, 1) + 'K';
+  return fmt(n, 2);
+}
+
+function renderRangeBar(result) {
+  const wrap = document.getElementById('rangeBar');
+  if (!result) { wrap.innerHTML = ''; return; }
+  const { prices, lower, upper, marketPrice, isArithmetic, origLower, origUpper, upShifts, downShifts } = result;
+
+  const minP = Math.min(lower, origLower, marketPrice) * 0.98;
+  const maxP = Math.max(upper, origUpper, marketPrice) * 1.02;
+  const range = maxP - minP;
+  if (range <= 0) { wrap.innerHTML = ''; return; }
+
+  const pct = (p) => ((p - minP) / range * 100);
+
+  let ticks = '';
+  prices.forEach(p => {
+    if (Math.abs(p - marketPrice) < 1e-8) return;
+    const side = p < marketPrice ? 'tick-buy' : 'tick-sell';
+    ticks += `<div class="range-tick ${side}" style="left:${pct(p)}%"></div>`;
+  });
+  ticks += `<div class="range-tick tick-cur" style="left:${pct(marketPrice)}%"></div>`;
+
+  const origLoPct = pct(origLower);
+  const origHiPct = pct(origUpper);
+  const curLoPct = pct(lower);
+  const curHiPct = pct(upper);
+
+  const hasTrail = upShifts > 0 || downShifts > 0;
+
+  wrap.innerHTML = `
+    <div style="position:relative;height:60px">
+      <div class="range-bar-track"></div>
+      <div class="range-bar-fill" style="left:${curLoPct}%;width:${curHiPct - curLoPct}%"></div>
+      ${hasTrail ? `<div class="range-bar-fill" style="left:${origLoPct}%;width:${origHiPct - origLoPct}%;opacity:0.2;border:1px dashed var(--text2)"></div>` : ''}
+      <div class="range-bar-ticks">${ticks}</div>
+      <div class="range-label lo" style="left:${curLoPct}%">${fmt(lower, 0)}</div>
+      <div class="range-label hi" style="left:${curHiPct}%">${fmt(upper, 0)}</div>
+      <div class="range-label cur" style="left:${pct(marketPrice)}%">▼ ${fmt(marketPrice, 0)}</div>
+      ${hasTrail ? `<div class="range-label traillo" style="left:${pct(origLower)}%;display:block">← ${fmt(origLower, 0)}</div>` : ''}
+      ${hasTrail ? `<div class="range-label trailhi" style="left:${pct(origUpper)}%;display:block">${fmt(origUpper, 0)} →</div>` : ''}
+    </div>
+  `;
+}
+
+function render() {
+  const v = getVars();
+  const simPrice = v.simPrice;
+  const result = calcGrid(simPrice);
+  const mode = v.viewMode;
+  const prec = v.precision;
+
+  // Show/hide trailing section
+  const vis = document.getElementById('trailingVis');
+  vis.classList.toggle('active', v.trailingEnabled);
+
+  if (!result) {
+    document.getElementById('summary').innerHTML = '';
+    document.getElementById('tableHead').innerHTML = '';
+    document.getElementById('tableBody').innerHTML =
+      '<tr><td colspan="20" style="text-align:center;padding:40px;color:var(--text2)">Заполните параметры</td></tr>';
+    document.getElementById('footerNote').textContent = '';
+    document.getElementById('rangeBar').innerHTML = '';
+    return;
+  }
+
+  const { rows, displayInterval, isArithmetic, qty, maxGridTrades,
+          gridProfitPerTrade, feesPerTrade, totalGridProfit, annualApr,
+          totalMargin, buyCount, sellCount, lower, upper, upShifts, downShifts,
+          marketPrice, priceOutsideRange, liqPrice, distToLiq } = result;
+
+  const dirLabel = { neutral: 'Нейтральный', long: 'Long', short: 'Short' }[v.direction];
+  const modeLabel = isArithmetic ? 'Арифметический' : 'Геометрический';
+  const intervalStr = isArithmetic
+    ? fmt(displayInterval, 2) + ' USDT'
+    : fmt(displayInterval, 4) + '%';
+
+  // Trailing info in sim bar
+  document.getElementById('simPriceLabel').textContent = fmt(marketPrice, 2);
+  document.getElementById('simRangeLabel').textContent = `${fmt(lower, 2)} — ${fmt(upper, 2)}`;
+  document.getElementById('simUpCount').textContent = upShifts;
+  document.getElementById('simDownCount').textContent = downShifts;
+
+  // Summary
+  const hasTrail = upShifts > 0 || downShifts > 0;
+  const sumHTML = `
+    <div class="summary-card">
+      <div class="label">Режим</div>
+      <div class="value accent">${dirLabel}</div>
+      <div class="sub">${modeLabel}, ${v.gridCount} сеток</div>
+    </div>
+    <div class="summary-card">
+      <div class="label">Интервал</div>
+      <div class="value">${intervalStr}</div>
+    </div>
+    <div class="summary-card">
+      <div class="label">Объём на grid</div>
+      <div class="value">${fmt(qty, 4)}</div>
+    </div>
+    <div class="summary-card">
+      <div class="label">Всего маржи</div>
+      <div class="value accent">${fmt(totalMargin)} USDT</div>
+      <div class="sub">из ${fmt(v.investment)} USDT</div>
+    </div>
+    <div class="summary-card">
+      <div class="label">Buy / Sell</div>
+      <div class="value"><span class="green">${buyCount}</span> / <span class="red">${sellCount}</span></div>
+    </div>
+    <div class="summary-card">
+      <div class="label">Диапазон</div>
+      <div class="value">${fmt(lower, prec)} — ${fmt(upper, prec)}</div>
+      ${hasTrail ? `<div class="sub">смещён: ↑${upShifts} ↓${downShifts}</div>` : ''}
+    </div>
+    <div class="summary-card">
+      <div class="label">Цена ликвидации</div>
+      <div class="value ${liqPrice > 0 ? 'red' : ''}">${liqPrice > 0 ? fmt(liqPrice, prec) : '—'}</div>
+      <div class="sub">дист. от текущей ${distToLiq > 0 ? fmt(distToLiq, 2) + '%' : '—'}</div>
+    </div>
+    <div class="summary-card">
+      <div class="label">Прибыль за 1 цикл</div>
+      <div class="value green">${fmt(gridProfitPerTrade - feesPerTrade)} USDT</div>
+      <div class="sub">${maxGridTrades} циклов × ${fmt(maxGridTrades * (gridProfitPerTrade - feesPerTrade))} USDT</div>
+    </div>
+    <div class="summary-card">
+      <div class="label">APR (оценка)</div>
+      <div class="value green">${fmt(annualApr, 1)}%</div>
+    </div>
+  `;
+  document.getElementById('summary').innerHTML = sumHTML;
+
+  // Table
+  const cols = mode === 'full' ? [
+    { key: 'level', label: '#', align: 'center', width: 36 },
+    { key: 'price', label: 'Цена', align: 'left' },
+    { key: 'pctFromCurr', label: 'Δ от цены %' },
+    { key: 'orderLabel', label: 'Тип', align: 'center' },
+    { key: 'positionLabel', label: 'Позиция', align: 'center' },
+    { key: 'qty', label: 'Объём', fmt: vv => fmt(vv, 4) },
+    { key: 'margin', label: 'Маржа', fmt: vv => vv > 0 ? fmt(vv, 2) : '—' },
+    { key: 'profit', label: 'Прибыль, USDT', fmt: vv => vv !== null ? fmt(vv, 2) : '—' },
+  ] : [
+    { key: 'level', label: '#', align: 'center', width: 36 },
+    { key: 'price', label: 'Цена', align: 'left' },
+    { key: 'pctFromCurr', label: 'Δ%' },
+    { key: 'orderLabel', label: 'Тип', align: 'center' },
+    { key: 'margin', label: 'Маржа', fmt: vv => vv > 0 ? fmt(vv, 1) : '—' },
+    { key: 'profit', label: 'Прибыль, USDT', fmt: vv => vv !== null ? fmt(vv, 1) : '—' },
+  ];
+
+  document.getElementById('tableTitleExtra').textContent =
+    hasTrail ? `(смещён: ↑${upShifts} ↓${downShifts})` : '';
+
+  let th = '<tr>';
+  cols.forEach(c => {
+    const a = c.align || 'right';
+    th += `<th style="text-align:${a}">${c.label}</th>`;
+  });
+  th += '</tr>';
+  document.getElementById('tableHead').innerHTML = th;
+
+  let tb = '';
+  rows.forEach((r) => {
+    let orderLabel, positionLabel, rowClass;
+    if (r.order === 'none') {
+      orderLabel = '<span class="type-badge none">—</span>';
+      positionLabel = '—';
+      rowClass = 'order-none';
+    } else if (r.order === 'buy') {
+      orderLabel = '<span class="type-badge buy">Buy</span>';
+      positionLabel = r.position === 'Close' ? 'Close Long' : 'Long';
+      rowClass = 'order-buy';
+    } else {
+      orderLabel = '<span class="type-badge sell">Sell</span>';
+      positionLabel = r.position === 'Close' ? 'Close Short' : 'Short';
+      rowClass = 'order-sell';
+    }
+    if (r.position && r.position.includes('init')) {
+      rowClass = 'order-init';
+      positionLabel = v.direction === 'long' ? 'Init Long' : 'Init Short';
+      orderLabel = '<span class="type-badge init">Init</span>';
+    }
+    if (!r.isOrig) rowClass += ' order-trailed';
+
+    tb += `<tr class="${rowClass}">`;
+    cols.forEach(c => {
+      const a = c.align || 'right';
+      let val;
+      if (c.key === 'orderLabel') val = orderLabel;
+      else if (c.key === 'positionLabel') val = positionLabel;
+      else if (c.key === 'price') val = fmt(r.price, prec);
+      else if (c.key === 'pctFromCurr') val = (r.pctFromCurr >= 0 ? '+' : '') + fmt(r.pctFromCurr, 2) + '%';
+      else if (c.key === 'profit') {
+        if (r.profit !== null) {
+          const sign = r.profit >= 0 ? '+' : '';
+          const color = r.profit >= 0 ? 'green' : 'red';
+          const tag = r.profitType === 'unrealized' ? ' <span style="font-size:10px;color:var(--text2)">*</span>' : '';
+          val = `<span class="${color}">${sign}${fmt(r.profit, 2)}</span>${tag}`;
+        } else {
+          val = '—';
+        }
+      }
+      else val = c.fmt ? c.fmt(r[c.key]) : fmt(r[c.key]);
+      tb += `<td style="text-align:${a}">${val}</td>`;
+    });
+    tb += '</tr>';
+  });
+  document.getElementById('tableBody').innerHTML = tb;
+
+  let warning = '';
+  if (priceOutsideRange && !v.trailingEnabled) warning += ' ⚠️ Цена вне диапазона — сетка не активна.';
+  if (maxGridTrades === 0) warning += ' ⚠️ Нет пар Buy/Sell — прибыль 0 (цена с одной стороны сетки).';
+  document.getElementById('footerNote').textContent =
+    `* нереализованная. Комиссия taker ~${fmt(feesPerTrade, 2)} USDT за цикл. Трейлинг: ↘${fmt(v.trailingDownStop)} ↗${fmt(v.trailingUpStop)}.` +
+    (v.direction !== 'neutral' ? ' Long/Short: нач. позиция по рынку.' : '') + warning;
+
+  // Range bar
+  renderRangeBar(result);
+}
+
+function getVars() {
+  return { ...getVals(), precision: +document.getElementById('pricePrecision').value, viewMode: document.getElementById('viewMode').value };
+}
+
+document.getElementById('gridMode').addEventListener('change', function() {
+  document.getElementById('gridModeHint').textContent = this.value === 'arithmetic'
+    ? 'Равные ценовые интервалы' : 'Равные процентные интервалы';
+});
+
+// Sim slider
+const simSlider = document.getElementById('simPriceSlider');
+simSlider.addEventListener('input', function() {
+  const v = getVals();
+  const lo = Math.min(v.lowerPrice, v.trailingDownStop) * 0.9;
+  const hi = Math.max(v.upperPrice, v.trailingUpStop) * 1.1;
+  const rng = hi - lo;
+  const price = lo + (this.value / 100) * rng;
+  // Store sim price globally
+  window._simPrice = price;
+  render();
+});
+document.getElementById('simPriceSlider').addEventListener('dblclick', function() {
+  window._simPrice = null;
+  const v = getVals();
+  const lo = Math.min(v.lowerPrice, v.trailingDownStop) * 0.9;
+  const hi = Math.max(v.upperPrice, v.trailingUpStop) * 1.1;
+  this.value = ((v.currentPrice - lo) / (hi - lo)) * 100;
+  render();
+});
+
+// Override getVals to use sim price
+const origGetVals = getVals;
+getVals = function() {
+  const v = origGetVals();
+  v.simPrice = window._simPrice || null;
+  return v;
+};
+
+const gridParamIds = ['direction','currentPrice','upperPrice','lowerPrice','gridCount','gridMode','leverage','investment'];
+inputIds.forEach(id => {
+  const el = document.getElementById(id);
+  if (el) el.addEventListener('input', () => {
+    if (gridParamIds.includes(id)) window._simPrice = null;
+    render();
+  });
+});
+document.getElementById('pricePrecision').addEventListener('change', render);
+document.getElementById('viewMode').addEventListener('change', render);
+
+render();
+
+function savePreset() {
+  const data = {};
+  inputIds.forEach(id => { data[id] = document.getElementById(id).value; });
+  data.pricePrecision = document.getElementById('pricePrecision').value;
+  data.viewMode = document.getElementById('viewMode').value;
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'bybit_grid_preset.json';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+function loadPreset() { document.getElementById('presetFile').click(); }
+function handlePresetFile(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    try {
+      const data = JSON.parse(ev.target.result);
+      inputIds.forEach(id => { if (data[id] !== undefined) document.getElementById(id).value = data[id]; });
+      if (data.pricePrecision) document.getElementById('pricePrecision').value = data.pricePrecision;
+      if (data.viewMode) document.getElementById('viewMode').value = data.viewMode;
+      render();
+    } catch (_) { alert('Ошибка загрузки preset'); }
+  };
+  reader.readAsText(file);
+  e.target.value = '';
+}
+</script>
+</body>
+</html>

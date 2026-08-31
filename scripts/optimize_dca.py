@@ -23,7 +23,7 @@ from volatility_calc.data_fetcher import fetch_ohlcv
 from volatility_calc.optimizer import (
     ParamGrid,
     run_optimization,
-    best_per_side,
+    run_walk_forward_optimization,
     sensitivity_analysis,
 )
 from rich.console import Console
@@ -60,6 +60,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--top", type=int, default=15,
                         help="Сколько топ-конфигураций показывать")
     parser.add_argument("--json", dest="json_path", help="Сохранить все результаты в JSON")
+    parser.add_argument(
+        "--walk-forward",
+        type=int,
+        default=0,
+        metavar="FOLDS",
+        help="Walk-forward OOS (число folds, 0=выкл)",
+    )
+    parser.add_argument(
+        "--overlapping",
+        action="store_true",
+        help="Разрешить overlapping entries",
+    )
     args = parser.parse_args(argv)
 
     grid = ParamGrid(
@@ -72,6 +84,7 @@ def main(argv: list[str] | None = None) -> int:
         step=args.step,
         fee_pct=args.fee / 100.0,
         sides=tuple(args.sides.split(",")),
+        non_overlapping=not args.overlapping,
     )
 
     print(
@@ -86,6 +99,19 @@ def main(argv: list[str] | None = None) -> int:
 
     results = run_optimization(df, grid)
     print(f"[INFO] Готово. {len(results)} конфигураций оценено.", file=sys.stderr)
+
+    if args.walk_forward and args.walk_forward >= 2:
+        for side in grid.sides:
+            print(f"[INFO] Walk-forward {side} folds={args.walk_forward}...", file=sys.stderr)
+            wf = run_walk_forward_optimization(
+                df, grid, n_folds=args.walk_forward, side=side
+            )
+            print(
+                f"[INFO] OOS {side}: trades={wf['oos_n_trades']} "
+                f"pnl={wf['oos_total_pnl']:.2f}% wr={wf['oos_win_rate']:.1f}% "
+                f"sharpe={wf['oos_sharpe']:.2f} dd={wf['oos_max_dd']:.2f}%",
+                file=sys.stderr,
+            )
 
     console = Console(width=200, force_terminal=True)
 

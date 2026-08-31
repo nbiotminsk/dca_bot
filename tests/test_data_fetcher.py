@@ -69,16 +69,43 @@ def test_timeframe_to_ms():
 
 
 def test_fetch_ohlcv_uses_cache(tmp_path, monkeypatch):
-    df = make_df(20)
-    # Save in whichever format data_fetcher expects for this environment.
+    df = make_df(30)
     from volatility_calc.data_fetcher import _cache_path, _save_cache
-    cache_file = _cache_path("ETH/USDT:USDT", "1h", 90, str(tmp_path))
+    cache_file = _cache_path("ETH/USDT:USDT", "1h", 1, str(tmp_path))
     _save_cache(df, cache_file)
-    out = fetch_ohlcv("ETHUSDT", timeframe="1h", days=90,
-                      cache_dir=str(tmp_path), use_cache=True,
-                      exchange_factory=lambda: pytest.fail("нет сети"))
-    assert len(out) == 20
+    out = fetch_ohlcv(
+        "ETHUSDT",
+        timeframe="1h",
+        days=1,
+        cache_dir=str(tmp_path),
+        use_cache=True,
+        cache_max_age_hours=24,
+        exchange_factory=lambda: pytest.fail("нет сети"),
+    )
+    assert len(out) == 30
     assert list(out.columns) == OHLCV_COLUMNS
+
+
+def test_stale_cache_refetches(tmp_path):
+    import os
+    df = make_df(48)
+    from volatility_calc.data_fetcher import _cache_path, _save_cache
+    cache_file = _cache_path("ETH/USDT:USDT", "1h", 1, str(tmp_path))
+    _save_cache(df, cache_file)
+    old = time.time() - 48 * 3600
+    os.utime(cache_file, (old, old))
+    ex = _fake_exchange(n_rows=30)
+    out = fetch_ohlcv(
+        "ETHUSDT",
+        timeframe="1h",
+        days=1,
+        cache_dir=str(tmp_path),
+        use_cache=True,
+        cache_max_age_hours=6,
+        exchange_factory=lambda: ex,
+    )
+    assert ex.fetch_ohlcv.called
+    assert len(out) >= 1
 
 
 def _fake_exchange(symbol_present=True, n_rows=24):

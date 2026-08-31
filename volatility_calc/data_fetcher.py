@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import difflib
 import logging
-import os
+import time
 from pathlib import Path
 
 import pandas as pd
@@ -11,6 +11,7 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 
 OHLCV_COLUMNS = ["timestamp", "open", "high", "low", "close", "volume"]
+DEFAULT_CACHE_MAX_AGE_HOURS = 6.0
 
 
 class SymbolNotFoundError(ValueError):
@@ -71,17 +72,45 @@ def _has_parquet_engine() -> bool:
             return False
 
 
-def _load_cache(path: Path) -> pd.DataFrame | None:
+def _cache_is_fresh(path: Path, max_age_hours: float) -> bool:
+    if max_age_hours <= 0:
+        return True
+    age_s = time.time() - path.stat().st_mtime
+    return age_s <= max_age_hours * 3600.0
+
+
+def _cache_covers_days(df: pd.DataFrame, days: int, tol_hours: float = 24.0) -> bool:
+    """Кеш покрывает запрошенную глубину (с допуском)."""
+    if "timestamp" not in df.columns or len(df) < 2:
+        return False
+    span = df["timestamp"].max() - df["timestamp"].min()
+    span_hours = span.total_seconds() / 3600.0
+    return span_hours + tol_hours >= days * 24.0
+
+
+def _load_cache(
+    path: Path,
+    *,
+    days: int | None = None,
+    max_age_hours: float = DEFAULT_CACHE_MAX_AGE_HOURS,
+) -> pd.DataFrame | None:
     if not path.exists():
+        return None
+    if not _cache_is_fresh(path, max_age_hours):
+        logger.info("Кеш устарел (%s), перезагрузка", path.name)
         return None
     try:
         if path.suffix == ".parquet":
             df = pd.read_parquet(path)
         else:
             df = pd.read_csv(path, parse_dates=["timestamp"])
-        return validate_ohlcv(df)
+        df = validate_ohlcv(df)
+        if days is not None and not _cache_covers_days(df, days):
+            logger.info("Кеш %s не покрывает %sд, перезагрузка", path.name, days)
+            return None
+        return df
     except Exception as e:
-        logger.warning(f"Не удалось загрузить кеш {path}: {e}")
+        logger.warning("Не удалось загрузить кеш %s: %s", path, e)
         return None
 
 
@@ -135,6 +164,7 @@ def fetch_ohlcv(
     cache_dir: str = "data/cache",
     use_cache: bool = True,
     *,
+    cache_max_age_hours: float = DEFAULT_CACHE_MAX_AGE_HOURS,
     exchange_factory=None,
 ) -> pd.DataFrame:
     """Загрузить OHLCV для линейных фьючерсов Bybit.
@@ -151,6 +181,8 @@ def fetch_ohlcv(
         Каталог кеша.
     use_cache : bool
         Использовать кеш parquet.
+    cache_max_age_hours : float
+        Максимальный возраст кеша в часах (0 = не проверять).
     exchange_factory : callable, optional
         Фабрика exchange-объекта для тестов. Должна возвращать объект
         ccxt-формата с `load_markets()` и `fetch_ohlcv()`.
@@ -158,7 +190,9 @@ def fetch_ohlcv(
     symbol = parse_symbol(raw_symbol)
     cache_file = _cache_path(symbol, timeframe, days, cache_dir)
     if use_cache:
-        cached = _load_cache(cache_file)
+        cached = _load_cache(
+            cache_file, days=days, max_age_hours=cache_max_age_hours
+        )
         if cached is not None:
             return cached
 
@@ -168,10 +202,7 @@ def fetch_ohlcv(
         hint = f" Похожие: {', '.join(suggestions)}" if suggestions else ""
         raise SymbolNotFoundError(f"Символ {symbol!r} не найден на Bybit.{hint}")
 
-    import time
-
     now_ms = int(time.time() * 1000)
-    tf_ms = _timeframe_to_ms(timeframe)
     since_ms = now_ms - days * 24 * 60 * 60 * 1000
     raw_rows = _fetch_paginated(exchange, symbol, timeframe, since_ms, now_ms)
     if not raw_rows:

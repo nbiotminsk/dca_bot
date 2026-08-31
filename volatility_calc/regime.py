@@ -160,28 +160,35 @@ def detect_regime(df: pd.DataFrame, window: int = 100) -> RegimeStats:
     
     current_probs = gamma[-1, :]
     current_state = int(np.argmax(current_probs))
-    
-    sorted_indices = np.argsort(means)
-    state_mapping = {}
-    
-    state_mapping[sorted_indices[0]] = MarketRegime.TRENDING_DOWN
-    state_mapping[sorted_indices[1]] = MarketRegime.MEAN_REVERTING
-    state_mapping[sorted_indices[2]] = MarketRegime.TRENDING_UP
-    state_mapping[sorted_indices[3]] = MarketRegime.HIGH_VOLATILITY
-    
+
+    # Map states by mean return + volatility:
+    # lowest mean -> trending_down, highest mean -> trending_up,
+    # highest std among middle -> high_volatility, rest -> mean_reverting
+    order_by_mean = np.argsort(means)
+    mid = order_by_mean[1:3]
+    high_vol_state = int(mid[np.argmax(stds[mid])])
+    mean_rev_state = int(mid[0] if mid[1] == high_vol_state else mid[1])
+
+    state_mapping = {
+        int(order_by_mean[0]): MarketRegime.TRENDING_DOWN,
+        mean_rev_state: MarketRegime.MEAN_REVERTING,
+        int(order_by_mean[3]): MarketRegime.TRENDING_UP,
+        high_vol_state: MarketRegime.HIGH_VOLATILITY,
+    }
+
     current_regime = state_mapping[current_state]
-    
-    regime_probs = {}
-    for state_idx, regime in state_mapping.items():
-        regime_probs[regime] = float(current_probs[state_idx])
-    
-    regime_history = []
-    for t in range(n):
-        state = int(np.argmax(gamma[t, :]))
-        regime_history.append(state_mapping[state])
-    
+
+    regime_probs = {
+        regime: float(current_probs[state_idx])
+        for state_idx, regime in state_mapping.items()
+    }
+
+    regime_history = [
+        state_mapping[int(np.argmax(gamma[t, :]))] for t in range(n)
+    ]
+
     confidence = float(current_probs[current_state])
-    
+
     return RegimeStats(
         current_regime=current_regime,
         regime_probabilities=regime_probs,
