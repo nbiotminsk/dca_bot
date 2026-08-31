@@ -13,7 +13,7 @@ use_log    = input.bool(true, "Логарифмическая шкала (Log Fi
 // ══════════════════════════════════════════════════════════════════════════════
 grp_maj_set = "🏛️ Старшая Фиба: Поиск и Позиция"
 show_maj    = input.bool(false, "Показывать Старшую Фибу (Глобальную)", group=grp_maj_set)
-maj_min_p   = input.float(5.0, "Мин. размах Старшей (%)", minval=1.0, step=0.5, group=grp_maj_set)
+maj_min_p   = input.float(3.0, "Мин. размах Старшей (%)", minval=1.0, step=0.5, group=grp_maj_set)
 maj_lookb   = input.int(100, "Глубина поиска Старшей (свечей)", minval=20, maxval=300, group=grp_maj_set)
 maj_lbl_pos = input.string("Слева", "Расположение подписей Старшей", options=["Слева", "Справа"], group=grp_maj_set)
 
@@ -42,7 +42,10 @@ w_maj_086   = input.int(2, "Толщина 0.860", minval=1, maxval=4, group=grp
 col_maj_100 = input.color(color.maroon, "1.000 (Дно/Вершина)", group=grp_maj_col)
 w_maj_100   = input.int(2, "Толщина 1.000", minval=1, maxval=4, group=grp_maj_col)
 
-col_maj_161 = input.color(color.fuchsia, "1.618 (Манипуляция)", group=grp_maj_col)
+col_maj_141 = input.color(#f43f5e, "1.414 (Манипуляция 1)", group=grp_maj_col)
+w_maj_141   = input.int(1, "Толщина 1.414", minval=1, maxval=4, group=grp_maj_col)
+
+col_maj_161 = input.color(color.fuchsia, "1.618 (Манипуляция 2)", group=grp_maj_col)
 w_maj_161   = input.int(2, "Толщина 1.618", minval=1, maxval=4, group=grp_maj_col)
 
 col_maj_200 = input.color(color.orange, "2.000 (Добор DCA)", group=grp_maj_col)
@@ -76,7 +79,10 @@ w_min_086   = input.int(1, "Толщина 0.860", minval=1, maxval=4, group=grp
 col_min_100 = input.color(color.maroon, "1.000 (Дно)", group=grp_min_col)
 w_min_100   = input.int(1, "Толщина 1.000", minval=1, maxval=4, group=grp_min_col)
 
-col_min_161 = input.color(#e879f9, "1.618 (Манипуляция)", group=grp_min_col)
+col_min_141 = input.color(#f43f5e, "1.414 (Манипуляция 1)", group=grp_min_col)
+w_min_141   = input.int(1, "Толщина 1.414", minval=1, maxval=4, group=grp_min_col)
+
+col_min_161 = input.color(#e879f9, "1.618 (Манипуляция 2)", group=grp_min_col)
 w_min_161   = input.int(2, "Толщина 1.618", minval=1, maxval=4, group=grp_min_col)
 
 col_min_200 = input.color(#fb923c, "2.000 (Добор DCA)", group=grp_min_col)
@@ -90,7 +96,7 @@ show_0236   = input.bool(true, "Показывать 0.236 Fib (Дальний �
 show_0382   = input.bool(true, "Показывать 0.382 Fib (Базовый Тейк)", group=grp_lvls)
 show_0786   = input.bool(true, "Показывать 0.786 Fib (Глубокий Вход)", group=grp_lvls)
 show_0860   = input.bool(true, "Показывать 0.860 Fib (Стоп-Лосс)", group=grp_lvls)
-show_manip  = input.bool(true, "Показывать 1.618 / 2.000 (Манипуляция)", group=grp_lvls)
+show_manip  = input.bool(true, "Показывать 1.414 / 1.618 / 2.000 (Манипуляция)", group=grp_lvls)
 
 // ══════════════════════════════════════════════════════════════════════════════
 // 5. МАТЕМАТИЧЕСКИЕ ФУНКЦИИ И ОТРИСОВКА
@@ -124,7 +130,7 @@ draw_level(float price, string label_text, color col, int width, string style_ty
     array.push(labels_arr, lb)
 
 // ══════════════════════════════════════════════════════════════════════════════
-// 6. НАДЕЖНЫЙ ПОИСК АКТИВНЫХ ИМПУЛЬСОВ
+// 6. НАДЕЖНЫЙ ПОИСК АКТИВНЫХ ИМПУЛЬСОВ (С ПОДДЕРЖКОЙ МАНИПУЛЯЦИИ ДО 2.000)
 // ══════════════════════════════════════════════════════════════════════════════
 find_long_impulse(int lookback, float min_pct, int max_duration) =>
     int   best_start = na
@@ -134,7 +140,7 @@ find_long_impulse(int lookback, float min_pct, int max_duration) =>
     int   max_s      = math.min(lookback, bar_index)
 
     if max_s >= 2
-        for b = 1 to math.min(20, max_s - 1)
+        for b = 1 to math.min(40, max_s - 1)
             float h = high[b]
             int   cand_s = na
             float cand_l = low[b]
@@ -159,7 +165,8 @@ find_long_impulse(int lookback, float min_pct, int max_duration) =>
             if not na(cand_s)
                 float in_050 = calc_fib_long(h, cand_l, 0.500, use_log)
                 float tp_038 = calc_fib_long(h, cand_l, 0.382, use_log)
-                float sl_860 = calc_fib_long(h, cand_l, 0.860, use_log)
+                // Если включена манипуляция, стоп уходит на уровень 2.000, иначе 0.860
+                float sl_lim = show_manip ? calc_fib_long(h, cand_l, 2.000, use_log) : calc_fib_long(h, cand_l, 0.860, use_log)
 
                 bool entered  = false
                 int  entry_p  = -1
@@ -172,7 +179,7 @@ find_long_impulse(int lookback, float min_pct, int max_duration) =>
                             entered := true
                             entry_p := p
                         else
-                            if high[p] > h or low[p] < cand_l
+                            if high[p] > h or low[p] < sl_lim
                                 sl_hit := true
                                 break
                     else
@@ -180,7 +187,7 @@ find_long_impulse(int lookback, float min_pct, int max_duration) =>
                             if high[p] >= tp_038
                                 tp_hit := true
                                 break
-                            if low[p] <= sl_860 or low[p] < cand_l
+                            if low[p] <= sl_lim
                                 sl_hit := true
                                 break
 
@@ -203,7 +210,7 @@ find_short_impulse(int lookback, float min_pct, int max_duration) =>
     int   max_s      = math.min(lookback, bar_index)
 
     if max_s >= 2
-        for b = 1 to math.min(20, max_s - 1)
+        for b = 1 to math.min(40, max_s - 1)
             float l = low[b]
             int   cand_s = na
             float cand_h = high[b]
@@ -228,7 +235,8 @@ find_short_impulse(int lookback, float min_pct, int max_duration) =>
             if not na(cand_s)
                 float in_050 = calc_fib_short(cand_h, l, 0.500, use_log)
                 float tp_038 = calc_fib_short(cand_h, l, 0.382, use_log)
-                float sl_860 = calc_fib_short(cand_h, l, 0.860, use_log)
+                // Если включена манипуляция, стоп уходит на уровень 2.000, иначе 0.860
+                float sl_lim = show_manip ? calc_fib_short(cand_h, l, 2.000, use_log) : calc_fib_short(cand_h, l, 0.860, use_log)
 
                 bool entered  = false
                 int  entry_p  = -1
@@ -241,7 +249,7 @@ find_short_impulse(int lookback, float min_pct, int max_duration) =>
                             entered := true
                             entry_p := p
                         else
-                            if high[p] > cand_h or low[p] < l
+                            if high[p] > sl_lim or low[p] < l
                                 sl_hit := true
                                 break
                     else
@@ -249,7 +257,7 @@ find_short_impulse(int lookback, float min_pct, int max_duration) =>
                             if low[p] <= tp_038
                                 tp_hit := true
                                 break
-                            if high[p] >= sl_860 or high[p] > cand_h
+                            if high[p] >= sl_lim
                                 sl_hit := true
                                 break
 
@@ -325,8 +333,10 @@ if barstate.islast
             draw_level(p100, "🛑 LOW (1.0) " + str.tostring(p100, "#.###"), col_maj_100, w_maj_100, "solid", x_start, x_end, pos, lines_arr, labels_arr)
             
             if show_manip
+                float p141 = calc_fib_long(h, l, 1.414, use_log)
                 float p161 = calc_fib_long(h, l, 1.618, use_log)
                 float p200 = calc_fib_long(h, l, 2.000, use_log)
+                draw_level(p141, "🔴 1.414  " + str.tostring(p141, "#.###"), col_maj_141, w_maj_141, "solid", x_start, x_end, pos, lines_arr, labels_arr)
                 draw_level(p161, "🟣 1.618  " + str.tostring(p161, "#.###"), col_maj_161, w_maj_161, "solid", x_start, x_end, pos, lines_arr, labels_arr)
                 draw_level(p200, "🟠 2.000  " + str.tostring(p200, "#.###"), col_maj_200, w_maj_200, "solid", x_start, x_end, pos, lines_arr, labels_arr)
 
@@ -355,8 +365,10 @@ if barstate.islast
             draw_level(p100, "🛑 LOW (1.0) " + str.tostring(p100, "#.###"), col_min_100, w_min_100, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
             
             if show_manip
+                float p141 = calc_fib_long(h, l, 1.414, use_log)
                 float p161 = calc_fib_long(h, l, 1.618, use_log)
                 float p200 = calc_fib_long(h, l, 2.000, use_log)
+                draw_level(p141, "🔴 1.414  " + str.tostring(p141, "#.###"), col_min_141, w_min_141, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
                 draw_level(p161, "🟣 1.618  " + str.tostring(p161, "#.###"), col_min_161, w_min_161, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
                 draw_level(p200, "🟠 2.000  " + str.tostring(p200, "#.###"), col_min_200, w_min_200, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
 
@@ -394,12 +406,14 @@ if barstate.islast
             draw_level(p100, "🛑 HIGH (1.0) " + str.tostring(p100, "#.###"), col_maj_100, w_maj_100, "solid", x_start, x_end, pos, lines_arr, labels_arr)
             
             if show_manip
+                float p141 = calc_fib_short(h, l, 1.414, use_log)
                 float p161 = calc_fib_short(h, l, 1.618, use_log)
                 float p200 = calc_fib_short(h, l, 2.000, use_log)
+                draw_level(p141, "🔴 1.414  " + str.tostring(p141, "#.###"), col_maj_141, w_maj_141, "solid", x_start, x_end, pos, lines_arr, labels_arr)
                 draw_level(p161, "🟣 1.618  " + str.tostring(p161, "#.###"), col_maj_161, w_maj_161, "solid", x_start, x_end, pos, lines_arr, labels_arr)
                 draw_level(p200, "🟠 2.000  " + str.tostring(p200, "#.###"), col_maj_200, w_maj_200, "solid", x_start, x_end, pos, lines_arr, labels_arr)
 
-        // ⚡ Младшая Short (Ровно 83.40 на HYPE и 106.75 на SOL)
+        // ⚡ Младшая Short
         if show_min and not na(min_s_high) and not na(min_s_low)
             float h = min_s_high, float l = min_s_low, int x_start = min_s_s
             
@@ -424,7 +438,9 @@ if barstate.islast
             draw_level(p100, "🛑 HIGH (1.0) " + str.tostring(p100, "#.###"), col_min_100, w_min_100, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
             
             if show_manip
+                float p141 = calc_fib_short(h, l, 1.414, use_log)
                 float p161 = calc_fib_short(h, l, 1.618, use_log)
                 float p200 = calc_fib_short(h, l, 2.000, use_log)
+                draw_level(p141, "🔴 1.414  " + str.tostring(p141, "#.###"), col_min_141, w_min_141, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
                 draw_level(p161, "🟣 1.618  " + str.tostring(p161, "#.###"), col_min_161, w_min_161, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
                 draw_level(p200, "🟠 2.000  " + str.tostring(p200, "#.###"), col_min_200, w_min_200, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
