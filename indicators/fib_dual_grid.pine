@@ -384,7 +384,7 @@ find_minor_short(int lookback, float min_pct, int max_duration) =>
                         best_high  := h_s
                         best_low   := cur_l
 
-    [best_start, best_low, best_high, best_pct]
+    [best_start, best_high, best_low, best_pct]
 
 // ══════════════════════════════════════════════════════════════════════════════
 // 7. ОТРИСОВКА СЕТОК НА ГРАФИКЕ
