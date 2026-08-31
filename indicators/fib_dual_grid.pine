@@ -235,6 +235,7 @@ find_minor_long(int lookback, float min_pct, int max_duration) =>
             bool  is_impulse   = false
             bool  broken       = false
             bool  entered_05   = false
+            bool  entered_0618 = false
             int   end_idx      = s
 
             // Сканируем только закрытые свечи от s-1 до 1
