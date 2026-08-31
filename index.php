@@ -195,10 +195,19 @@ function detectLatestLongImpulse($candles, $min_pct = 1.5) {
             }
         }
 
-        // Проверка отработки на незакрытой свече n-1
+        // На незакрытой живой свече n-1:
+        // Если вход на 0.5 еще НЕ произошел — фиба динамически растет за новым максимумом!
         if ($is_impulse && !$broken) {
-            if ($entered_05) {
-                $cur_live = $candles[$n - 1];
+            $cur_live = $candles[$n - 1];
+            if (!$entered_05) {
+                if ($cur_live['high'] > $cur_h) {
+                    $cur_h = $cur_live['high'];
+                }
+                $fib_05_live = calcFibLongLog($cur_h, $l_s, 0.500);
+                if ($cur_live['low'] <= $fib_05_live) {
+                    $entered_05 = true;
+                }
+            } else {
                 $sl_lim = calcFibLongLog($cur_h, $l_s, 2.000);
                 if ($cur_live['high'] >= $cur_h || $cur_live['close'] >= $cur_h || $cur_live['low'] <= $sl_lim) {
                     $broken = true;
@@ -299,8 +308,16 @@ function detectLatestShortImpulse($candles, $min_pct = 2.0) {
         }
 
         if ($is_dump && !$broken) {
-            if ($entered_05) {
-                $cur_live = $candles[$n - 1];
+            $cur_live = $candles[$n - 1];
+            if (!$entered_05) {
+                if ($cur_live['low'] < $cur_l) {
+                    $cur_l = $cur_live['low'];
+                }
+                $fib_05_live = calcFibShortLog($h_s, $cur_l, 0.500);
+                if ($cur_live['high'] >= $fib_05_live) {
+                    $entered_05 = true;
+                }
+            } else {
                 $sl_lim = calcFibShortLog($h_s, $cur_l, 2.000);
                 if ($cur_live['low'] <= $cur_l || $cur_live['close'] <= $cur_l || $cur_live['high'] >= $sl_lim) {
                     $broken = true;

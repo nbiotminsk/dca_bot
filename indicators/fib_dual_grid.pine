@@ -290,9 +290,17 @@ find_minor_long(int lookback, float min_pct, int max_duration) =>
                             broken := true
                             break
             
-            // На текущей живой свече [0] проверяем отработку
+            // На текущей живой свече [0]:
+            // 1. Если импульс подтвержден и входа на 0.5 еще НЕ было — фиба динамически тянется за новым хаем [0]!
+            // 2. Если вход на 0.5 уже был — проверяем отработку (пробой уровня 0 / стоп).
             if is_impulse and not broken
-                if entered_05
+                if not entered_05
+                    if high[0] > cur_h
+                        cur_h := high[0]
+                    float fib_05_live = calc_fib_long(cur_h, l_s, 0.500, use_log)
+                    if low[0] <= fib_05_live
+                        entered_05 := true
+                else
                     float sl_lim = show_manip ? calc_fib_long(cur_h, l_s, 2.000, use_log) : calc_fib_long(cur_h, l_s, 0.860, use_log)
                     if high[0] >= cur_h or close[0] >= cur_h or low[0] <= sl_lim
                         broken := true
@@ -371,7 +379,13 @@ find_minor_short(int lookback, float min_pct, int max_duration) =>
                             break
             
             if is_dump and not broken
-                if entered_05
+                if not entered_05
+                    if low[0] < cur_l
+                        cur_l := low[0]
+                    float fib_05_live = calc_fib_short(h_s, cur_l, 0.500, use_log)
+                    if high[0] >= fib_05_live
+                        entered_05 := true
+                else
                     float sl_lim = show_manip ? calc_fib_short(h_s, cur_l, 2.000, use_log) : calc_fib_short(h_s, cur_l, 0.860, use_log)
                     if low[0] <= cur_l or close[0] <= cur_l or high[0] >= sl_lim
                         broken := true
