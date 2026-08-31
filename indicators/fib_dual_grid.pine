@@ -104,6 +104,8 @@ i_risk_usd  = input.float(10.0, "Риск / Стоп на сделку ($)", min
 i_sl_mode   = input.string("0.860 Fib", "Уровень Стоп-Лосса для расчета", options=["0.860 Fib", "1.000 Fib"], group=grp_calc)
 show_calc_618 = input.bool(true, "Показывать расчет для Входа 0.618", group=grp_calc)
 show_calc_786 = input.bool(true, "Показывать расчет для Входа 0.786", group=grp_calc)
+fee_maker   = input.float(0.02, "Комиссия входа Maker (%)", minval=0.0, step=0.01, group=grp_calc) / 100.0
+fee_taker   = input.float(0.055, "Комиссия выхода Стопа Taker (%)", minval=0.0, step=0.005, group=grp_calc) / 100.0
 
 // ══════════════════════════════════════════════════════════════════════════════
 // 5. МАТЕМАТИЧЕСКИЕ ФУНКЦИИ И ОТРИСОВКА
@@ -666,16 +668,16 @@ if barstate.islast and show_table
             float sl_p = (i_sl_mode == "0.860 Fib") ? calc_fib_long(h, l, 0.860, use_log) : calc_fib_long(h, l, 1.000, use_log)
 
             if show_calc_618
-                float diff618 = math.abs(e618 - sl_p)
-                float qty618  = diff618 > 0 ? (i_risk_usd / diff618) : 0.0
+                float loss_per_coin = (e618 - sl_p) + (e618 * fee_maker) + (sl_p * fee_taker)
+                float qty618  = loss_per_coin > 0 ? (i_risk_usd / loss_per_coin) : 0.0
                 float notional618 = qty618 * e618
                 table.cell(risk_tbl, 0, cur_row, "🟢 Long 0.618 (" + str.tostring(e618, "#.####") + "):", text_color=color.yellow, text_size=size.small)
                 table.cell(risk_tbl, 1, cur_row, str.tostring(qty618, "#.##") + " шт. ($" + str.tostring(notional618, "#.#") + ")", text_color=color.lime, text_size=size.small)
                 cur_row := cur_row + 1
 
             if show_calc_786
-                float diff786 = math.abs(e786 - sl_p)
-                float qty786  = diff786 > 0 ? (i_risk_usd / diff786) : 0.0
+                float loss_per_coin = (e786 - sl_p) + (e786 * fee_maker) + (sl_p * fee_taker)
+                float qty786  = loss_per_coin > 0 ? (i_risk_usd / loss_per_coin) : 0.0
                 float notional786 = qty786 * e786
                 table.cell(risk_tbl, 0, cur_row, "🟣 Long 0.786 (" + str.tostring(e786, "#.####") + "):", text_color=#c084fc, text_size=size.small)
                 table.cell(risk_tbl, 1, cur_row, str.tostring(qty786, "#.##") + " шт. ($" + str.tostring(notional786, "#.#") + ")", text_color=color.aqua, text_size=size.small)
@@ -688,16 +690,16 @@ if barstate.islast and show_table
             float sl_p = (i_sl_mode == "0.860 Fib") ? calc_fib_short(h, l, 0.860, use_log) : calc_fib_short(h, l, 1.000, use_log)
 
             if show_calc_618
-                float diff618 = math.abs(sl_p - e618)
-                float qty618  = diff618 > 0 ? (i_risk_usd / diff618) : 0.0
+                float loss_per_coin = (sl_p - e618) + (e618 * fee_maker) + (sl_p * fee_taker)
+                float qty618  = loss_per_coin > 0 ? (i_risk_usd / loss_per_coin) : 0.0
                 float notional618 = qty618 * e618
                 table.cell(risk_tbl, 0, cur_row, "🔴 Short 0.618 (" + str.tostring(e618, "#.####") + "):", text_color=color.yellow, text_size=size.small)
                 table.cell(risk_tbl, 1, cur_row, str.tostring(qty618, "#.##") + " шт. ($" + str.tostring(notional618, "#.#") + ")", text_color=color.lime, text_size=size.small)
                 cur_row := cur_row + 1
 
             if show_calc_786
-                float diff786 = math.abs(sl_p - e786)
-                float qty786  = diff786 > 0 ? (i_risk_usd / diff786) : 0.0
+                float loss_per_coin = (sl_p - e786) + (e786 * fee_maker) + (sl_p * fee_taker)
+                float qty786  = loss_per_coin > 0 ? (i_risk_usd / loss_per_coin) : 0.0
                 float notional786 = qty786 * e786
                 table.cell(risk_tbl, 0, cur_row, "🟣 Short 0.786 (" + str.tostring(e786, "#.####") + "):", text_color=#c084fc, text_size=size.small)
                 table.cell(risk_tbl, 1, cur_row, str.tostring(qty786, "#.##") + " шт. ($" + str.tostring(notional786, "#.#") + ")", text_color=color.aqua, text_size=size.small)
