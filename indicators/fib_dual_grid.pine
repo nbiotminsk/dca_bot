@@ -261,13 +261,13 @@ find_minor_long(int lookback, float min_pct, int max_duration) =>
                     bool tp_hit   = false
                     bool sl_hit   = false
 
-                    if end_idx > 0
-                        for p = end_idx - 1 to 0
+                    if end_idx >= 0
+                        for p = end_idx to 0
                             if not entered
                                 if low[p] <= fib_05_final
                                     entered := true
                             if entered
-                                if high[p] >= tp_038
+                                if high[p] >= tp_038 or close[p] >= tp_038
                                     tp_hit := true
                                     break
                                 if low[p] <= sl_lim
@@ -329,13 +329,13 @@ find_minor_short(int lookback, float min_pct, int max_duration) =>
                     bool tp_hit   = false
                     bool sl_hit   = false
 
-                    if end_idx > 0
-                        for p = end_idx - 1 to 0
+                    if end_idx >= 0
+                        for p = end_idx to 0
                             if not entered
                                 if high[p] >= fib_05_final
                                     entered := true
                             if entered
-                                if low[p] <= tp_038
+                                if low[p] <= tp_038 or close[p] <= tp_038
                                     tp_hit := true
                                     break
                                 if high[p] >= sl_lim

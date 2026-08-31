@@ -119,14 +119,14 @@ function detectLatestLongImpulse($candles, $min_pct = 1.5) {
                 $tp_hit  = false;
                 $sl_hit  = false;
 
-                for ($p = $end_idx + 1; $p < $n; $p++) {
+                for ($p = $end_idx; $p < $n; $p++) {
                     if (!$entered) {
                         if ($candles[$p]['low'] <= $fib_05_final) {
                             $entered = true;
                         }
                     }
                     if ($entered) {
-                        if ($candles[$p]['high'] >= $tp_038) {
+                        if ($candles[$p]['high'] >= $tp_038 || $candles[$p]['close'] >= $tp_038) {
                             $tp_hit = true;
                             break;
                         }
@@ -204,14 +204,14 @@ function detectLatestShortImpulse($candles, $min_pct = 2.0) {
                 $tp_hit  = false;
                 $sl_hit  = false;
 
-                for ($p = $end_idx + 1; $p < $n; $p++) {
+                for ($p = $end_idx; $p < $n; $p++) {
                     if (!$entered) {
                         if ($candles[$p]['high'] >= $fib_05_final) {
                             $entered = true;
                         }
                     }
                     if ($entered) {
-                        if ($candles[$p]['low'] <= $tp_038) {
+                        if ($candles[$p]['low'] <= $tp_038 || $candles[$p]['close'] <= $tp_038) {
                             $tp_hit = true;
                             break;
                         }
