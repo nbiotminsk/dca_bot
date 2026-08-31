@@ -264,19 +264,28 @@ find_minor_long(int lookback, float min_pct, int max_duration) =>
                                 end_idx := k
                     
                     if entered_05
+                        float in_0618 = calc_fib_long(cur_h, l_s, 0.618, use_log)
+                        float tp_0382 = calc_fib_long(cur_h, l_s, 0.382, use_log)
                         float sl_lim = show_manip ? calc_fib_long(cur_h, l_s, 2.000, use_log) : calc_fib_long(cur_h, l_s, 0.860, use_log)
-                        float tp_target = calc_fib_long(cur_h, l_s, 0.500, use_log) // Тейк возврата в 0.5 при манипуляции
+                        float tp_target = calc_fib_long(cur_h, l_s, 0.500, use_log)
 
-                        // Если был вход на 0.5:
-                        // 1. Пробили уровень 0 (хай cur_h) -> фибу стираем (сделка отработала)
-                        if high[k] >= cur_h or close[k] >= cur_h
-                            broken := true
-                            break
+                        if not entered_0618
+                            if low[k] <= in_0618
+                                entered_0618 := true
+
+                        // 1. Если был вход на 0.618 и цена взяла Тейк 0.382 (или пробила хай 0) -> сделка отработала, стираем!
+                        if entered_0618
+                            if high[k] >= tp_0382 or close[k] >= tp_0382 or high[k] >= cur_h or close[k] >= cur_h
+                                broken := true
+                                break
+                        else
+                            if high[k] >= cur_h or close[k] >= cur_h
+                                broken := true
+                                break
                         
                         // 2. Если упали ниже уровня 1.0 (l_s)
                         if low[k] < l_s
                             if show_manip
-                                // Ждем манипуляцию: если коснулись 1.618 и откатили до 0.500 — сделка отработала
                                 float manip_1618 = calc_fib_long(cur_h, l_s, 1.618, use_log)
                                 if low[k] <= manip_1618 and (high[k] >= tp_target or close[k] >= tp_target)
                                     broken := true
@@ -291,8 +300,6 @@ find_minor_long(int lookback, float min_pct, int max_duration) =>
                             break
             
             // На текущей живой свече [0]:
-            // 1. Если импульс подтвержден и входа на 0.5 еще НЕ было — фиба динамически тянется за новым хаем [0]!
-            // 2. Если вход на 0.5 уже был — проверяем отработку (пробой уровня 0 / стоп).
             if is_impulse and not broken
                 if not entered_05
                     if high[0] > cur_h
@@ -301,9 +308,17 @@ find_minor_long(int lookback, float min_pct, int max_duration) =>
                     if low[0] <= fib_05_live
                         entered_05 := true
                 else
-                    float sl_lim = show_manip ? calc_fib_long(cur_h, l_s, 2.000, use_log) : calc_fib_long(cur_h, l_s, 0.860, use_log)
-                    if high[0] >= cur_h or close[0] >= cur_h or low[0] <= sl_lim
+                    float in_0618 = calc_fib_long(cur_h, l_s, 0.618, use_log)
+                    float tp_0382 = calc_fib_long(cur_h, l_s, 0.382, use_log)
+                    if not entered_0618 and low[0] <= in_0618
+                        entered_0618 := true
+                    
+                    if entered_0618 and (high[0] >= tp_0382 or close[0] >= tp_0382 or high[0] >= cur_h or close[0] >= cur_h)
                         broken := true
+                    else
+                        float sl_lim = show_manip ? calc_fib_long(cur_h, l_s, 2.000, use_log) : calc_fib_long(cur_h, l_s, 0.860, use_log)
+                        if high[0] >= cur_h or close[0] >= cur_h or low[0] <= sl_lim
+                            broken := true
 
             if is_impulse and not broken
                 float pct = (cur_h - l_s) / l_s * 100.0
@@ -331,6 +346,7 @@ find_minor_short(int lookback, float min_pct, int max_duration) =>
             bool  is_dump     = false
             bool  broken      = false
             bool  entered_05  = false
+            bool  entered_0618 = false
             int   end_idx     = s
 
             for k = s - 1 to 1
@@ -357,12 +373,23 @@ find_minor_short(int lookback, float min_pct, int max_duration) =>
                                 end_idx := k
                     
                     if entered_05
+                        float in_0618 = calc_fib_short(h_s, cur_l, 0.618, use_log)
+                        float tp_0382 = calc_fib_short(h_s, cur_l, 0.382, use_log)
                         float sl_lim = show_manip ? calc_fib_short(h_s, cur_l, 2.000, use_log) : calc_fib_short(h_s, cur_l, 0.860, use_log)
                         float tp_target = calc_fib_short(h_s, cur_l, 0.500, use_log)
 
-                        if low[k] <= cur_l or close[k] <= cur_l
-                            broken := true
-                            break
+                        if not entered_0618
+                            if high[k] >= in_0618
+                                entered_0618 := true
+
+                        if entered_0618
+                            if low[k] <= tp_0382 or close[k] <= tp_0382 or low[k] <= cur_l or close[k] <= cur_l
+                                broken := true
+                                break
+                        else
+                            if low[k] <= cur_l or close[k] <= cur_l
+                                broken := true
+                                break
                         
                         if high[k] > h_s
                             if show_manip
@@ -386,9 +413,17 @@ find_minor_short(int lookback, float min_pct, int max_duration) =>
                     if high[0] >= fib_05_live
                         entered_05 := true
                 else
-                    float sl_lim = show_manip ? calc_fib_short(h_s, cur_l, 2.000, use_log) : calc_fib_short(h_s, cur_l, 0.860, use_log)
-                    if low[0] <= cur_l or close[0] <= cur_l or high[0] >= sl_lim
+                    float in_0618 = calc_fib_short(h_s, cur_l, 0.618, use_log)
+                    float tp_0382 = calc_fib_short(h_s, cur_l, 0.382, use_log)
+                    if not entered_0618 and high[0] >= in_0618
+                        entered_0618 := true
+                    
+                    if entered_0618 and (low[0] <= tp_0382 or close[0] <= tp_0382 or low[0] <= cur_l or close[0] <= cur_l)
                         broken := true
+                    else
+                        float sl_lim = show_manip ? calc_fib_short(h_s, cur_l, 2.000, use_log) : calc_fib_short(h_s, cur_l, 0.860, use_log)
+                        if low[0] <= cur_l or close[0] <= cur_l or high[0] >= sl_lim
+                            broken := true
 
             if is_dump and not broken
                 float pct = (h_s - cur_l) / h_s * 100.0

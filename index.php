@@ -168,14 +168,30 @@ function detectLatestLongImpulse($candles, $min_pct = 1.5) {
                 }
 
                 if ($entered_05) {
-                    // Если был вход на 0.5:
-                    // 1. Пробили уровень 0 (хай cur_h) -> фибу стираем
-                    if ($h_k >= $cur_h || $c_k >= $cur_h) {
-                        $broken = true;
-                        break;
+                    $tp_0382 = calcFibLongLog($cur_h, $l_s, 0.382);
+                    $in_0618 = calcFibLongLog($cur_h, $l_s, 0.618);
+
+                    if (!$entered_0618) {
+                        if ($l_k <= $in_0618) {
+                            $entered_0618 = true;
+                        }
+                    }
+
+                    // Если был вход на 0.618 и после этого цена взяла тейк 0.382 (или пробила уровень 0) -> сигнал отработал, не показываем!
+                    if ($entered_0618) {
+                        if ($h_k >= $tp_0382 || $c_k >= $tp_0382 || $h_k >= $cur_h || $c_k >= $cur_h) {
+                            $broken = true;
+                            break;
+                        }
+                    } else {
+                        // Если входили только на 0.500: пробой уровня 0 (хай) стирает фибу
+                        if ($h_k >= $cur_h || $c_k >= $cur_h) {
+                            $broken = true;
+                            break;
+                        }
                     }
                     
-                    // 2. Если упали ниже уровня 1.0 (Low базы l_s) -> проверяем манипуляцию 1.618 и откат к 0.5
+                    // Если упали ниже уровня 1.0 (Low базы l_s) -> проверяем манипуляцию 1.618 и откат к 0.5
                     if ($l_k < $l_s) {
                         $manip_1618 = calcFibLongLog($cur_h, $l_s, 1.618);
                         $tp_050 = calcFibLongLog($cur_h, $l_s, 0.500);
@@ -185,7 +201,7 @@ function detectLatestLongImpulse($candles, $min_pct = 1.5) {
                         }
                     }
 
-                    // 3. Выбили предельный стоп манипуляции (2.000 Fib)
+                    // Выбили предельный стоп манипуляции (2.000 Fib)
                     $sl_lim = calcFibLongLog($cur_h, $l_s, 2.000);
                     if ($l_k <= $sl_lim) {
                         $broken = true;
@@ -208,9 +224,19 @@ function detectLatestLongImpulse($candles, $min_pct = 1.5) {
                     $entered_05 = true;
                 }
             } else {
-                $sl_lim = calcFibLongLog($cur_h, $l_s, 2.000);
-                if ($cur_live['high'] >= $cur_h || $cur_live['close'] >= $cur_h || $cur_live['low'] <= $sl_lim) {
+                $tp_0382 = calcFibLongLog($cur_h, $l_s, 0.382);
+                $in_0618 = calcFibLongLog($cur_h, $l_s, 0.618);
+                if (!$entered_0618 && $cur_live['low'] <= $in_0618) {
+                    $entered_0618 = true;
+                }
+
+                if ($entered_0618 && ($cur_live['high'] >= $tp_0382 || $cur_live['close'] >= $tp_0382 || $cur_live['high'] >= $cur_h || $cur_live['close'] >= $cur_h)) {
                     $broken = true;
+                } else {
+                    $sl_lim = calcFibLongLog($cur_h, $l_s, 2.000);
+                    if ($cur_live['high'] >= $cur_h || $cur_live['close'] >= $cur_h || $cur_live['low'] <= $sl_lim) {
+                        $broken = true;
+                    }
                 }
             }
         }
@@ -248,6 +274,7 @@ function detectLatestShortImpulse($candles, $min_pct = 2.0) {
         $is_dump = false;
         $broken = false;
         $entered_05 = false;
+        $entered_0618 = false;
         $end_idx = $s;
 
         for ($k = $s + 1; $k < $n - 1; $k++) {
@@ -284,9 +311,25 @@ function detectLatestShortImpulse($candles, $min_pct = 2.0) {
                 }
 
                 if ($entered_05) {
-                    if ($l_k <= $cur_l || $c_k <= $cur_l) {
-                        $broken = true;
-                        break;
+                    $tp_0382 = calcFibShortLog($h_s, $cur_l, 0.382);
+                    $in_0618 = calcFibShortLog($h_s, $cur_l, 0.618);
+
+                    if (!$entered_0618) {
+                        if ($h_k >= $in_0618) {
+                            $entered_0618 = true;
+                        }
+                    }
+
+                    if ($entered_0618) {
+                        if ($l_k <= $tp_0382 || $c_k <= $tp_0382 || $l_k <= $cur_l || $c_k <= $cur_l) {
+                            $broken = true;
+                            break;
+                        }
+                    } else {
+                        if ($l_k <= $cur_l || $c_k <= $cur_l) {
+                            $broken = true;
+                            break;
+                        }
                     }
 
                     if ($h_k > $h_s) {
@@ -318,9 +361,19 @@ function detectLatestShortImpulse($candles, $min_pct = 2.0) {
                     $entered_05 = true;
                 }
             } else {
-                $sl_lim = calcFibShortLog($h_s, $cur_l, 2.000);
-                if ($cur_live['low'] <= $cur_l || $cur_live['close'] <= $cur_l || $cur_live['high'] >= $sl_lim) {
+                $tp_0382 = calcFibShortLog($h_s, $cur_l, 0.382);
+                $in_0618 = calcFibShortLog($h_s, $cur_l, 0.618);
+                if (!$entered_0618 && $cur_live['high'] >= $in_0618) {
+                    $entered_0618 = true;
+                }
+
+                if ($entered_0618 && ($cur_live['low'] <= $tp_0382 || $cur_live['close'] <= $tp_0382 || $cur_live['low'] <= $cur_l || $cur_live['close'] <= $cur_l)) {
                     $broken = true;
+                } else {
+                    $sl_lim = calcFibShortLog($h_s, $cur_l, 2.000);
+                    if ($cur_live['low'] <= $cur_l || $cur_live['close'] <= $cur_l || $cur_live['high'] >= $sl_lim) {
+                        $broken = true;
+                    }
                 }
             }
         }
