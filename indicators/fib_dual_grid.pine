@@ -1,0 +1,166 @@
+//@version=6
+indicator("Fibonacci Dual Grid (Старшая + Младшая Фиба)", shorttitle="Fib Dual Grid", overlay=true, max_lines_count=500, max_labels_count=500)
+
+// ─── 1. Настройки ────────────────────────────────────────────────────────────
+grp_gen   = "Общие настройки"
+use_log   = input.bool(true, "Логарифмическая шкала (Log Fib)", group=grp_gen)
+
+grp_major = "1. Старшая (Глобальная) Фиба"
+show_maj  = input.bool(true, "Показывать Старшую Фибу", group=grp_major)
+maj_min_p = input.float(6.0, "Мин. размах Старшей Фибы (%)", minval=2.0, step=0.5, group=grp_major)
+maj_lookb = input.int(100, "Глубина поиска Старшей (свечей)", minval=20, maxval=300, group=grp_major)
+col_maj   = input.color(#3b82f6, "Основной цвет Старшей", group=grp_major)
+
+grp_minor = "2. Младшая (Локальная суб-фиба)"
+show_min  = input.bool(true, "Показывать Младшую Фибу", group=grp_minor)
+min_min_p = input.float(2.0, "Мин. размах Младшей Фибы (%)", minval=1.0, step=0.5, group=grp_minor)
+min_lookb = input.int(36, "Глубина поиска Младшей (свечей)", minval=10, maxval=100, group=grp_minor)
+col_min   = input.color(#06b6d4, "Основной цвет Младшей", group=grp_minor)
+
+grp_lvls  = "Отображение уровней"
+show_0236 = input.bool(true, "Показывать 0.236 Fib (Дальний Тейк)", group=grp_lvls)
+show_0382 = input.bool(true, "Показывать 0.382 Fib (Базовый Тейк)", group=grp_lvls)
+show_0786 = input.bool(true, "Показывать 0.786 Fib (Глубокий Вход)", group=grp_lvls)
+show_0860 = input.bool(true, "Показывать 0.860 Fib (Стоп-Лосс)", group=grp_lvls)
+show_manip= input.bool(true, "Показывать 1.618 / 2.0 (Манипуляция)", group=grp_lvls)
+
+// ─── Функция расчета логарифмической Фибоначчи ──────────────────────────────
+calc_fib(float h, float l, float lvl, bool is_log) =>
+    if is_log and h > 0 and l > 0
+        math.exp(math.log(h) - lvl * (math.log(h) - math.log(l)))
+    else
+        h - lvl * (h - l)
+
+// ─── Поиск импульса (Алгоритм сканирования) ──────────────────────────────────
+find_impulse(int lookback, float min_pct) =>
+    int   best_start = na
+    float best_low   = na
+    float best_high  = na
+    float best_pct   = 0.0
+
+    for s = math.max(0, lookback) to 1
+        float l = low[s]
+        float h = high[s]
+        bool  broken = false
+        bool  growth = false
+
+        for k = s - 1 to 0
+            float fib05 = calc_fib(h, l, 0.500, use_log)
+            if low[k] <= fib05
+                broken := true
+                break
+            if low[k] < l
+                broken := true
+                break
+            if high[k] > h
+                h := high[k]
+                growth := true
+
+        if not broken and growth
+            float pct = (h - l) / l * 100.0
+            if pct >= min_pct and (pct > best_pct or na(best_pct))
+                best_pct   := pct
+                best_start := bar_index - s
+                best_low   := l
+                best_high  := h
+
+    [best_start, best_low, best_high, best_pct]
+
+// ─── Расчет импульсов ────────────────────────────────────────────────────────
+[maj_s, maj_l, maj_h, maj_pct] = find_impulse(maj_lookb, maj_min_p)
+[min_s, min_l, min_h, min_pct] = find_impulse(min_lookb, min_min_p)
+
+// ─── Отрисовка линий и меток ────────────────────────────────────────────────
+var line[] maj_lines  = array.new_line()
+var label[] maj_labels = array.new_label()
+var line[] min_lines  = array.new_line()
+var label[] min_labels = array.new_label()
+
+// Очистка предыдущего бара
+if barstate.islast
+    for ln in maj_lines
+        line.delete(ln)
+    maj_lines.clear()
+    for lb in maj_labels
+        label.delete(lb)
+    maj_labels.clear()
+
+    for ln in min_lines
+        line.delete(ln)
+    min_lines.clear()
+    for lb in min_labels
+        label.delete(lb)
+    min_labels.clear()
+
+    int x_end = bar_index + 12
+
+    // ── 1. ОТРИСОВКА СТАРШЕЙ (ГЛОБАЛЬНОЙ) ФИБЫ ──
+    if show_maj and not na(maj_h) and not na(maj_l)
+        float h = maj_h
+        float l = maj_l
+        int   x_start = maj_s
+        string pref = "🏛️ СТАРШАЯ: "
+
+        // Функция отрисовки уровня
+        draw_lvl_maj(float lvl, string name, color col, int width, string style_type) =>
+            float price = calc_fib(h, l, lvl, use_log)
+            var line_style = line.style_solid
+            if style_type == "dashed"
+                line_style := line.style_dashed
+            else if style_type == "dotted"
+                line_style := line.style_dotted
+
+            line ln = line.new(x_start, price, x_end, price, color=col, width=width, style=line_style)
+            array.push(maj_lines, ln)
+            string txt = pref + name + " (" + str.tostring(lvl, "#.###") + ") = " + str.tostring(price, "#.###") + " $"
+            label lb = label.new(x_end, price, txt, style=label.style_label_left, color=color.new(color.black, 100), textcolor=col, size=size.small)
+            array.push(maj_labels, lb)
+
+        draw_lvl_maj(0.000, "TOP (High)", color.gray, 1, "dashed")
+        if show_0236
+            draw_lvl_maj(0.236, "🎯 Тейк-2", color.teal, 1, "dotted")
+        if show_0382
+            draw_lvl_maj(0.382, "🎯 Тейк-1", color.green, 2, "solid")
+        draw_lvl_maj(0.500, "🔹 Вход-1 (0.500)", col_maj, 2, "solid")
+        draw_lvl_maj(0.618, "🔹 Вход-2 (0.618)", color.blue, 2, "solid")
+        if show_0786
+            draw_lvl_maj(0.786, "⚡ Вход-3 (0.786)", color.purple, 1, "dotted")
+        if show_0860
+            draw_lvl_maj(0.860, "🛑 Стоп (0.860)", color.red, 2, "dashed")
+        draw_lvl_maj(1.000, "🛑 Дно (1.000 Low)", color.maroon, 2, "solid")
+
+        if show_manip
+            draw_lvl_maj(1.618, "🟣 Манипуляция (1.618)", color.fuchsia, 2, "solid")
+            draw_lvl_maj(2.000, "🟠 Добор DCA (2.000)", color.orange, 2, "solid")
+
+    // ── 2. ОТРИСОВКА МЛАДШЕЙ (ЛОКАЛЬНОЙ) ФИБЫ ──
+    // Отрисовываем младшую, только если она отличается от старшей
+    bool is_different = na(maj_s) or (min_s != maj_s) or (math.abs(min_l - maj_l) > 0.0001)
+
+    if show_min and not na(min_h) and not na(min_l) and is_different
+        float h = min_h
+        float l = min_l
+        int   x_start = min_s
+        string pref = "⚡ МЛАДШАЯ: "
+
+        draw_lvl_min(float lvl, string name, color col, int width, string style_type) =>
+            float price = calc_fib(h, l, lvl, use_log)
+            var line_style = line.style_solid
+            if style_type == "dashed"
+                line_style := line.style_dashed
+            else if style_type == "dotted"
+                line_style := line.style_dotted
+
+            line ln = line.new(x_start, price, x_end, price, color=col, width=width, style=line_style)
+            array.push(min_lines, ln)
+            string txt = pref + name + " = " + str.tostring(price, "#.###") + " $"
+            label lb = label.new(x_end, price, txt, style=label.style_label_left, color=color.new(color.black, 100), textcolor=col, size=size.small)
+            array.push(min_labels, lb)
+
+        if show_0382
+            draw_lvl_min(0.382, "🎯 Тейк (0.382)", color.lime, 1, "dotted")
+        draw_lvl_min(0.500, "🔹 Вход (0.500)", col_min, 2, "solid")
+        draw_lvl_min(0.618, "🔹 Вход (0.618)", color.yellow, 2, "solid")
+        if show_0860
+            draw_lvl_min(0.860, "🛑 Стоп (0.860)", color.red, 1, "dashed")
+        draw_lvl_min(1.000, "🛑 Дно (1.000)", color.maroon, 1, "solid")
