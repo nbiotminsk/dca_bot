@@ -40,3 +40,6 @@ cache:
 trades_journal:
   csv_path: data/trades/journal.csv
   json_path: data/trades/journal.json
+
+fibonacci:
+  default_scale: "log"  # Всегда логарифмическая шкала по умолчанию

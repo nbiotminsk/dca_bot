@@ -131,13 +131,18 @@ def detect_impulses(
     max_pct: float | None = None,
     side: Literal["long", "short", "both"] = "long",
     scale: Literal["log", "linear"] = "log",
+    tolerance_pct: float = 0.0,
 ) -> list[Impulse]:
-    """Поиск подтвержденных импульсов с фильтрацией по диапазону размаха [min_pct, max_pct]."""
+    """Поиск подтвержденных импульсов с фильтрацией по диапазону размаха [min_pct, max_pct].
+    
+    tolerance_pct: допуск погрешности в % цены при касании уровня 0.500 (напр. 0.1 для 0.1%).
+    """
     highs = df["high"].values
     lows = df["low"].values
     times = df["timestamp"].values
     n = len(df)
     impulses: list[Impulse] = []
+    tol_mult = tolerance_pct / 100.0
 
     # 1. Поиск LONG импульсов
     if side in ("long", "both"):
@@ -169,7 +174,8 @@ def detect_impulses(
                         end_idx = j
                 else:
                     fib_05 = calc_fib(cur_h, l_s, 0.500, is_long=True, scale=scale)
-                    if l_j <= fib_05:
+                    eff_fib_05 = fib_05 * (1.0 + tol_mult)
+                    if l_j <= eff_fib_05:
                         # Касание 0.500 -> пик зафиксирован, импульс завершен
                         break
                     if h_j > cur_h:
@@ -226,7 +232,8 @@ def detect_impulses(
                         end_idx = j
                 else:
                     fib_05 = calc_fib(h_s, cur_l, 0.500, is_long=False, scale=scale)
-                    if h_j >= fib_05:
+                    eff_fib_05 = fib_05 * (1.0 - tol_mult)
+                    if h_j >= eff_fib_05:
                         # Откат вверх к 0.500 -> дно зафиксировано
                         break
                     if l_j < cur_l:
@@ -274,13 +281,15 @@ def run_backtest(
     dca_mult: float = 2.0,
     dca_tp_fib: float | None = None,
     filter_manager: FilterManager | None = None,
+    tolerance_pct: float = 0.0,
 ) -> list[TradeRecord]:
-    """Симуляция исполнения сделок по стратегии с учетом индикаторов-фильтров."""
+    """Симуляция исполнения сделок по стратегии с учетом индикаторов-фильтров и допуска погрешности."""
     highs = df["high"].values
     lows = df["low"].values
     closes = df["close"].values
     times = df["timestamp"].values
     n = len(df)
+    tol_mult = tolerance_pct / 100.0
 
     trades: list[TradeRecord] = []
     last_exit_idx = -1
@@ -314,13 +323,14 @@ def run_backtest(
         entry_idx: int | None = None
         start_search = max(imp.end_idx + 1, last_exit_idx + 1 if non_overlapping else 0)
         max_search = min(imp.end_idx + timeout_candles, n)
+        eff_entry = p_entry * (1.0 + tol_mult) if imp.is_long else p_entry * (1.0 - tol_mult)
 
         for k in range(start_search, max_search):
             if imp.is_long:
                 # Отмена неисполненного ордера, если цена обновила максимум импульса (новый хай)
                 if highs[k] > imp.high:
                     break
-                if lows[k] <= p_entry:
+                if lows[k] <= eff_entry:
                     if filter_manager is not None and not filter_manager.is_entry_allowed(k, "long", df):
                         continue
                     entry_idx = k
@@ -329,7 +339,7 @@ def run_backtest(
                 # Отмена неисполненного ордера, если цена обновила минимум импульса (новый лой)
                 if lows[k] < imp.low:
                     break
-                if highs[k] >= p_entry:
+                if highs[k] >= eff_entry:
                     if filter_manager is not None and not filter_manager.is_entry_allowed(k, "short", df):
                         continue
                     entry_idx = k
@@ -350,14 +360,16 @@ def run_backtest(
         for m in range(entry_idx + 1, max_hold):
             if imp.is_long:
                 # Проверка DCA (если настроен и еще не активирован)
-                if p_dca is not None and not has_dca and lows[m] <= p_dca:
+                eff_dca = p_dca * (1.0 + tol_mult) if p_dca is not None else None
+                if eff_dca is not None and not has_dca and lows[m] <= eff_dca:
                     has_dca = True
                     # Взвешенная средняя цена: 1 лот по p_entry + dca_mult лотов по p_dca
                     current_entry_price = (1.0 * p_entry + dca_mult * p_dca) / (1.0 + dca_mult)
                     current_tp_price = p_dca_tp
 
+                eff_tp = current_tp_price * (1.0 - tol_mult)
                 sl_hit = (p_sl is not None and lows[m] <= p_sl)
-                tp_hit = (highs[m] >= current_tp_price)
+                tp_hit = (highs[m] >= eff_tp)
 
                 if sl_hit and tp_hit:
                     exit_idx = m
@@ -375,13 +387,15 @@ def run_backtest(
                     exit_reason = "tp"
                     break
             else:  # Short
-                if p_dca is not None and not has_dca and highs[m] >= p_dca:
+                eff_dca = p_dca * (1.0 - tol_mult) if p_dca is not None else None
+                if eff_dca is not None and not has_dca and highs[m] >= eff_dca:
                     has_dca = True
                     current_entry_price = (1.0 * p_entry + dca_mult * p_dca) / (1.0 + dca_mult)
                     current_tp_price = p_dca_tp
 
+                eff_tp = current_tp_price * (1.0 + tol_mult)
                 sl_hit = (p_sl is not None and highs[m] >= p_sl)
-                tp_hit = (lows[m] <= current_tp_price)
+                tp_hit = (lows[m] <= eff_tp)
 
                 if sl_hit and tp_hit:
                     exit_idx = m
@@ -523,10 +537,12 @@ def display_report(
     max_impulse_pct: float | None = None,
     dca_entry_fib: float | None = None,
     filter_manager: FilterManager | None = None,
+    tolerance_pct: float = 0.0,
 ) -> None:
     stats = compute_statistics(trades)
 
     imp_range_str = f"{impulse_pct}% - {max_impulse_pct}%" if max_impulse_pct is not None else f"≥ {impulse_pct}%"
+    tol_str = f" | Допуск: {tolerance_pct}%" if tolerance_pct > 0 else ""
 
     if USE_RICH and console:
         # Заголовок
@@ -536,7 +552,7 @@ def display_report(
             f"[bold yellow]Таймфрейм:[/bold yellow] {timeframe}  |  "
             f"[bold yellow]Период:[/bold yellow] {days} дней ({candles_count} свечей)\n"
             f"[dim]Импульс: {imp_range_str} | Вход Fib: {entry_fib} | Тейк Fib: {tp_fib} | "
-            f"Стоп Fib: {sl_fib if sl_fib is not None else 'Нет'} | Направление: {side.upper()} | Шкала: {scale.upper()}[/dim]"
+            f"Стоп Fib: {sl_fib if sl_fib is not None else 'Нет'} | Направление: {side.upper()} | Шкала: {scale.upper()}{tol_str}[/dim]"
         )
         if dca_entry_fib is not None:
             header_text += f"\n[magenta]DCA Добор активен: уровень {dca_entry_fib} Fib[/magenta]"
@@ -867,8 +883,18 @@ def run_interactive_wizard() -> dict:
         except ValueError:
             dca_tp = 0.500
 
-    # 11. Подключение индикаторов-фильтров
-    print("\n11. Подключить индикаторы-фильтры для точек входа?")
+    # 11. Допуск погрешности касания уровней Фибо (tolerance)
+    print("\n11. Допуск погрешности касания уровней Фибо в % цены (спред / микро-недоход):")
+    print("   [0.0] Строгое математическое касание (по умолчанию)")
+    print("   [0.1] Допуск 0.1% (сглаживает микро-недоходы до уровней 0.500 / входа)")
+    tol_inp = input("Введите допуск в % [по умолчанию 0.0]: ").strip()
+    try:
+        tolerance_pct = float(tol_inp) if tol_inp else 0.0
+    except ValueError:
+        tolerance_pct = 0.0
+
+    # 12. Подключение индикаторов-фильтров
+    print("\n12. Подключить индикаторы-фильтры для точек входа?")
     print("   [0] Без индикаторов (только Price Action + Fib, по умолчанию)")
     print("   [1] RSI (вход только при перепроданности RSI < 35)")
     print("   [2] CCI (вход «Золотой вход» [-100, 0] из index.php)")
@@ -972,6 +998,7 @@ def run_interactive_wizard() -> dict:
         "volume": vol_filter,
         "timeout": 720,
         "fee": 0.04,
+        "tolerance": tolerance_pct,
         "save_csv": None,
     }
 
@@ -993,6 +1020,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="Минимальный % импульса (от 0.5%%)")
     parser.add_argument("-max-imp", "--max-impulse", dest="max_impulse", type=float, default=None,
                         help="Максимальный % импульса (ограничение сверху, напр. 2.0 или 5.0)")
+    parser.add_argument("--tolerance", type=float, default=0.0,
+                        help="Допуск погрешности касания уровней Фибо в %% цены (напр. 0.1 для 0.1%%, по умолчанию 0.0)")
     parser.add_argument("--entry", type=float, default=0.618,
                         help="Уровень входа Фибо (0.618, 0.500, 1.618 и др.)")
     parser.add_argument("--tp", type=float, default=0.382,
@@ -1051,6 +1080,7 @@ def main(argv: list[str] | None = None) -> int:
         days = cfg["days"]
         impulse_pct = cfg["impulse"]
         max_impulse_pct = cfg["max_impulse"]
+        tolerance_pct = cfg.get("tolerance", 0.0)
         entry_fib = cfg["entry"]
         tp_fib = cfg["tp"]
         sl_fib = cfg["sl"]
@@ -1080,6 +1110,7 @@ def main(argv: list[str] | None = None) -> int:
         days = args.days
         impulse_pct = max(0.5, args.min_impulse)
         max_impulse_pct = args.max_impulse
+        tolerance_pct = max(0.0, args.tolerance)
         entry_fib = args.entry
         tp_fib = args.tp
         sl_str = str(args.sl).strip().lower()
@@ -1146,7 +1177,14 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[INFO] Активные индикаторы-фильтры: {filter_mgr.describe()}", file=sys.stderr)
 
     print(f"[INFO] Загружено {len(df)} свечей. Поиск импульсов (диапазон {imp_range_desc})...", file=sys.stderr)
-    impulses = detect_impulses(df, min_pct=impulse_pct, max_pct=max_impulse_pct, side=side, scale=scale)
+    impulses = detect_impulses(
+        df,
+        min_pct=impulse_pct,
+        max_pct=max_impulse_pct,
+        side=side,
+        scale=scale,
+        tolerance_pct=tolerance_pct,
+    )
     print(f"[INFO] Найдено подтвержденных импульсов: {len(impulses)}", file=sys.stderr)
 
     trades = run_backtest(
@@ -1163,6 +1201,7 @@ def main(argv: list[str] | None = None) -> int:
         dca_mult=dca_mult,
         dca_tp_fib=dca_tp_fib,
         filter_manager=filter_mgr if filter_mgr.has_filters() else None,
+        tolerance_pct=tolerance_pct,
     )
     print(f"[INFO] Совершено сделок: {len(trades)}", file=sys.stderr)
 
@@ -1181,6 +1220,7 @@ def main(argv: list[str] | None = None) -> int:
         candles_count=len(df),
         dca_entry_fib=dca_entry_fib,
         filter_manager=filter_mgr if filter_mgr.has_filters() else None,
+        tolerance_pct=tolerance_pct,
     )
 
     if save_csv:

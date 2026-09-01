@@ -371,3 +371,29 @@ class TestSimulator:
         assert len(imps_wide) == 1
         assert imps_wide[0].high == 110.0
         assert imps_wide[0].low == 100.0
+
+    def test_detect_impulses_with_tolerance(self):
+        from scripts.backtest_strategy_interactive import detect_impulses
+        # 100 -> 110 (0.500 fib log = sqrt(100*110) = 104.88)
+        # 3: low 104.92 (на 0.04 выше 0.500)
+        # 4: high 115.0 (новый хай)
+        # 5: откат до 103.0 (касание 0.500 для 115)
+        candles = [
+            {"timestamp": pd.Timestamp("2026-01-01 00:00"), "open": 100.0, "high": 102.0, "low": 100.0, "close": 101.5, "volume": 100},
+            {"timestamp": pd.Timestamp("2026-01-01 01:00"), "open": 101.5, "high": 110.0, "low": 101.0, "close": 108.0, "volume": 100},
+            {"timestamp": pd.Timestamp("2026-01-01 02:00"), "open": 108.0, "high": 109.0, "low": 104.92, "close": 107.0, "volume": 100},
+            {"timestamp": pd.Timestamp("2026-01-01 03:00"), "open": 107.0, "high": 115.0, "low": 106.0, "close": 114.0, "volume": 100},
+            {"timestamp": pd.Timestamp("2026-01-01 04:00"), "open": 114.0, "high": 114.0, "low": 103.0, "close": 105.0, "volume": 100},
+        ]
+        df = pd.DataFrame(candles)
+
+        # 1. Без допуска (0.0%): 104.92 > 104.88, пик 110 не зафиксирован, волна выросла до 115
+        imps_strict = detect_impulses(df, min_pct=1.0, side="long", tolerance_pct=0.0)
+        assert len(imps_strict) == 1
+        assert imps_strict[0].high == 115.0
+
+        # 2. С допуском 0.1%: 104.92 <= 104.88 * 1.001 = 104.985 -> пик 110 зафиксирован!
+        imps_tol = detect_impulses(df, min_pct=1.0, side="long", tolerance_pct=0.1)
+        assert len(imps_tol) >= 1
+        assert imps_tol[0].high == 110.0
+

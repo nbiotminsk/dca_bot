@@ -1,5 +1,5 @@
 //@version=6
-indicator("Fibonacci Dual Grid (Pro Live Only)", shorttitle="Fib Dual Grid Pro v6", overlay=true, max_lines_count=500, max_labels_count=500)
+indicator("Fibonacci Dual Grid (Pro Live Only)", shorttitle="Fib Dual Grid Pro v7", overlay=true, max_lines_count=500, max_labels_count=500)
 
 // ══════════════════════════════════════════════════════════════════════════════
 // 1. ОБЩИЕ НАСТРОЙКИ
@@ -102,17 +102,37 @@ show_0860   = input.bool(true, "Показывать 0.860 Fib (Стоп-Лос�
 show_manip  = input.bool(true, "Показывать 1.414 / 1.618 / 2.000 (Манипуляция)", group=grp_lvls)
 show_table  = input.bool(true, "Показывать Инфо-Панель Риска и Калькулятор", group=grp_lvls)
 
+grp_trend   = "🛡️ Фильтры Безопасности Тренда (Вместо RSI/CCI)"
+i_safe_pct  = input.float(3.5, "Мин. размах импульса (%)", minval=1.0, step=0.5, tooltip="Размах импульса от 3.5% защищает от сдувания", group=grp_trend)
+i_safe_bars = input.int(4, "Зрелый тренд (мин. свечей)", minval=2, maxval=20, tooltip="Импульс от 4 свечей исключает лавиноопасные спайки 1-3 свечи", group=grp_trend)
+i_st_period = input.int(10, "SuperTrend ATR Period", group=grp_trend)
+i_st_mult   = input.float(3.0, "SuperTrend Multiplier", step=0.1, group=grp_trend)
+i_ema_fast  = input.int(34, "Fast EMA", group=grp_trend)
+i_ema_slow  = input.int(50, "Slow EMA", group=grp_trend)
+
 grp_calc    = "💰 Калькулятор размера позиции (Риск в $)"
 i_risk_usd  = input.float(10.0, "Риск / Стоп на сделку ($)", minval=1.0, step=1.0, group=grp_calc)
 i_sl_mode   = input.string("0.860 Fib", "Уровень Стоп-Лосса для расчета", options=["0.860 Fib", "1.000 Fib"], group=grp_calc)
-show_calc_618 = input.bool(true, "Показывать расчет для Входа 0.618", group=grp_calc)
-show_calc_786 = input.bool(true, "Показывать расчет для Входа 0.786", group=grp_calc)
+show_calc_500 = input.bool(true, "Показывать расчет для Входа 0.500 (Тейк 0.236)", group=grp_calc)
+show_calc_618 = input.bool(true, "Показывать расчет для Входа 0.618 (Тейк 0.382)", group=grp_calc)
 fee_maker   = input.float(0.02, "Комиссия входа Maker (%)", minval=0.0, step=0.01, group=grp_calc) / 100.0
 fee_taker   = input.float(0.055, "Комиссия выхода Стопа Taker (%)", minval=0.0, step=0.005, group=grp_calc) / 100.0
 
 // ══════════════════════════════════════════════════════════════════════════════
 // 5. МАТЕМАТИЧЕСКИЕ ФУНКЦИИ И ОТРИСОВКА
 // ══════════════════════════════════════════════════════════════════════════════
+
+// Форматирование цен по правилам Bybit:
+// Если цена >= 1.0 -> 3 знака после запятой (иначе Bybit выдает ошибку шага цены)
+// Если цена < 1.0 -> 4 знака после запятой
+fmt_p(float price) =>
+    if na(price)
+        "—"
+    else if price >= 1.0
+        str.tostring(price, "#.###")
+    else
+        str.tostring(price, "#.####")
+
 calc_fib_long(float h, float l, float lvl, bool is_log) =>
     if is_log and h > 0 and l > 0
         math.exp(math.log(h) - lvl * (math.log(h) - math.log(l)))
@@ -236,6 +256,7 @@ find_minor_long(int lookback, float min_pct, int max_duration) =>
     float best_low   = na
     float best_high  = na
     float best_pct   = 0.0
+    int   best_bars  = 0
     int   max_s      = math.min(lookback, bar_index)
 
     if max_s >= 3
@@ -316,6 +337,7 @@ find_minor_long(int lookback, float min_pct, int max_duration) =>
                 if not entered_05
                     if high[0] > cur_h
                         cur_h := high[0]
+                        end_idx := 0
                     float fib_05_live = calc_fib_long(cur_h, l_s, 0.500, use_log)
                     if low[0] <= fib_05_live
                         entered_05 := true
@@ -340,14 +362,16 @@ find_minor_long(int lookback, float min_pct, int max_duration) =>
                         best_start := bar_index - s
                         best_low   := l_s
                         best_high  := cur_h
+                        best_bars  := s - end_idx + 1
 
-    [best_start, best_low, best_high, best_pct]
+    [best_start, best_low, best_high, best_pct, best_bars]
 
 find_minor_short(int lookback, float min_pct, int max_duration) =>
     int   best_start = na
     float best_high  = na
     float best_low   = na
     float best_pct   = 0.0
+    int   best_bars  = 0
     int   max_s      = math.min(lookback, bar_index)
 
     if max_s >= 3
@@ -421,6 +445,7 @@ find_minor_short(int lookback, float min_pct, int max_duration) =>
                 if not entered_05
                     if low[0] < cur_l
                         cur_l := low[0]
+                        end_idx := 0
                     float fib_05_live = calc_fib_short(h_s, cur_l, 0.500, use_log)
                     if high[0] >= fib_05_live
                         entered_05 := true
@@ -445,18 +470,23 @@ find_minor_short(int lookback, float min_pct, int max_duration) =>
                         best_start := bar_index - s
                         best_high  := h_s
                         best_low   := cur_l
+                        best_bars  := s - end_idx + 1
 
-    [best_start, best_high, best_low, best_pct]
+    [best_start, best_high, best_low, best_pct, best_bars]
 
 // ══════════════════════════════════════════════════════════════════════════════
 // 7. ОТРИСОВКА СЕТОК НА ГРАФИКЕ
 // ══════════════════════════════════════════════════════════════════════════════
 var line[] lines_arr   = array.new_line()
 var label[] labels_arr = array.new_label()
-var table risk_tbl     = table.new(position.top_right, 2, 8, bgcolor=color.new(#0b0e14, 15), border_color=color.new(#1e293b, 0), border_width=1)
+var table risk_tbl     = table.new(position.top_right, 2, 12, bgcolor=color.new(#0b0e14, 15), border_color=color.new(#1e293b, 0), border_width=1)
 
-float cur_rsi = ta.rsi(close, 14)
-float cur_cci = ta.cci(hlc3, 14)
+// Трендовые индикаторы (замена устаревших RSI/CCI)
+float ema34 = ta.ema(close, i_ema_fast)
+float ema50 = ta.ema(close, i_ema_slow)
+[st_val, st_dir] = ta.supertrend(i_st_mult, i_st_period)
+bool is_st_bull = st_dir < 0
+bool is_st_bear = st_dir > 0
 
 if barstate.islast
     for ln in lines_arr
@@ -469,10 +499,10 @@ if barstate.islast
     // Старшая Фиба: Свинг-поиск макро-волн
     // Младшая Фиба: Локальные импульсы только с подтвержденным завершением (b >= 1)
     [maj_l_s, maj_l_low, maj_l_high, maj_l_pct] = find_macro_long(maj_lookb, maj_min_p)
-    [min_l_s, min_l_low, min_l_high, min_l_pct] = find_minor_long(min_lookb, min_min_p, min_bars)
+    [min_l_s, min_l_low, min_l_high, min_l_pct, min_l_bars] = find_minor_long(min_lookb, min_min_p, min_bars)
 
     [maj_s_s, maj_s_high, maj_s_low, maj_s_pct] = find_macro_short(maj_lookb, maj_min_p)
-    [min_s_s, min_s_high, min_s_low, min_s_pct] = find_minor_short(min_lookb, min_min_p, min_bars)
+    [min_s_s, min_s_high, min_s_low, min_s_pct, min_s_bars] = find_minor_short(min_lookb, min_min_p, min_bars)
 
     bool allow_long  = (i_mode == "Только LONG") or (i_mode == "Оба направления (L+S)") or (i_mode == "Авто (по тренду)" and (na(min_s_pct) or min_l_pct >= min_s_pct))
     bool allow_short = (i_mode == "Только SHORT") or (i_mode == "Оба направления (L+S)") or (i_mode == "Авто (по тренду)" and (na(min_l_pct) or min_s_pct > min_l_pct))
@@ -487,38 +517,38 @@ if barstate.islast
             string pos = maj_lbl_pos
             
             float p000 = calc_fib_long(h, l, 0.000, use_log)
-            draw_level(p000, "🏛️ TOP " + str.tostring(p000, "#.####"), col_maj_000, w_maj_000, "dashed", x_start, x_end, pos, lines_arr, labels_arr)
+            draw_level(p000, "🏛️ TOP " + fmt_p(p000), col_maj_000, w_maj_000, "dashed", x_start, x_end, pos, lines_arr, labels_arr)
             
             if show_0236
                 float p023 = calc_fib_long(h, l, 0.236, use_log)
-                draw_level(p023, "🎯 TP-2 (0.236) " + str.tostring(p023, "#.####"), col_maj_023, w_maj_023, "dotted", x_start, x_end, pos, lines_arr, labels_arr)
+                draw_level(p023, "🎯 TP-2 (0.236) " + fmt_p(p023), col_maj_023, w_maj_023, "dotted", x_start, x_end, pos, lines_arr, labels_arr)
             if show_0382
                 float p038 = calc_fib_long(h, l, 0.382, use_log)
-                draw_level(p038, "🎯 TP (0.382) " + str.tostring(p038, "#.####"), col_maj_038, w_maj_038, "solid", x_start, x_end, pos, lines_arr, labels_arr)
+                draw_level(p038, "🎯 TP (0.382) " + fmt_p(p038), col_maj_038, w_maj_038, "solid", x_start, x_end, pos, lines_arr, labels_arr)
             
             float p050 = calc_fib_long(h, l, 0.500, use_log)
-            draw_level(p050, "⬆️ 0.500  " + str.tostring(p050, "#.####"), col_maj_050, w_maj_050, "solid", x_start, x_end, pos, lines_arr, labels_arr)
+            draw_level(p050, "⬆️ 0.500  " + fmt_p(p050), col_maj_050, w_maj_050, "solid", x_start, x_end, pos, lines_arr, labels_arr)
             
             float p061 = calc_fib_long(h, l, 0.618, use_log)
-            draw_level(p061, "⬆️ 0.618  " + str.tostring(p061, "#.####"), col_maj_061, w_maj_061, "solid", x_start, x_end, pos, lines_arr, labels_arr)
+            draw_level(p061, "⬆️ 0.618  " + fmt_p(p061), col_maj_061, w_maj_061, "solid", x_start, x_end, pos, lines_arr, labels_arr)
             
             if show_0786
                 float p078 = calc_fib_long(h, l, 0.786, use_log)
-                draw_level(p078, "⬆️ 0.786  " + str.tostring(p078, "#.####"), col_maj_078, w_maj_078, "dotted", x_start, x_end, pos, lines_arr, labels_arr)
+                draw_level(p078, "⬆️ 0.786  " + fmt_p(p078), col_maj_078, w_maj_078, "dotted", x_start, x_end, pos, lines_arr, labels_arr)
             if show_0860
                 float p086 = calc_fib_long(h, l, 0.860, use_log)
-                draw_level(p086, "🛑 SL (0.860) " + str.tostring(p086, "#.####"), col_maj_086, w_maj_086, "dashed", x_start, x_end, pos, lines_arr, labels_arr)
+                draw_level(p086, "🛑 SL (0.860) " + fmt_p(p086), col_maj_086, w_maj_086, "dashed", x_start, x_end, pos, lines_arr, labels_arr)
             
             float p100 = calc_fib_long(h, l, 1.000, use_log)
-            draw_level(p100, "🛑 LOW (1.0) " + str.tostring(p100, "#.####"), col_maj_100, w_maj_100, "solid", x_start, x_end, pos, lines_arr, labels_arr)
+            draw_level(p100, "🛑 LOW (1.0) " + fmt_p(p100), col_maj_100, w_maj_100, "solid", x_start, x_end, pos, lines_arr, labels_arr)
             
             if show_manip
                 float p141 = calc_fib_long(h, l, 1.414, use_log)
                 float p161 = calc_fib_long(h, l, 1.618, use_log)
                 float p200 = calc_fib_long(h, l, 2.000, use_log)
-                draw_level(p141, "🔴 1.414  " + str.tostring(p141, "#.####"), col_maj_141, w_maj_141, "solid", x_start, x_end, pos, lines_arr, labels_arr)
-                draw_level(p161, "🟣 1.618  " + str.tostring(p161, "#.####"), col_maj_161, w_maj_161, "solid", x_start, x_end, pos, lines_arr, labels_arr)
-                draw_level(p200, "🟠 2.000  " + str.tostring(p200, "#.####"), col_maj_200, w_maj_200, "solid", x_start, x_end, pos, lines_arr, labels_arr)
+                draw_level(p141, "🔴 1.414  " + fmt_p(p141), col_maj_141, w_maj_141, "solid", x_start, x_end, pos, lines_arr, labels_arr)
+                draw_level(p161, "🟣 1.618  " + fmt_p(p161), col_maj_161, w_maj_161, "solid", x_start, x_end, pos, lines_arr, labels_arr)
+                draw_level(p200, "🟠 2.000  " + fmt_p(p200), col_maj_200, w_maj_200, "solid", x_start, x_end, pos, lines_arr, labels_arr)
 
         // ⚡ Младшая Long (Динамически растет от 80.15 к текущему пику)
         if show_min and not na(min_l_high) and not na(min_l_low)
@@ -526,34 +556,34 @@ if barstate.islast
             
             if show_0236
                 float p023 = calc_fib_long(h, l, 0.236, use_log)
-                draw_level(p023, "🎯 TP-2 (0.236) " + str.tostring(p023, "#.####"), col_min_023, w_min_023, "dotted", x_start, x_end, "Справа", lines_arr, labels_arr)
+                draw_level(p023, "🎯 TP-2 (0.236) " + fmt_p(p023), col_min_023, w_min_023, "dotted", x_start, x_end, "Справа", lines_arr, labels_arr)
             if show_0382
                 float p038 = calc_fib_long(h, l, 0.382, use_log)
-                draw_level(p038, "🎯 TP (0.382) " + str.tostring(p038, "#.####"), col_min_038, w_min_038, "dotted", x_start, x_end, "Справа", lines_arr, labels_arr)
+                draw_level(p038, "🎯 TP (0.382) " + fmt_p(p038), col_min_038, w_min_038, "dotted", x_start, x_end, "Справа", lines_arr, labels_arr)
             
             float p050 = calc_fib_long(h, l, 0.500, use_log)
-            draw_level(p050, "⬆️ 0.500  " + str.tostring(p050, "#.####"), col_min_050, w_min_050, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
+            draw_level(p050, "⬆️ 0.500  " + fmt_p(p050), col_min_050, w_min_050, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
             
             float p061 = calc_fib_long(h, l, 0.618, use_log)
-            draw_level(p061, "⬆️ 0.618  " + str.tostring(p061, "#.####"), col_min_061, w_min_061, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
+            draw_level(p061, "⬆️ 0.618  " + fmt_p(p061), col_min_061, w_min_061, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
             
             if show_0786
                 float p078 = calc_fib_long(h, l, 0.786, use_log)
-                draw_level(p078, "⬆️ 0.786  " + str.tostring(p078, "#.####"), col_min_078, w_min_078, "dotted", x_start, x_end, "Справа", lines_arr, labels_arr)
+                draw_level(p078, "⬆️ 0.786  " + fmt_p(p078), col_min_078, w_min_078, "dotted", x_start, x_end, "Справа", lines_arr, labels_arr)
             if show_0860
                 float p086 = calc_fib_long(h, l, 0.860, use_log)
-                draw_level(p086, "🛑 SL (0.860) " + str.tostring(p086, "#.####"), col_min_086, w_min_086, "dashed", x_start, x_end, "Справа", lines_arr, labels_arr)
+                draw_level(p086, "🛑 SL (0.860) " + fmt_p(p086), col_min_086, w_min_086, "dashed", x_start, x_end, "Справа", lines_arr, labels_arr)
             
             float p100 = calc_fib_long(h, l, 1.000, use_log)
-            draw_level(p100, "🛑 LOW (1.0) " + str.tostring(p100, "#.####"), col_min_100, w_min_100, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
+            draw_level(p100, "🛑 LOW (1.0) " + fmt_p(p100), col_min_100, w_min_100, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
             
             if show_manip
                 float p141 = calc_fib_long(h, l, 1.414, use_log)
                 float p161 = calc_fib_long(h, l, 1.618, use_log)
                 float p200 = calc_fib_long(h, l, 2.000, use_log)
-                draw_level(p141, "🔴 1.414  " + str.tostring(p141, "#.####"), col_min_141, w_min_141, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
-                draw_level(p161, "🟣 1.618  " + str.tostring(p161, "#.####"), col_min_161, w_min_161, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
-                draw_level(p200, "🟠 2.000  " + str.tostring(p200, "#.####"), col_min_200, w_min_200, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
+                draw_level(p141, "🔴 1.414  " + fmt_p(p141), col_min_141, w_min_141, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
+                draw_level(p161, "🟣 1.618  " + fmt_p(p161), col_min_161, w_min_161, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
+                draw_level(p200, "🟠 2.000  " + fmt_p(p200), col_min_200, w_min_200, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
 
     // ── 2. SHORT СЕТКИ ──
     if allow_short
@@ -563,38 +593,38 @@ if barstate.islast
             string pos = maj_lbl_pos
             
             float p000 = calc_fib_short(h, l, 0.000, use_log)
-            draw_level(p000, "🏛️ BOT " + str.tostring(p000, "#.####"), col_maj_000, w_maj_000, "dashed", x_start, x_end, pos, lines_arr, labels_arr)
+            draw_level(p000, "🏛️ BOT " + fmt_p(p000), col_maj_000, w_maj_000, "dashed", x_start, x_end, pos, lines_arr, labels_arr)
             
             if show_0236
                 float p023 = calc_fib_short(h, l, 0.236, use_log)
-                draw_level(p023, "🎯 TP-2 (0.236) " + str.tostring(p023, "#.####"), col_maj_023, w_maj_023, "dotted", x_start, x_end, pos, lines_arr, labels_arr)
+                draw_level(p023, "🎯 TP-2 (0.236) " + fmt_p(p023), col_maj_023, w_maj_023, "dotted", x_start, x_end, pos, lines_arr, labels_arr)
             if show_0382
                 float p038 = calc_fib_short(h, l, 0.382, use_log)
-                draw_level(p038, "🎯 TP (0.382) " + str.tostring(p038, "#.####"), col_maj_038, w_maj_038, "solid", x_start, x_end, pos, lines_arr, labels_arr)
+                draw_level(p038, "🎯 TP (0.382) " + fmt_p(p038), col_maj_038, w_maj_038, "solid", x_start, x_end, pos, lines_arr, labels_arr)
             
             float p050 = calc_fib_short(h, l, 0.500, use_log)
-            draw_level(p050, "⬇️ 0.500  " + str.tostring(p050, "#.####"), col_maj_050, w_maj_050, "solid", x_start, x_end, pos, lines_arr, labels_arr)
+            draw_level(p050, "⬇️ 0.500  " + fmt_p(p050), col_maj_050, w_maj_050, "solid", x_start, x_end, pos, lines_arr, labels_arr)
             
             float p061 = calc_fib_short(h, l, 0.618, use_log)
-            draw_level(p061, "⬇️ 0.618  " + str.tostring(p061, "#.####"), col_maj_061, w_maj_061, "solid", x_start, x_end, pos, lines_arr, labels_arr)
+            draw_level(p061, "⬇️ 0.618  " + fmt_p(p061), col_maj_061, w_maj_061, "solid", x_start, x_end, pos, lines_arr, labels_arr)
             
             if show_0786
                 float p078 = calc_fib_short(h, l, 0.786, use_log)
-                draw_level(p078, "⬇️ 0.786  " + str.tostring(p078, "#.####"), col_maj_078, w_maj_078, "dotted", x_start, x_end, pos, lines_arr, labels_arr)
+                draw_level(p078, "⬇️ 0.786  " + fmt_p(p078), col_maj_078, w_maj_078, "dotted", x_start, x_end, pos, lines_arr, labels_arr)
             if show_0860
                 float p086 = calc_fib_short(h, l, 0.860, use_log)
-                draw_level(p086, "🛑 SL (0.860) " + str.tostring(p086, "#.####"), col_maj_086, w_maj_086, "dashed", x_start, x_end, pos, lines_arr, labels_arr)
+                draw_level(p086, "🛑 SL (0.860) " + fmt_p(p086), col_maj_086, w_maj_086, "dashed", x_start, x_end, pos, lines_arr, labels_arr)
             
             float p100 = calc_fib_short(h, l, 1.000, use_log)
-            draw_level(p100, "🛑 HIGH (1.0) " + str.tostring(p100, "#.####"), col_maj_100, w_maj_100, "solid", x_start, x_end, pos, lines_arr, labels_arr)
+            draw_level(p100, "🛑 HIGH (1.0) " + fmt_p(p100), col_maj_100, w_maj_100, "solid", x_start, x_end, pos, lines_arr, labels_arr)
             
             if show_manip
                 float p141 = calc_fib_short(h, l, 1.414, use_log)
                 float p161 = calc_fib_short(h, l, 1.618, use_log)
                 float p200 = calc_fib_short(h, l, 2.000, use_log)
-                draw_level(p141, "🔴 1.414  " + str.tostring(p141, "#.####"), col_maj_141, w_maj_141, "solid", x_start, x_end, pos, lines_arr, labels_arr)
-                draw_level(p161, "🟣 1.618  " + str.tostring(p161, "#.####"), col_maj_161, w_maj_161, "solid", x_start, x_end, pos, lines_arr, labels_arr)
-                draw_level(p200, "🟠 2.000  " + str.tostring(p200, "#.####"), col_maj_200, w_maj_200, "solid", x_start, x_end, pos, lines_arr, labels_arr)
+                draw_level(p141, "🔴 1.414  " + fmt_p(p141), col_maj_141, w_maj_141, "solid", x_start, x_end, pos, lines_arr, labels_arr)
+                draw_level(p161, "🟣 1.618  " + fmt_p(p161), col_maj_161, w_maj_161, "solid", x_start, x_end, pos, lines_arr, labels_arr)
+                draw_level(p200, "🟠 2.000  " + fmt_p(p200), col_maj_200, w_maj_200, "solid", x_start, x_end, pos, lines_arr, labels_arr)
 
         // ⚡ Младшая Short
         if show_min and not na(min_s_high) and not na(min_s_low)
@@ -602,114 +632,171 @@ if barstate.islast
             
             if show_0236
                 float p023 = calc_fib_short(h, l, 0.236, use_log)
-                draw_level(p023, "🎯 TP-2 (0.236) " + str.tostring(p023, "#.####"), col_min_023, w_min_023, "dotted", x_start, x_end, "Справа", lines_arr, labels_arr)
+                draw_level(p023, "🎯 TP-2 (0.236) " + fmt_p(p023), col_min_023, w_min_023, "dotted", x_start, x_end, "Справа", lines_arr, labels_arr)
             if show_0382
                 float p038 = calc_fib_short(h, l, 0.382, use_log)
-                draw_level(p038, "🎯 TP (0.382) " + str.tostring(p038, "#.####"), col_min_038, w_min_038, "dotted", x_start, x_end, "Справа", lines_arr, labels_arr)
+                draw_level(p038, "🎯 TP (0.382) " + fmt_p(p038), col_min_038, w_min_038, "dotted", x_start, x_end, "Справа", lines_arr, labels_arr)
             
             float p050 = calc_fib_short(h, l, 0.500, use_log)
-            draw_level(p050, "⬇️ 0.500  " + str.tostring(p050, "#.####"), col_min_050, w_min_050, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
+            draw_level(p050, "⬇️ 0.500  " + fmt_p(p050), col_min_050, w_min_050, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
             
             float p061 = calc_fib_short(h, l, 0.618, use_log)
-            draw_level(p061, "⬇️ 0.618  " + str.tostring(p061, "#.####"), col_min_061, w_min_061, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
+            draw_level(p061, "⬇️ 0.618  " + fmt_p(p061), col_min_061, w_min_061, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
             
             if show_0786
                 float p078 = calc_fib_short(h, l, 0.786, use_log)
-                draw_level(p078, "⬇️ 0.786  " + str.tostring(p078, "#.####"), col_min_078, w_min_078, "dotted", x_start, x_end, "Справа", lines_arr, labels_arr)
+                draw_level(p078, "⬇️ 0.786  " + fmt_p(p078), col_min_078, w_min_078, "dotted", x_start, x_end, "Справа", lines_arr, labels_arr)
             if show_0860
                 float p086 = calc_fib_short(h, l, 0.860, use_log)
-                draw_level(p086, "🛑 SL (0.860) " + str.tostring(p086, "#.####"), col_min_086, w_min_086, "dashed", x_start, x_end, "Справа", lines_arr, labels_arr)
+                draw_level(p086, "🛑 SL (0.860) " + fmt_p(p086), col_min_086, w_min_086, "dashed", x_start, x_end, "Справа", lines_arr, labels_arr)
             
             float p100 = calc_fib_short(h, l, 1.000, use_log)
-            draw_level(p100, "🛑 HIGH (1.0) " + str.tostring(p100, "#.####"), col_min_100, w_min_100, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
+            draw_level(p100, "🛑 HIGH (1.0) " + fmt_p(p100), col_min_100, w_min_100, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
             
             if show_manip
                 float p141 = calc_fib_short(h, l, 1.414, use_log)
                 float p161 = calc_fib_short(h, l, 1.618, use_log)
                 float p200 = calc_fib_short(h, l, 2.000, use_log)
-                draw_level(p141, "🔴 1.414  " + str.tostring(p141, "#.####"), col_min_141, w_min_141, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
-                draw_level(p161, "🟣 1.618  " + str.tostring(p161, "#.####"), col_min_161, w_min_161, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
-                draw_level(p200, "🟠 2.000  " + str.tostring(p200, "#.####"), col_min_200, w_min_200, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
+                draw_level(p141, "🔴 1.414  " + fmt_p(p141), col_min_141, w_min_141, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
+                draw_level(p161, "🟣 1.618  " + fmt_p(p161), col_min_161, w_min_161, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
+                draw_level(p200, "🟠 2.000  " + fmt_p(p200), col_min_200, w_min_200, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
 
     // ── 3. ПАНЕЛЬ ОЦЕНКИ РИСКА И КАЛЬКУЛЯТОР ПОЗИЦИИ ──
     if show_table
         // Заголовок
         table.cell(risk_tbl, 0, 0, "⚡ ИНДИКАТОРЫ РИСКА", bgcolor=color.new(#1e293b, 20), text_color=color.white, text_size=size.small)
-        table.cell(risk_tbl, 1, 0, "СТАТУС ВХОДА", bgcolor=color.new(#1e293b, 20), text_color=color.white, text_size=size.small)
+        table.cell(risk_tbl, 1, 0, "СТАТУС СИГНАЛА", bgcolor=color.new(#1e293b, 20), text_color=color.white, text_size=size.small)
 
-        // Строка RSI 14
-        string rsi_status = cur_rsi < 30 ? "⚠️ Перепродан (<30)" : (cur_rsi > 70 ? "⚠️ Перекуплен (>70)" : "✅ Норма (30-70)")
-        color rsi_col = cur_rsi < 30 ? color.orange : (cur_rsi > 70 ? color.red : color.green)
-        table.cell(risk_tbl, 0, 1, "RSI (14): " + str.tostring(cur_rsi, "#.#"), text_color=color.silver, text_size=size.small)
-        table.cell(risk_tbl, 1, 1, rsi_status, text_color=rsi_col, text_size=size.small)
+        // 1. Проверка качества импульса: Размах >= 3.5% + Зрелый тренд (>= 4 свечей)
+        float cur_imp_pct  = allow_long ? min_l_pct : min_s_pct
+        int   cur_imp_bars = allow_long ? min_l_bars : min_s_bars
+        bool  has_impulse  = not na(cur_imp_pct) and not na(cur_imp_bars)
+        bool  is_mature    = has_impulse and cur_imp_bars >= i_safe_bars
+        bool  is_strong    = has_impulse and cur_imp_pct >= i_safe_pct
+        bool  is_safe_imp  = is_mature and is_strong
 
-        // Строка CCI 14
-        string cci_status = cur_cci < -100 ? "❌ ОПАСНО (Дамп <-100)" : (cur_cci <= 0 ? "👑 ЗОЛОТОЙ ВХОД (-100..0)" : (cur_cci <= 50 ? "✅ Нейтрально (0..50)" : "🚀 Бычий напор (>50)"))
-        color cci_col = cur_cci < -100 ? color.red : (cur_cci <= 0 ? color.lime : (cur_cci <= 50 ? color.teal : color.aqua))
-        table.cell(risk_tbl, 0, 2, "CCI (14): " + str.tostring(cur_cci, "#.#"), text_color=color.silver, text_size=size.small)
-        table.cell(risk_tbl, 1, 2, cci_status, text_color=cci_col, text_size=size.small)
+        string imp_title  = "Импульс (" + (has_impulse ? str.tostring(cur_imp_pct, "#.#") + "%, " + str.tostring(cur_imp_bars) + " св." : "—") + "):"
+        string imp_status = is_safe_imp ? "💎 ЗРЕЛЫЙ ТРЕНД (≥3.5%, ≥4 св.)" : (not is_mature ? "⚠️ СПАЙК (<4 св. - Риск лавины!)" : "⚠️ СЛАБЫЙ (<3.5%)")
+        color  imp_col    = is_safe_imp ? color.lime : (not is_mature ? color.orange : color.yellow)
+        table.cell(risk_tbl, 0, 1, imp_title, text_color=color.silver, text_size=size.small)
+        table.cell(risk_tbl, 1, 1, imp_status, text_color=imp_col, text_size=size.small)
 
-    // Общий вердикт риска
-    string verdict_text = cur_cci < -100 or cur_rsi < 30 ? "🔴 ВЫСОКИЙ РИСК (Ждать откат)" : (cur_cci >= -100 and cur_cci <= 0 ? "🟢 НИЗКИЙ РИСК (Винрейт ~90%)" : "🔵 УМЕРЕННЫЙ РИСК")
-    color verdict_col = cur_cci < -100 or cur_rsi < 30 ? color.red : (cur_cci >= -100 and cur_cci <= 0 ? color.green : color.blue)
-    table.cell(risk_tbl, 0, 3, "🎯 ОБЩИЙ РИСК:", bgcolor=color.new(#1e293b, 40), text_color=color.white, text_size=size.small)
-    table.cell(risk_tbl, 1, 3, verdict_text, bgcolor=color.new(#1e293b, 40), text_color=verdict_col, text_size=size.small)
+        // 2. SuperTrend (10, 3.0)
+        bool st_ok = allow_long ? is_st_bull : is_st_bear
+        string st_title  = "SuperTrend (" + str.tostring(i_st_period) + ", " + str.tostring(i_st_mult, "#.#") + "):"
+        string st_status = st_ok ? (allow_long ? "🟢 БЫЧИЙ ТРЕНД" : "🔴 МЕДВЕЖИЙ ТРЕНД") : (allow_long ? "🔴 МЕДВЕЖИЙ (Против тренда!)" : "🟢 БЫЧИЙ (Против тренда!)")
+        color  st_col    = st_ok ? color.lime : color.red
+        table.cell(risk_tbl, 0, 2, st_title, text_color=color.silver, text_size=size.small)
+        table.cell(risk_tbl, 1, 2, st_status, text_color=st_col, text_size=size.small)
+
+        // 3. EMA 34 > EMA 50
+        bool ema_ok = allow_long ? (ema34 > ema50) : (ema34 < ema50)
+        string ema_title  = "EMA (" + str.tostring(i_ema_fast) + " / " + str.tostring(i_ema_slow) + "):"
+        string ema_status = ema_ok ? (allow_long ? "🟢 EMA 34 > EMA 50 (Тренд)" : "🔴 EMA 34 < EMA 50 (Тренд)") : (allow_long ? "❌ EMA 34 <= EMA 50" : "❌ EMA 34 >= EMA 50")
+        color  ema_col    = ema_ok ? color.lime : color.red
+        table.cell(risk_tbl, 0, 3, ema_title, text_color=color.silver, text_size=size.small)
+        table.cell(risk_tbl, 1, 3, ema_status, text_color=ema_col, text_size=size.small)
+
+        // 4. Общий вердикт риска
+        int score = (is_safe_imp ? 1 : 0) + (st_ok ? 1 : 0) + (ema_ok ? 1 : 0)
+        string verdict_text = score == 3 ? "🟢 СУПЕР-ВХОД (Винрейт ~93%)" : (score == 2 ? "🔵 УМЕРЕННЫЙ РИСК (2 из 3)" : "🔴 ОПАСНОСТЬ ЛАВИНЫ (Ждать 1.618!)")
+        color  verdict_col  = score == 3 ? color.green : (score == 2 ? color.blue : color.red)
+        table.cell(risk_tbl, 0, 4, "🎯 ОБЩИЙ РИСК:", bgcolor=color.new(#1e293b, 40), text_color=color.white, text_size=size.small)
+        table.cell(risk_tbl, 1, 4, verdict_text, bgcolor=color.new(#1e293b, 40), text_color=verdict_col, text_size=size.small)
 
     // ── 💰 РИСК-КАЛЬКУЛЯТОР ОБЪЕМА ПОЗИЦИИ ──
     bool has_active_long = allow_long and not na(min_l_high) and not na(min_l_low)
     bool has_active_short = allow_short and not na(min_s_high) and not na(min_s_low)
 
-    int cur_row = 4
+    int cur_row = 5
 
     if has_active_long or has_active_short
-        // Разделитель
         string sl_mode_str = i_sl_mode
-        table.cell(risk_tbl, 0, cur_row, "💰 РАСЧЕТ ОБЪЕМА (Стоп $" + str.tostring(i_risk_usd, "#.##") + "):", bgcolor=color.new(#1e293b, 30), text_color=color.yellow, text_size=size.small)
-        table.cell(risk_tbl, 1, cur_row, "Стоп: " + sl_mode_str, bgcolor=color.new(#1e293b, 30), text_color=color.silver, text_size=size.small)
-        cur_row := cur_row + 1
 
         if has_active_long
             float h = min_l_high, float l = min_l_low
+            float e500 = calc_fib_long(h, l, 0.500, use_log)
             float e618 = calc_fib_long(h, l, 0.618, use_log)
-            float e786 = calc_fib_long(h, l, 0.786, use_log)
+            float tp236 = calc_fib_long(h, l, 0.236, use_log)
+            float tp382 = calc_fib_long(h, l, 0.382, use_log)
             float sl_p = (i_sl_mode == "0.860 Fib") ? calc_fib_long(h, l, 0.860, use_log) : calc_fib_long(h, l, 1.000, use_log)
+
+            // Разделитель с ценой стопа
+            table.cell(risk_tbl, 0, cur_row, "💰 ДЛЯ BYBIT (Стоп $" + str.tostring(i_risk_usd, "#.##") + "):", bgcolor=color.new(#1e293b, 30), text_color=color.yellow, text_size=size.small)
+            table.cell(risk_tbl, 1, cur_row, "🛑 Стоп (" + sl_mode_str + "): " + fmt_p(sl_p), bgcolor=color.new(#1e293b, 30), text_color=color.red, text_size=size.small)
+            cur_row := cur_row + 1
+
+            if show_calc_500
+                float loss_per_coin = (e500 - sl_p) + (e500 * fee_maker) + (sl_p * fee_taker)
+                float qty500  = loss_per_coin > 0 ? (i_risk_usd / loss_per_coin) : 0.0
+                float notional500 = qty500 * e500
+                float gain_per_coin = (tp236 - e500) - (e500 * fee_maker) - (tp236 * fee_maker)
+                float pnl500 = qty500 * gain_per_coin
+                float roi500 = math.abs(tp236 - e500) / e500 * 100.0
+                float sl_pct500 = (sl_p - e500) / e500 * 100.0
+                table.cell(risk_tbl, 0, cur_row, "🟢 Long 0.500: " + fmt_p(e500), text_color=#f59e0b, text_size=size.small)
+                table.cell(risk_tbl, 1, cur_row, str.tostring(qty500, "#.##") + " шт. ($" + str.tostring(notional500, "#.#") + ") | SL: " + fmt_p(sl_p) + " (" + str.tostring(sl_pct500, "#.##") + "%)", text_color=color.white, text_size=size.small)
+                cur_row := cur_row + 1
+                table.cell(risk_tbl, 0, cur_row, "  🎯 Тейк 0.236: " + fmt_p(tp236), text_color=color.silver, text_size=size.small)
+                table.cell(risk_tbl, 1, cur_row, "+$" + str.tostring(pnl500, "#.##") + " (ROI +" + str.tostring(roi500, "#.##") + "% / RR 1:" + str.tostring(pnl500 / i_risk_usd, "#.#") + ")", text_color=color.lime, text_size=size.small)
+                cur_row := cur_row + 1
 
             if show_calc_618
                 float loss_per_coin = (e618 - sl_p) + (e618 * fee_maker) + (sl_p * fee_taker)
                 float qty618  = loss_per_coin > 0 ? (i_risk_usd / loss_per_coin) : 0.0
                 float notional618 = qty618 * e618
-                table.cell(risk_tbl, 0, cur_row, "🟢 Long 0.618 (" + str.tostring(e618, "#.####") + "):", text_color=color.yellow, text_size=size.small)
-                table.cell(risk_tbl, 1, cur_row, str.tostring(qty618, "#.##") + " шт. ($" + str.tostring(notional618, "#.#") + ")", text_color=color.lime, text_size=size.small)
+                float gain_per_coin = (tp382 - e618) - (e618 * fee_maker) - (tp382 * fee_maker)
+                float pnl618 = qty618 * gain_per_coin
+                float roi618 = math.abs(tp382 - e618) / e618 * 100.0
+                float sl_pct618 = (sl_p - e618) / e618 * 100.0
+                table.cell(risk_tbl, 0, cur_row, "🟢 Long 0.618: " + fmt_p(e618), text_color=color.yellow, text_size=size.small)
+                table.cell(risk_tbl, 1, cur_row, str.tostring(qty618, "#.##") + " шт. ($" + str.tostring(notional618, "#.#") + ") | SL: " + fmt_p(sl_p) + " (" + str.tostring(sl_pct618, "#.##") + "%)", text_color=color.white, text_size=size.small)
                 cur_row := cur_row + 1
-
-            if show_calc_786
-                float loss_per_coin = (e786 - sl_p) + (e786 * fee_maker) + (sl_p * fee_taker)
-                float qty786  = loss_per_coin > 0 ? (i_risk_usd / loss_per_coin) : 0.0
-                float notional786 = qty786 * e786
-                table.cell(risk_tbl, 0, cur_row, "🟣 Long 0.786 (" + str.tostring(e786, "#.####") + "):", text_color=#c084fc, text_size=size.small)
-                table.cell(risk_tbl, 1, cur_row, str.tostring(qty786, "#.##") + " шт. ($" + str.tostring(notional786, "#.#") + ")", text_color=color.aqua, text_size=size.small)
+                table.cell(risk_tbl, 0, cur_row, "  🎯 Тейк 0.382: " + fmt_p(tp382), text_color=color.silver, text_size=size.small)
+                table.cell(risk_tbl, 1, cur_row, "+$" + str.tostring(pnl618, "#.##") + " (ROI +" + str.tostring(roi618, "#.##") + "% / RR 1:" + str.tostring(pnl618 / i_risk_usd, "#.#") + ")", text_color=color.lime, text_size=size.small)
                 cur_row := cur_row + 1
 
         else if has_active_short
             float h = min_s_high, float l = min_s_low
+            float e500 = calc_fib_short(h, l, 0.500, use_log)
             float e618 = calc_fib_short(h, l, 0.618, use_log)
-            float e786 = calc_fib_short(h, l, 0.786, use_log)
+            float tp236 = calc_fib_short(h, l, 0.236, use_log)
+            float tp382 = calc_fib_short(h, l, 0.382, use_log)
             float sl_p = (i_sl_mode == "0.860 Fib") ? calc_fib_short(h, l, 0.860, use_log) : calc_fib_short(h, l, 1.000, use_log)
+
+            // Разделитель с ценой стопа
+            table.cell(risk_tbl, 0, cur_row, "💰 ДЛЯ BYBIT (Стоп $" + str.tostring(i_risk_usd, "#.##") + "):", bgcolor=color.new(#1e293b, 30), text_color=color.yellow, text_size=size.small)
+            table.cell(risk_tbl, 1, cur_row, "🛑 Стоп (" + sl_mode_str + "): " + fmt_p(sl_p), bgcolor=color.new(#1e293b, 30), text_color=color.red, text_size=size.small)
+            cur_row := cur_row + 1
+
+            if show_calc_500
+                float loss_per_coin = (sl_p - e500) + (e500 * fee_maker) + (sl_p * fee_taker)
+                float qty500  = loss_per_coin > 0 ? (i_risk_usd / loss_per_coin) : 0.0
+                float notional500 = qty500 * e500
+                float gain_per_coin = (e500 - tp236) - (e500 * fee_maker) - (tp236 * fee_maker)
+                float pnl500 = qty500 * gain_per_coin
+                float roi500 = math.abs(e500 - tp236) / e500 * 100.0
+                float sl_pct500 = (e500 - sl_p) / e500 * 100.0
+                table.cell(risk_tbl, 0, cur_row, "🔴 Short 0.500: " + fmt_p(e500), text_color=#f59e0b, text_size=size.small)
+                table.cell(risk_tbl, 1, cur_row, str.tostring(qty500, "#.##") + " шт. ($" + str.tostring(notional500, "#.#") + ") | SL: " + fmt_p(sl_p) + " (" + str.tostring(sl_pct500, "#.##") + "%)", text_color=color.white, text_size=size.small)
+                cur_row := cur_row + 1
+                table.cell(risk_tbl, 0, cur_row, "  🎯 Тейк 0.236: " + fmt_p(tp236), text_color=color.silver, text_size=size.small)
+                table.cell(risk_tbl, 1, cur_row, "+$" + str.tostring(pnl500, "#.##") + " (ROI +" + str.tostring(roi500, "#.##") + "% / RR 1:" + str.tostring(pnl500 / i_risk_usd, "#.#") + ")", text_color=color.lime, text_size=size.small)
+                cur_row := cur_row + 1
 
             if show_calc_618
                 float loss_per_coin = (sl_p - e618) + (e618 * fee_maker) + (sl_p * fee_taker)
                 float qty618  = loss_per_coin > 0 ? (i_risk_usd / loss_per_coin) : 0.0
                 float notional618 = qty618 * e618
-                table.cell(risk_tbl, 0, cur_row, "🔴 Short 0.618 (" + str.tostring(e618, "#.####") + "):", text_color=color.yellow, text_size=size.small)
-                table.cell(risk_tbl, 1, cur_row, str.tostring(qty618, "#.##") + " шт. ($" + str.tostring(notional618, "#.#") + ")", text_color=color.lime, text_size=size.small)
+                float gain_per_coin = (e618 - tp382) - (e618 * fee_maker) - (tp382 * fee_maker)
+                float pnl618 = qty618 * gain_per_coin
+                float roi618 = math.abs(e618 - tp382) / e618 * 100.0
+                float sl_pct618 = (e618 - sl_p) / e618 * 100.0
+                table.cell(risk_tbl, 0, cur_row, "🔴 Short 0.618: " + fmt_p(e618), text_color=color.yellow, text_size=size.small)
+                table.cell(risk_tbl, 1, cur_row, str.tostring(qty618, "#.##") + " шт. ($" + str.tostring(notional618, "#.#") + ") | SL: " + fmt_p(sl_p) + " (" + str.tostring(sl_pct618, "#.##") + "%)", text_color=color.white, text_size=size.small)
                 cur_row := cur_row + 1
-
-            if show_calc_786
-                float loss_per_coin = (sl_p - e786) + (e786 * fee_maker) + (sl_p * fee_taker)
-                float qty786  = loss_per_coin > 0 ? (i_risk_usd / loss_per_coin) : 0.0
-                float notional786 = qty786 * e786
-                table.cell(risk_tbl, 0, cur_row, "🟣 Short 0.786 (" + str.tostring(e786, "#.####") + "):", text_color=#c084fc, text_size=size.small)
-                table.cell(risk_tbl, 1, cur_row, str.tostring(qty786, "#.##") + " шт. ($" + str.tostring(notional786, "#.#") + ")", text_color=color.aqua, text_size=size.small)
+                table.cell(risk_tbl, 0, cur_row, "  🎯 Тейк 0.382: " + fmt_p(tp382), text_color=color.silver, text_size=size.small)
+                table.cell(risk_tbl, 1, cur_row, "+$" + str.tostring(pnl618, "#.##") + " (ROI +" + str.tostring(roi618, "#.##") + "% / RR 1:" + str.tostring(pnl618 / i_risk_usd, "#.#") + ")", text_color=color.lime, text_size=size.small)
                 cur_row := cur_row + 1
     else
         table.cell(risk_tbl, 0, cur_row, "💰 РАСЧЕТ ОБЪЕМА:", bgcolor=color.new(#1e293b, 30), text_color=color.silver, text_size=size.small)
