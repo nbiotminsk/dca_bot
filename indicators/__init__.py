@@ -10,6 +10,13 @@ from indicators.supertrend import calculate_supertrend, SuperTrendIndicator
 from indicators.atr import calculate_atr, ATRIndicator
 from indicators.volume import calculate_volume, VolumeIndicator
 from indicators.filter_manager import FilterManager
+from indicators.pyalgotrade_adapter import (
+    calculate_pyalgotrade_rsi,
+    calculate_pyalgotrade_ema,
+    calculate_pyalgotrade_sma,
+    calculate_pyalgotrade_macd,
+    calculate_pyalgotrade_bollinger,
+)
 
 __all__ = [
     "BaseIndicator",
@@ -32,4 +39,9 @@ __all__ = [
     "calculate_volume",
     "VolumeIndicator",
     "FilterManager",
+    "calculate_pyalgotrade_rsi",
+    "calculate_pyalgotrade_ema",
+    "calculate_pyalgotrade_sma",
+    "calculate_pyalgotrade_macd",
+    "calculate_pyalgotrade_bollinger",
 ]

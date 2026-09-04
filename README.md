@@ -58,4 +58,9 @@ python scripts/trade_report.py --group-by bot_long_coverage --mae-coverage-check
 - Walk-forward OOS в `optimize_dca.py --walk-forward N`
 - Cache TTL (6ч) + проверка покрытия `days`
 
+## Отчеты и исследования стратегии
+
+- [Отчет по ТОП-30 монетам за 6 месяцев (Dual Grid + MACD)](docs/coins/TOP_30_COINS_6M_COMPARISON.md)
+- [Сравнительный отчет 12 монет (90 дней)](docs/coins/12_COINS_COMPARISON_90D.md)
+
 См. `PLAN.md` / `ARCHITECTURE_PLAN.md` для архитектуры.

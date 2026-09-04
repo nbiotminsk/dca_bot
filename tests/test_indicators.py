@@ -192,3 +192,76 @@ def test_volume(sample_ohlcv):
         assert ind.is_valid(idx, "long", sample_ohlcv, condition="> sma") == (v >= v_sma)
         assert ind.is_valid(idx, "long", sample_ohlcv, condition="> 0.01x") is True
         assert ind.is_valid(idx, "long", sample_ohlcv, condition="> 100x") is False
+
+
+class TestPyAlgoTradeIndicators:
+    """Тесты индикаторов с использованием библиотеки PyAlgoTrade."""
+
+    def test_pyalgotrade_ema_matches_our_ema(self, sample_ohlcv):
+        from indicators.pyalgotrade_adapter import calculate_pyalgotrade_ema
+        from indicators.ema import calculate_ema
+
+        pat_ema = calculate_pyalgotrade_ema(sample_ohlcv["close"], period=14).values
+        our_ema = calculate_ema(sample_ohlcv["close"], period=14).values
+
+        # После периода разогрева (первые 25 баров) значения совпадают с высокой точностью (<= 0.05%)
+        valid_mask = ~np.isnan(pat_ema) & ~np.isnan(our_ema)
+        valid_indices = np.where(valid_mask)[0]
+        warm_idx = valid_indices[valid_indices >= 25]
+
+        assert len(warm_idx) > 0
+        np.testing.assert_allclose(pat_ema[warm_idx], our_ema[warm_idx], rtol=5e-4)
+
+    def test_pyalgotrade_rsi_convergence(self, sample_ohlcv):
+        from indicators.pyalgotrade_adapter import calculate_pyalgotrade_rsi
+        from indicators.rsi import calculate_rsi
+
+        pat_rsi = calculate_pyalgotrade_rsi(sample_ohlcv["close"], period=14).values
+        our_rsi = calculate_rsi(sample_ohlcv["close"], period=14).values
+
+        # Значения должны лежать в [0, 100]
+        valid_pat = pat_rsi[~np.isnan(pat_rsi)]
+        assert (valid_pat >= 0).all() and (valid_pat <= 100).all()
+
+        # Корреляция между расчетом PyAlgoTrade и нашим RSI после разогрева (>=30) > 0.99
+        valid_mask = ~np.isnan(pat_rsi) & ~np.isnan(our_rsi)
+        valid_indices = np.where(valid_mask)[0]
+        warm_30 = valid_indices[valid_indices >= 30]
+        assert len(warm_30) > 0
+        corr = np.corrcoef(pat_rsi[warm_30], our_rsi[warm_30])[0, 1]
+        assert corr > 0.99
+
+        # Среднее абсолютное отклонение после разогрева не превышает 2.0 пунктов
+        warm_idx = valid_indices[valid_indices >= 40]
+        assert len(warm_idx) > 0
+        mean_diff = np.mean(np.abs(pat_rsi[warm_idx] - our_rsi[warm_idx]))
+        assert mean_diff < 2.0
+
+    def test_pyalgotrade_bollinger_bands(self, sample_ohlcv):
+        from indicators.pyalgotrade_adapter import calculate_pyalgotrade_bollinger
+        from indicators.bollinger import calculate_bollinger_bands
+
+        pat_up, pat_mid, pat_low = calculate_pyalgotrade_bollinger(sample_ohlcv["close"], period=20, num_std_dev=2.0)
+        our_bb = calculate_bollinger_bands(sample_ohlcv["close"], period=20, std_dev=2.0)
+
+        # Проверка средней линии (SMA 20): pat_mid совпадает с our_bb["basis"]
+        valid_mask = ~np.isnan(pat_mid.values) & ~np.isnan(our_bb["basis"].values)
+        np.testing.assert_allclose(pat_mid.values[valid_mask], our_bb["basis"].values[valid_mask], rtol=1e-5)
+
+        # Верхняя полоса выше нижней
+        valid_bands = ~np.isnan(pat_up.values) & ~np.isnan(pat_low.values)
+        assert (pat_up.values[valid_bands] >= pat_low.values[valid_bands]).all()
+
+    def test_pyalgotrade_macd(self, sample_ohlcv):
+        from indicators.pyalgotrade_adapter import calculate_pyalgotrade_macd
+
+        macd_line, macd_sig, macd_hist = calculate_pyalgotrade_macd(sample_ohlcv["close"], fast=12, slow=26, signal=9)
+        assert len(macd_line) == len(sample_ohlcv)
+        assert len(macd_sig) == len(sample_ohlcv)
+        assert len(macd_hist) == len(sample_ohlcv)
+
+        # Гистограмма равна разности линии и сигнала
+        valid_mask = ~np.isnan(macd_hist.values)
+        diff = macd_line.values[valid_mask] - macd_sig.values[valid_mask]
+        np.testing.assert_allclose(macd_hist.values[valid_mask], diff, rtol=1e-5)
+

@@ -1,5 +1,8 @@
 //@version=6
-indicator("Fibonacci Dual Grid (Pro Live Only)", shorttitle="Fib Dual Grid Pro v7", overlay=true, max_lines_count=500, max_labels_count=500)
+indicator("Fibonacci Dual Grid (MACD & Prob v6)", shorttitle="Fib Dual Grid MACD v6", overlay=true, max_lines_count=500, max_labels_count=500, max_bars_back=500)
+max_bars_back(high, 500)
+max_bars_back(low, 500)
+max_bars_back(close, 500)
 
 // ══════════════════════════════════════════════════════════════════════════════
 // 1. ОБЩИЕ НАСТРОЙКИ
@@ -12,7 +15,7 @@ use_log    = input.bool(true, "Логарифмическая шкала (Log Fi
 // 2. СТАРШАЯ (ГЛОБАЛЬНАЯ) ФИБА — НАСТРОЙКИ, ЦВЕТА И ТОЛЩИНА
 // ══════════════════════════════════════════════════════════════════════════════
 grp_maj_set = "🏛️ Старшая Фиба: Поиск и Позиция"
-show_maj    = input.bool(true, "Показывать Старшую Фибу", group=grp_maj_set)
+show_maj    = input.bool(false, "Показывать Старшую Фибу", group=grp_maj_set)
 maj_min_p   = input.float(3.0, "Мин. размах Старшей (%)", minval=1.0, step=0.5, group=grp_maj_set)
 maj_lookb   = input.int(55, "Глубина поиска Старшей (свечей)", minval=20, maxval=300, group=grp_maj_set)
 maj_lbl_pos = input.string("Слева", "Расположение подписей Старшей", options=["Слева", "Справа"], group=grp_maj_set)
@@ -25,40 +28,40 @@ col_maj_023 = input.color(color.teal, "0.236 (Тейк-2)", group=grp_maj_col)
 w_maj_023   = input.int(1, "Толщина 0.236", minval=1, maxval=4, group=grp_maj_col)
 
 col_maj_038 = input.color(#10b981, "0.382 (Тейк-1)", group=grp_maj_col)
-w_maj_038   = input.int(2, "Толщина 0.382", minval=1, maxval=4, group=grp_maj_col)
+w_maj_038   = input.int(1, "Толщина 0.382", minval=1, maxval=4, group=grp_maj_col)
 
 col_maj_050 = input.color(#f59e0b, "0.500 (Вход-1)", group=grp_maj_col)
-w_maj_050   = input.int(2, "Толщина 0.500", minval=1, maxval=4, group=grp_maj_col)
+w_maj_050   = input.int(1, "Толщина 0.500", minval=1, maxval=4, group=grp_maj_col)
 
 col_maj_061 = input.color(#06b6d4, "0.618 (Вход-2)", group=grp_maj_col)
-w_maj_061   = input.int(2, "Толщина 0.618", minval=1, maxval=4, group=grp_maj_col)
+w_maj_061   = input.int(1, "Толщина 0.618", minval=1, maxval=4, group=grp_maj_col)
 
 col_maj_078 = input.color(#10b981, "0.786 (Вход-3)", group=grp_maj_col)
 w_maj_078   = input.int(1, "Толщина 0.786", minval=1, maxval=4, group=grp_maj_col)
 
 col_maj_086 = input.color(#ef4444, "0.860 (Стоп-Лосс)", group=grp_maj_col)
-w_maj_086   = input.int(2, "Толщина 0.860", minval=1, maxval=4, group=grp_maj_col)
+w_maj_086   = input.int(1, "Толщина 0.860", minval=1, maxval=4, group=grp_maj_col)
 
 col_maj_100 = input.color(color.maroon, "1.000 (Дно/Вершина)", group=grp_maj_col)
-w_maj_100   = input.int(2, "Толщина 1.000", minval=1, maxval=4, group=grp_maj_col)
+w_maj_100   = input.int(1, "Толщина 1.000", minval=1, maxval=4, group=grp_maj_col)
 
 col_maj_141 = input.color(#881337, "1.414 (Манипуляция 1)", group=grp_maj_col)
 w_maj_141   = input.int(1, "Толщина 1.414", minval=1, maxval=4, group=grp_maj_col)
 
 col_maj_161 = input.color(#facc15, "1.618 (Манипуляция 2)", group=grp_maj_col)
-w_maj_161   = input.int(2, "Толщина 1.618", minval=1, maxval=4, group=grp_maj_col)
+w_maj_161   = input.int(1, "Толщина 1.618", minval=1, maxval=4, group=grp_maj_col)
 
 col_maj_200 = input.color(color.orange, "2.000 (Добор DCA)", group=grp_maj_col)
-w_maj_200   = input.int(2, "Толщина 2.000", minval=1, maxval=4, group=grp_maj_col)
+w_maj_200   = input.int(1, "Толщина 2.000", minval=1, maxval=4, group=grp_maj_col)
 
 // ══════════════════════════════════════════════════════════════════════════════
 // 3. МЛАДШАЯ (ЛОКАЛЬНАЯ) ФИБА — НАСТРОЙКИ, ЦВЕТА И ТОЛЩИНА
 // ══════════════════════════════════════════════════════════════════════════════
 grp_min_set = "⚡ Младшая Фиба: Поиск (Основная)"
 show_min    = input.bool(true, "Показывать Младшую Фибу (Локальную)", group=grp_min_set)
-min_min_p   = input.float(1.5, "Мин. размах Младшей (%)", minval=0.5, step=0.5, tooltip="Минимальный процент движения от старта до текущей вершины", group=grp_min_set)
+min_min_p   = input.float(2.0, "Мин. размах Младшей (%)", minval=0.5, step=0.5, tooltip="Минимальный процент движения от старта до текущей вершины", group=grp_min_set)
 min_bars    = input.int(6, "Макс. длительность импульса (свечей)", minval=2, maxval=20, tooltip="Сколько свечей развивался сам импульс до вершины", group=grp_min_set)
-min_lookb   = input.int(100, "Глубина поиска Младшей (свечей)", minval=10, maxval=300, group=grp_min_set)
+min_lookb   = input.int(60, "Глубина поиска Младшей (свечей)", minval=10, maxval=300, group=grp_min_set)
 
 grp_min_col = "🎨 Младшая Фиба: Цвета и Толщина уровней"
 col_min_023 = input.color(color.gray, "0.236 (Дальний Тейк)", group=grp_min_col)
@@ -68,10 +71,10 @@ col_min_038 = input.color(#10b981, "0.382 (Тейк)", group=grp_min_col)
 w_min_038   = input.int(1, "Толщина 0.382", minval=1, maxval=4, group=grp_min_col)
 
 col_min_050 = input.color(#f59e0b, "0.500 (Вход)", group=grp_min_col)
-w_min_050   = input.int(2, "Толщина 0.500", minval=1, maxval=4, group=grp_min_col)
+w_min_050   = input.int(1, "Толщина 0.500", minval=1, maxval=4, group=grp_min_col)
 
 col_min_061 = input.color(#06b6d4, "0.618 (Вход)", group=grp_min_col)
-w_min_061   = input.int(2, "Толщина 0.618", minval=1, maxval=4, group=grp_min_col)
+w_min_061   = input.int(1, "Толщина 0.618", minval=1, maxval=4, group=grp_min_col)
 
 col_min_078 = input.color(#10b981, "0.786 (Глубокий Вход)", group=grp_min_col)
 w_min_078   = input.int(1, "Толщина 0.786", minval=1, maxval=4, group=grp_min_col)
@@ -86,10 +89,10 @@ col_min_141 = input.color(#881337, "1.414 (Манипуляция 1)", group=grp
 w_min_141   = input.int(1, "Толщина 1.414", minval=1, maxval=4, group=grp_min_col)
 
 col_min_161 = input.color(#facc15, "1.618 (Манипуляция 2)", group=grp_min_col)
-w_min_161   = input.int(2, "Толщина 1.618", minval=1, maxval=4, group=grp_min_col)
+w_min_161   = input.int(1, "Толщина 1.618", minval=1, maxval=4, group=grp_min_col)
 
 col_min_200 = input.color(#fb923c, "2.000 (Добор DCA)", group=grp_min_col)
-w_min_200   = input.int(2, "Толщина 2.000", minval=1, maxval=4, group=grp_min_col)
+w_min_200   = input.int(1, "Толщина 2.000", minval=1, maxval=4, group=grp_min_col)
 
 // ══════════════════════════════════════════════════════════════════════════════
 // 4. ТУМБЛЕРЫ ВКЛЮЧЕНИЯ/ВЫКЛЮЧЕНИЯ УРОВНЕЙ И ИНФО-ПАНЕЛИ
@@ -102,17 +105,26 @@ show_0860   = input.bool(true, "Показывать 0.860 Fib (Стоп-Лос�
 show_manip  = input.bool(true, "Показывать 1.414 / 1.618 / 2.000 (Манипуляция)", group=grp_lvls)
 show_table  = input.bool(true, "Показывать Инфо-Панель Риска и Калькулятор", group=grp_lvls)
 
-grp_trend   = "🛡️ Фильтры Безопасности Тренда (Вместо RSI/CCI)"
-i_safe_pct  = input.float(3.5, "Мин. размах импульса (%)", minval=1.0, step=0.5, tooltip="Размах импульса от 3.5% защищает от сдувания", group=grp_trend)
-i_safe_bars = input.int(4, "Зрелый тренд (мин. свечей)", minval=2, maxval=20, tooltip="Импульс от 4 свечей исключает лавиноопасные спайки 1-3 свечи", group=grp_trend)
-i_st_period = input.int(10, "SuperTrend ATR Period", group=grp_trend)
-i_st_mult   = input.float(3.0, "SuperTrend Multiplier", step=0.1, group=grp_trend)
-i_ema_fast  = input.int(34, "Fast EMA", group=grp_trend)
-i_ema_slow  = input.int(50, "Slow EMA", group=grp_trend)
+grp_macd    = "📊 Фильтр MACD и Безопасность"
+i_safe_pct  = input.float(2.0, "Мин. размах импульса (%)", minval=0.5, step=0.5, tooltip="Минимальный размах импульса для надежного входа (рекомендовано от 2.0%)", group=grp_macd)
+i_safe_bars = input.int(2, "Мин. длительность импульса (свечей)", minval=1, maxval=20, tooltip="Минимальное количество свечей развития импульса", group=grp_macd)
+i_macd_fast = input.int(12, "MACD Fast Length", minval=1, group=grp_macd)
+i_macd_slow = input.int(26, "MACD Slow Length", minval=1, group=grp_macd)
+i_macd_sig  = input.int(9,  "MACD Signal Length", minval=1, group=grp_macd)
+
+grp_swp     = "🎯 Детектор Ложного Пробоя (Свип Ликвидности & MACD)"
+show_swp    = input.bool(true, "Показывать сигналы Ложного Пробоя (Sweep Reclaim)", group=grp_swp)
+max_swp_p   = input.float(3.5, "Макс. глубина свипа за 1.0 (%)", minval=0.5, step=0.5, tooltip="Максимальный допустимый прокол уровня 1.000 для сбора ликвидности (рекомендовано 0.5% - 3.5%)", group=grp_swp)
+
+grp_qual    = "🛡️ Модуль Качества Импульса (RSI + Фитиль + MACD)"
+use_qual    = input.bool(true, "Включить Модуль Качества (Anti-Dump Filter)", group=grp_qual)
+rsi_min     = input.float(50.0, "Мин. RSI импульса (отсекает слабость)", minval=20.0, maxval=70.0, group=grp_qual)
+rsi_max     = input.float(82.0, "Макс. RSI импульса (отсекает перегретость)", minval=70.0, maxval=95.0, group=grp_qual)
+max_wick_p  = input.float(60.0, "Макс. фитиль сверху/снизу (%) (отсекает пинбары)", minval=20.0, maxval=90.0, step=5.0, group=grp_qual)
 
 grp_calc    = "💰 Калькулятор размера позиции (Риск в $)"
-i_risk_usd  = input.float(10.0, "Риск / Стоп на сделку ($)", minval=1.0, step=1.0, group=grp_calc)
-i_sl_mode   = input.string("0.860 Fib", "Уровень Стоп-Лосса для расчета", options=["0.860 Fib", "1.000 Fib"], group=grp_calc)
+i_risk_usd  = input.float(2.0, "Риск / Стоп на сделку ($)", minval=0.5, step=0.5, group=grp_calc)
+i_sl_mode   = input.string("1.000 Fib", "Уровень Стоп-Лосса для расчета", options=["1.000 Fib", "0.860 Fib"], group=grp_calc)
 show_calc_500 = input.bool(true, "Показывать расчет для Входа 0.500 (Тейк 0.236)", group=grp_calc)
 show_calc_618 = input.bool(true, "Показывать расчет для Входа 0.618 (Тейк 0.382)", group=grp_calc)
 fee_maker   = input.float(0.02, "Комиссия входа Maker (%)", minval=0.0, step=0.01, group=grp_calc) / 100.0
@@ -261,6 +273,10 @@ find_minor_long(int lookback, float min_pct, int max_duration) =>
 
     if max_s >= 3
         for s = max_s - 1 to 2
+            // 🛡️ Фильтр: импульс не может начинаться с внутренней продолжающей свечи ралли (предыдущая свеча уже была бычьей и ниже)
+            if s + 1 <= max_s and (low[s] > low[s + 1] and close[s + 1] > open[s + 1])
+                continue
+
             float l_s = low[s]
             float h_s = high[s]
             float cur_h = h_s
@@ -268,6 +284,8 @@ find_minor_long(int lookback, float min_pct, int max_duration) =>
             bool  broken       = false
             bool  entered_05   = false
             bool  entered_0618 = false
+            int   entry_k_05   = -1
+            int   entry_k_0618 = -1
             int   end_idx      = s
 
             // Сканируем только закрытые свечи от s-1 до 1
@@ -290,6 +308,7 @@ find_minor_long(int lookback, float min_pct, int max_duration) =>
                         if low[k] <= fib_05_cur
                             // Вход на 0.500 состоялся!
                             entered_05 := true
+                            entry_k_05 := k
                         else
                             // Входа на 0.5 еще не было — продолжаем тянуть фибу вслед за новыми максимумами
                             if high[k] > cur_h
@@ -299,22 +318,24 @@ find_minor_long(int lookback, float min_pct, int max_duration) =>
                     if entered_05
                         float in_0618 = calc_fib_long(cur_h, l_s, 0.618, use_log)
                         float tp_0382 = calc_fib_long(cur_h, l_s, 0.382, use_log)
+                        float tp_0236 = calc_fib_long(cur_h, l_s, 0.236, use_log)
                         float sl_lim = show_manip ? calc_fib_long(cur_h, l_s, 2.000, use_log) : calc_fib_long(cur_h, l_s, 0.860, use_log)
                         float tp_target = calc_fib_long(cur_h, l_s, 0.500, use_log)
 
                         if not entered_0618
                             if low[k] <= in_0618
                                 entered_0618 := true
+                                entry_k_0618 := k
 
-                        // 1. Если был вход на 0.618 и цена взяла Тейк 0.382 (или пробила хай 0) -> сделка отработала, стираем!
-                        if entered_0618
-                            if high[k] >= tp_0382 or close[k] >= tp_0382 or high[k] >= cur_h or close[k] >= cur_h
-                                broken := true
-                                break
-                        else
-                            if high[k] >= cur_h or close[k] >= cur_h
-                                broken := true
-                                break
+                        // 1. Проверка взятия тейка:
+                        // Если вошли оба ордера: сетка полностью закрыта, только когда закрыт Ордер 1 (TP 0.236 или пик cur_h)
+                        // Если вошел только Ордер 1: закрывается на TP 0.236
+                        int entry_ref = entered_0618 ? entry_k_05 : entry_k_05
+                        bool tp_hit = (k < entry_ref and (high[k] >= tp_0236 or close[k] >= tp_0236 or high[k] >= cur_h or close[k] >= cur_h)) or
+                                      (k == entry_ref and (close[k] >= tp_0236 or close[k] >= cur_h))
+                        if tp_hit
+                            broken := true
+                            break
                         
                         // 2. Если упали ниже уровня 1.0 (l_s)
                         if low[k] < l_s
@@ -341,15 +362,22 @@ find_minor_long(int lookback, float min_pct, int max_duration) =>
                     float fib_05_live = calc_fib_long(cur_h, l_s, 0.500, use_log)
                     if low[0] <= fib_05_live
                         entered_05 := true
+                        entry_k_05 := 0
                 else
                     float in_0618 = calc_fib_long(cur_h, l_s, 0.618, use_log)
                     float tp_0382 = calc_fib_long(cur_h, l_s, 0.382, use_log)
+                    float tp_0236 = calc_fib_long(cur_h, l_s, 0.236, use_log)
                     if not entered_0618 and low[0] <= in_0618
                         entered_0618 := true
+                        entry_k_0618 := 0
                     
-                    if entered_0618 and (high[0] >= tp_0382 or close[0] >= tp_0382 or high[0] >= cur_h or close[0] >= cur_h)
+                    int entry_live_ref = entered_0618 ? entry_k_05 : entry_k_05
+                    bool tp_live_hit = (entry_live_ref > 0 and (high[0] >= tp_0236 or close[0] >= tp_0236 or high[0] >= cur_h or close[0] >= cur_h)) or
+                                       (entry_live_ref == 0 and (close[0] >= tp_0236 or close[0] >= cur_h))
+                    if tp_live_hit
                         broken := true
-                    else
+                    
+                    if not broken
                         float sl_lim = show_manip ? calc_fib_long(cur_h, l_s, 2.000, use_log) : calc_fib_long(cur_h, l_s, 0.860, use_log)
                         if high[0] >= cur_h or close[0] >= cur_h or low[0] <= sl_lim
                             broken := true
@@ -376,14 +404,20 @@ find_minor_short(int lookback, float min_pct, int max_duration) =>
 
     if max_s >= 3
         for s = max_s - 1 to 2
+            // 🛡️ Фильтр: дамп не может начинаться с внутренней продолжающей медвежьей свечи (предыдущая свеча уже была красной и выше)
+            if s + 1 <= max_s and (high[s] < high[s + 1] and close[s + 1] < open[s + 1])
+                continue
+
             float h_s = high[s]
             float l_s = low[s]
             float cur_l = l_s
             bool  is_dump     = false
             bool  broken      = false
-            bool  entered_05  = false
+            bool  entered_05   = false
             bool  entered_0618 = false
-            int   end_idx     = s
+            int   entry_k_05   = -1
+            int   entry_k_0618 = -1
+            int   end_idx      = s
 
             for k = s - 1 to 1
                 if not is_dump
@@ -403,6 +437,7 @@ find_minor_short(int lookback, float min_pct, int max_duration) =>
                         float fib_05_cur = calc_fib_short(h_s, cur_l, 0.500, use_log)
                         if high[k] >= fib_05_cur
                             entered_05 := true
+                            entry_k_05 := k
                         else
                             if low[k] < cur_l
                                 cur_l := low[k]
@@ -411,21 +446,24 @@ find_minor_short(int lookback, float min_pct, int max_duration) =>
                     if entered_05
                         float in_0618 = calc_fib_short(h_s, cur_l, 0.618, use_log)
                         float tp_0382 = calc_fib_short(h_s, cur_l, 0.382, use_log)
+                        float tp_0236 = calc_fib_short(h_s, cur_l, 0.236, use_log)
                         float sl_lim = show_manip ? calc_fib_short(h_s, cur_l, 2.000, use_log) : calc_fib_short(h_s, cur_l, 0.860, use_log)
                         float tp_target = calc_fib_short(h_s, cur_l, 0.500, use_log)
 
                         if not entered_0618
                             if high[k] >= in_0618
                                 entered_0618 := true
+                                entry_k_0618 := k
 
-                        if entered_0618
-                            if low[k] <= tp_0382 or close[k] <= tp_0382 or low[k] <= cur_l or close[k] <= cur_l
-                                broken := true
-                                break
-                        else
-                            if low[k] <= cur_l or close[k] <= cur_l
-                                broken := true
-                                break
+                        // 1. Проверка взятия тейка:
+                        // Если вошли оба ордера: сетка полностью закрыта, только когда закрыт Ордер 1 (TP 0.236 или пик cur_l)
+                        // Если вошел только Ордер 1: закрывается на TP 0.236
+                        int entry_short_ref = entered_0618 ? entry_k_05 : entry_k_05
+                        bool tp_hit = (k < entry_short_ref and (low[k] <= tp_0236 or close[k] <= tp_0236 or low[k] <= cur_l or close[k] <= cur_l)) or
+                                      (k == entry_short_ref and (close[k] <= tp_0236 or close[k] <= cur_l))
+                        if tp_hit
+                            broken := true
+                            break
                         
                         if high[k] > h_s
                             if show_manip
@@ -449,15 +487,22 @@ find_minor_short(int lookback, float min_pct, int max_duration) =>
                     float fib_05_live = calc_fib_short(h_s, cur_l, 0.500, use_log)
                     if high[0] >= fib_05_live
                         entered_05 := true
+                        entry_k_05 := 0
                 else
                     float in_0618 = calc_fib_short(h_s, cur_l, 0.618, use_log)
                     float tp_0382 = calc_fib_short(h_s, cur_l, 0.382, use_log)
+                    float tp_0236 = calc_fib_short(h_s, cur_l, 0.236, use_log)
                     if not entered_0618 and high[0] >= in_0618
                         entered_0618 := true
+                        entry_k_0618 := 0
                     
-                    if entered_0618 and (low[0] <= tp_0382 or close[0] <= tp_0382 or low[0] <= cur_l or close[0] <= cur_l)
+                    int entry_live_ref = entered_0618 ? entry_k_05 : entry_k_05
+                    bool tp_live_hit = (entry_live_ref > 0 and (low[0] <= tp_0236 or close[0] <= tp_0236 or low[0] <= cur_l or close[0] <= cur_l)) or
+                                       (entry_live_ref == 0 and (close[0] <= tp_0236 or close[0] <= cur_l))
+                    if tp_live_hit
                         broken := true
-                    else
+                    
+                    if not broken
                         float sl_lim = show_manip ? calc_fib_short(h_s, cur_l, 2.000, use_log) : calc_fib_short(h_s, cur_l, 0.860, use_log)
                         if low[0] <= cur_l or close[0] <= cur_l or high[0] >= sl_lim
                             broken := true
@@ -479,14 +524,13 @@ find_minor_short(int lookback, float min_pct, int max_duration) =>
 // ══════════════════════════════════════════════════════════════════════════════
 var line[] lines_arr   = array.new_line()
 var label[] labels_arr = array.new_label()
-var table risk_tbl     = table.new(position.top_right, 2, 12, bgcolor=color.new(#0b0e14, 15), border_color=color.new(#1e293b, 0), border_width=1)
+var table risk_tbl     = table.new(position.top_right, 2, 22, bgcolor=color.new(#0b0e14, 15), border_color=color.new(#1e293b, 0), border_width=1)
 
-// Трендовые индикаторы (замена устаревших RSI/CCI)
-float ema34 = ta.ema(close, i_ema_fast)
-float ema50 = ta.ema(close, i_ema_slow)
-[st_val, st_dir] = ta.supertrend(i_st_mult, i_st_period)
-bool is_st_bull = st_dir < 0
-bool is_st_bear = st_dir > 0
+// Индикатор MACD и RSI
+[macd_line, signal_line, hist_line] = ta.macd(close, i_macd_fast, i_macd_slow, i_macd_sig)
+rsi_val = ta.rsi(close, 14)
+bool is_macd_bull = macd_line > signal_line
+bool is_macd_bear = macd_line < signal_line
 
 if barstate.islast
     for ln in lines_arr
@@ -508,6 +552,12 @@ if barstate.islast
     bool allow_short = (i_mode == "Только SHORT") or (i_mode == "Оба направления (L+S)") or (i_mode == "Авто (по тренду)" and (na(min_l_pct) or min_s_pct > min_l_pct))
 
     int x_end = bar_index + 16
+
+    bool  swp_detected_long  = false
+    bool  swp_detected_short = false
+    float swp_pct_val        = 0.0
+    float swp_ext_val        = 0.0
+    float swp_target_val     = 0.0
 
     // ── 1. LONG СЕТКИ ──
     if allow_long
@@ -585,6 +635,67 @@ if barstate.islast
                 draw_level(p161, "🟣 1.618  " + fmt_p(p161), col_min_161, w_min_161, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
                 draw_level(p200, "🟠 2.000  " + fmt_p(p200), col_min_200, w_min_200, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
 
+            // 🎯 Детектор Ложного Пробоя (Sweep Reclaim & Бычья Дивергенция MACD)
+            if show_swp
+                int bars_since_start = math.min(bar_index - x_start, 250)
+                if bars_since_start > 0
+                    float sweep_low = 1e10
+                    int   sweep_k   = -1
+                    for k = bars_since_start - 1 to 0
+                        if low[k] < sweep_low
+                            sweep_low := low[k]
+                            sweep_k   := k
+                    
+                    if sweep_low < l
+                        float swp_pct = (l - sweep_low) / l * 100.0
+                        if swp_pct <= max_swp_p
+                            // Проверяем возврат (Reclaim) выше 1.000
+                            bool has_reclaim = false
+                            int  reclaim_k   = -1
+                            for k = sweep_k to 0
+                                if close[k] >= l or (close[k] > open[k] and (close[k] - low[k]) > (high[k] - close[k]))
+                                    has_reclaim := true
+                                    reclaim_k   := k
+                                    break
+                            
+                            // Проверяем моментум / дивергенцию MACD
+                            int prev_k = math.min(sweep_k + 1, 200)
+                            bool macd_rebound = (hist_line[sweep_k] > hist_line[prev_k]) or (hist_line[0] > hist_line[sweep_k]) or (hist_line[0] > 0)
+                            
+                            if has_reclaim and macd_rebound
+                                swp_detected_long := true
+                                swp_pct_val       := swp_pct
+                                swp_ext_val       := sweep_low
+                                swp_target_val    := calc_fib_long(h, l, 0.500, use_log)
+                                
+                                int swp_bar_idx = bar_index - sweep_k
+                                int rec_bar_idx = bar_index - (reclaim_k >= 0 ? reclaim_k : 0)
+                                
+                                // 1. Метка Ложного Пробоя на графике
+                                label lb_swp = label.new(x=rec_bar_idx, y=sweep_low,
+                                    text="🎯 ЛОЖНЫЙ ПРОБОЙ (СВИП)\n" +
+                                         "Бычья дивергенция MACD\n" +
+                                         "Свип: -" + str.tostring(swp_pct, "#.##") + "% (" + fmt_p(sweep_low) + ")\n" +
+                                         "Вход: Reclaim " + fmt_p(l) + "\n" +
+                                         "🎯 Цель (0.500): " + fmt_p(swp_target_val) + "\n" +
+                                         "🛑 Стоп: " + fmt_p(sweep_low),
+                                    color=color.new(#10b981, 0), textcolor=color.white,
+                                    style=label.style_label_up, size=size.normal)
+                                array.push(labels_arr, lb_swp)
+                                
+                                // 2. Линия стопа свипа
+                                line ln_swp = line.new(x1=swp_bar_idx, y1=sweep_low, x2=x_end, y2=sweep_low,
+                                    color=#06b6d4, width=2, style=line.style_dashed)
+                                array.push(lines_arr, ln_swp)
+                                label lb_swp_sl = label.new(x=x_end, y=sweep_low, text="🛑 СТОП СВИПА " + fmt_p(sweep_low),
+                                    color=color.new(color.black, 100), textcolor=#06b6d4, style=label.style_label_left, size=size.small)
+                                array.push(labels_arr, lb_swp_sl)
+                                
+                                // 3. Стрелка к цели 0.500
+                                line ln_target = line.new(x1=rec_bar_idx, y1=l, x2=x_end, y2=swp_target_val,
+                                    color=color.new(#10b981, 30), width=2, style=line.style_arrow_right)
+                                array.push(lines_arr, ln_target)
+
     // ── 2. SHORT СЕТКИ ──
     if allow_short
         // 🏛️ Старшая Short
@@ -661,13 +772,69 @@ if barstate.islast
                 draw_level(p161, "🟣 1.618  " + fmt_p(p161), col_min_161, w_min_161, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
                 draw_level(p200, "🟠 2.000  " + fmt_p(p200), col_min_200, w_min_200, "solid", x_start, x_end, "Справа", lines_arr, labels_arr)
 
+            // 🎯 Детектор Ложного Выноса вверх (Sweep Reclaim & Медвежья Дивергенция MACD в Short)
+            if show_swp
+                int bars_since_start = math.min(bar_index - x_start, 250)
+                if bars_since_start > 0
+                    float sweep_high = -1e10
+                    int   sweep_k    = -1
+                    for k = bars_since_start - 1 to 0
+                        if high[k] > sweep_high
+                            sweep_high := high[k]
+                            sweep_k    := k
+                    
+                    if sweep_high > h
+                        float swp_pct = (sweep_high - h) / h * 100.0
+                        if swp_pct <= max_swp_p
+                            bool has_reclaim = false
+                            int  reclaim_k   = -1
+                            for k = sweep_k to 0
+                                if close[k] <= h or (close[k] < open[k] and (high[k] - close[k]) > (close[k] - low[k]))
+                                    has_reclaim := true
+                                    reclaim_k   := k
+                                    break
+                            
+                            int prev_k = math.min(sweep_k + 1, 200)
+                            bool macd_rebound = (hist_line[sweep_k] < hist_line[prev_k]) or (hist_line[0] < hist_line[sweep_k]) or (hist_line[0] < 0)
+                            
+                            if has_reclaim and macd_rebound
+                                swp_detected_short := true
+                                swp_pct_val        := swp_pct
+                                swp_ext_val        := sweep_high
+                                swp_target_val     := calc_fib_short(h, l, 0.500, use_log)
+                                
+                                int swp_bar_idx = bar_index - sweep_k
+                                int rec_bar_idx = bar_index - (reclaim_k >= 0 ? reclaim_k : 0)
+                                
+                                label lb_swp = label.new(x=rec_bar_idx, y=sweep_high,
+                                    text="🎯 ЛОЖНЫЙ ВЫНОС (СВИП)\n" +
+                                         "Медвежья дивергенция MACD\n" +
+                                         "Свип: +" + str.tostring(swp_pct, "#.##") + "% (" + fmt_p(sweep_high) + ")\n" +
+                                         "Вход: Reclaim " + fmt_p(h) + "\n" +
+                                         "🎯 Цель (0.500): " + fmt_p(swp_target_val) + "\n" +
+                                         "🛑 Стоп: " + fmt_p(sweep_high),
+                                    color=color.new(#ef4444, 0), textcolor=color.white,
+                                    style=label.style_label_down, size=size.normal)
+                                array.push(labels_arr, lb_swp)
+                                
+                                line ln_swp = line.new(x1=swp_bar_idx, y1=sweep_high, x2=x_end, y2=sweep_high,
+                                    color=#fb923c, width=2, style=line.style_dashed)
+                                array.push(lines_arr, ln_swp)
+                                label lb_swp_sl = label.new(x=x_end, y=sweep_high, text="🛑 СТОП СВИПА " + fmt_p(sweep_high),
+                                    color=color.new(color.black, 100), textcolor=#fb923c, style=label.style_label_left, size=size.small)
+                                array.push(labels_arr, lb_swp_sl)
+                                
+                                line ln_target = line.new(x1=rec_bar_idx, y1=h, x2=x_end, y2=swp_target_val,
+                                    color=color.new(#ef4444, 30), width=2, style=line.style_arrow_right)
+                                array.push(lines_arr, ln_target)
+
     // ── 3. ПАНЕЛЬ ОЦЕНКИ РИСКА И КАЛЬКУЛЯТОР ПОЗИЦИИ ──
     if show_table
         // Заголовок
-        table.cell(risk_tbl, 0, 0, "⚡ ИНДИКАТОРЫ РИСКА", bgcolor=color.new(#1e293b, 20), text_color=color.white, text_size=size.small)
-        table.cell(risk_tbl, 1, 0, "СТАТУС СИГНАЛА", bgcolor=color.new(#1e293b, 20), text_color=color.white, text_size=size.small)
+        table.cell(risk_tbl, 0, 0, "⚡ ФИЛЬТР MACD & СИГНАЛ", bgcolor=color.new(#1e293b, 20), text_color=color.white, text_size=size.small)
+        table.cell(risk_tbl, 1, 0, "СТАТУС И ВЕРОЯТНОСТЬ", bgcolor=color.new(#1e293b, 20), text_color=color.white, text_size=size.small)
 
-        // 1. Проверка качества импульса: Размах >= 3.5% + Зрелый тренд (>= 4 свечей)
+        // 1. Проверка качества импульса
         float cur_imp_pct  = allow_long ? min_l_pct : min_s_pct
         int   cur_imp_bars = allow_long ? min_l_bars : min_s_bars
         bool  has_impulse  = not na(cur_imp_pct) and not na(cur_imp_bars)
@@ -676,39 +843,104 @@ if barstate.islast
         bool  is_safe_imp  = is_mature and is_strong
 
         string imp_title  = "Импульс (" + (has_impulse ? str.tostring(cur_imp_pct, "#.#") + "%, " + str.tostring(cur_imp_bars) + " св." : "—") + "):"
-        string imp_status = is_safe_imp ? "💎 ЗРЕЛЫЙ ТРЕНД (≥3.5%, ≥4 св.)" : (not is_mature ? "⚠️ СПАЙК (<4 св. - Риск лавины!)" : "⚠️ СЛАБЫЙ (<3.5%)")
+        string imp_status = is_safe_imp ? "💎 ПОДТВЕРЖДЕН (≥" + str.tostring(i_safe_pct, "#.#") + "%)" : (not is_mature ? "⚠️ СПАЙК (<" + str.tostring(i_safe_bars) + " св.)" : "⚠️ СЛАБЫЙ (<" + str.tostring(i_safe_pct, "#.#") + "%)")
         color  imp_col    = is_safe_imp ? color.lime : (not is_mature ? color.orange : color.yellow)
         table.cell(risk_tbl, 0, 1, imp_title, text_color=color.silver, text_size=size.small)
         table.cell(risk_tbl, 1, 1, imp_status, text_color=imp_col, text_size=size.small)
 
-        // 2. SuperTrend (10, 3.0)
-        bool st_ok = allow_long ? is_st_bull : is_st_bear
-        string st_title  = "SuperTrend (" + str.tostring(i_st_period) + ", " + str.tostring(i_st_mult, "#.#") + "):"
-        string st_status = st_ok ? (allow_long ? "🟢 БЫЧИЙ ТРЕНД" : "🔴 МЕДВЕЖИЙ ТРЕНД") : (allow_long ? "🔴 МЕДВЕЖИЙ (Против тренда!)" : "🟢 БЫЧИЙ (Против тренда!)")
-        color  st_col    = st_ok ? color.lime : color.red
-        table.cell(risk_tbl, 0, 2, st_title, text_color=color.silver, text_size=size.small)
-        table.cell(risk_tbl, 1, 2, st_status, text_color=st_col, text_size=size.small)
+        // 2. Статус MACD (Линия против Сигнала)
+        bool macd_ok = allow_long ? is_macd_bull : is_macd_bear
+        string macd_title  = "MACD (" + str.tostring(i_macd_fast) + "," + str.tostring(i_macd_slow) + "," + str.tostring(i_macd_sig) + "):"
+        string macd_status = macd_ok ? (allow_long ? "🟢 БЫЧИЙ (Линия > Сигнал)" : "🔴 МЕДВЕЖИЙ (Линия < Сигнал)") : (allow_long ? "❌ МЕДВЕЖИЙ (Против лонга!)" : "❌ БЫЧИЙ (Против шорта!)")
+        color  macd_col    = macd_ok ? color.lime : color.red
+        table.cell(risk_tbl, 0, 2, macd_title, text_color=color.silver, text_size=size.small)
+        table.cell(risk_tbl, 1, 2, macd_status, text_color=macd_col, text_size=size.small)
 
-        // 3. EMA 34 > EMA 50
-        bool ema_ok = allow_long ? (ema34 > ema50) : (ema34 < ema50)
-        string ema_title  = "EMA (" + str.tostring(i_ema_fast) + " / " + str.tostring(i_ema_slow) + "):"
-        string ema_status = ema_ok ? (allow_long ? "🟢 EMA 34 > EMA 50 (Тренд)" : "🔴 EMA 34 < EMA 50 (Тренд)") : (allow_long ? "❌ EMA 34 <= EMA 50" : "❌ EMA 34 >= EMA 50")
-        color  ema_col    = ema_ok ? color.lime : color.red
-        table.cell(risk_tbl, 0, 3, ema_title, text_color=color.silver, text_size=size.small)
-        table.cell(risk_tbl, 1, 3, ema_status, text_color=ema_col, text_size=size.small)
+        // 3. Гистограмма MACD и Моментум
+        bool hist_growing = allow_long ? (hist_line > hist_line[1]) : (hist_line < hist_line[1])
+        string hist_title = "Гистограмма MACD:"
+        string hist_val_str = (hist_line >= 0 ? "+" : "") + str.tostring(hist_line, "#.####")
+        string hist_status = hist_val_str + (hist_growing ? " (Растет ↗)" : " (Затухает ↘)")
+        color  hist_col = (allow_long ? hist_line > 0 : hist_line < 0) ? (hist_growing ? color.lime : #a3e635) : color.orange
+        table.cell(risk_tbl, 0, 3, hist_title, text_color=color.silver, text_size=size.small)
+        table.cell(risk_tbl, 1, 3, hist_status, text_color=hist_col, text_size=size.small)
 
-        // 4. Общий вердикт риска
-        int score = (is_safe_imp ? 1 : 0) + (st_ok ? 1 : 0) + (ema_ok ? 1 : 0)
-        string verdict_text = score == 3 ? "🟢 СУПЕР-ВХОД (Винрейт ~93%)" : (score == 2 ? "🔵 УМЕРЕННЫЙ РИСК (2 из 3)" : "🔴 ОПАСНОСТЬ ЛАВИНЫ (Ждать 1.618!)")
-        color  verdict_col  = score == 3 ? color.green : (score == 2 ? color.blue : color.red)
-        table.cell(risk_tbl, 0, 4, "🎯 ОБЩИЙ РИСК:", bgcolor=color.new(#1e293b, 40), text_color=color.white, text_size=size.small)
-        table.cell(risk_tbl, 1, 4, verdict_text, bgcolor=color.new(#1e293b, 40), text_color=verdict_col, text_size=size.small)
+        // 4. Оценка Модуля Качества Импульса (RSI + Фитиль)
+        int peak_bars_ago = 0
+        if allow_long and not na(min_l_s) and not na(min_l_bars)
+            peak_bars_ago := math.max(0, (bar_index - min_l_s) - min_l_bars + 1)
+        else if allow_short and not na(min_s_s) and not na(min_s_bars)
+            peak_bars_ago := math.max(0, (bar_index - min_s_s) - min_s_bars + 1)
+
+        float p_high  = high[peak_bars_ago]
+        float p_low   = low[peak_bars_ago]
+        float p_open  = open[peak_bars_ago]
+        float p_close = close[peak_bars_ago]
+        float p_rng   = p_high - p_low
+        float p_wick  = p_rng > 0 ? (allow_long ? (p_high - math.max(p_open, p_close)) / p_rng * 100.0 : (math.min(p_open, p_close) - p_low) / p_rng * 100.0) : 0.0
+        float p_rsi   = rsi_val[peak_bars_ago]
+
+        bool qual_rsi_ok  = not use_qual or (p_rsi >= rsi_min and p_rsi <= rsi_max)
+        bool qual_wick_ok = not use_qual or (p_wick <= max_wick_p)
+        bool qual_ok      = qual_rsi_ok and qual_wick_ok
+
+        string qual_title = "🛡️ МОДУЛЬ КАЧЕСТВА:"
+        string qual_status = ""
+        color  qual_col    = color.green
+        if not use_qual
+            qual_status := "⚪ ВЫКЛЮЧЕН (Базовый MACD)"
+            qual_col    := color.silver
+        else if not qual_wick_ok
+            qual_status := "❌ ОПАСНОСТЬ: ФИТИЛЬ " + str.tostring(p_wick, "#.#") + "% (Сброс!)"
+            qual_col    := color.red
+        else if not qual_rsi_ok
+            qual_status := "❌ ОПАСНОСТЬ: RSI " + str.tostring(p_rsi, "#.#") + (p_rsi < rsi_min ? " (Слабость < 50)" : " (Перегрев > 82)")
+            qual_col    := color.red
+        else
+            qual_status := "💎 ОДОБРЕНО (RSI: " + str.tostring(p_rsi, "#.#") + ", Фитиль: " + str.tostring(p_wick, "#.#") + "%)"
+            qual_col    := color.lime
+
+        table.cell(risk_tbl, 0, 4, qual_title, bgcolor=color.new(#1e293b, 30), text_color=color.white, text_size=size.small)
+        table.cell(risk_tbl, 1, 4, qual_status, bgcolor=color.new(#1e293b, 30), text_color=qual_col, text_size=size.small)
+
+        // 5. Вероятность сделки в % (Win-Rate)
+        string prob_verdict = ""
+        color  prob_col     = color.green
+        if not macd_ok
+            prob_verdict := "⚠️ 48% (ПРОТИВ MACD! Риск SL)"
+            prob_col     := color.red
+        else if use_qual and not qual_ok
+            prob_verdict := "⚠️ 42% (ОТКЛОНЕН МОДУЛЕМ КАЧЕСТВА)"
+            prob_col     := color.red
+        else if is_safe_imp and hist_growing and qual_ok
+            prob_verdict := "💎 96% (СУПЕР-ВХОД: Качество + Тренд + Моментум)"
+            prob_col     := color.lime
+        else if is_safe_imp and qual_ok
+            prob_verdict := "🟢 90% (ВЫСОКАЯ: Качество подтверждено)"
+            prob_col     := color.green
+        else
+            prob_verdict := "🔵 78% (УМЕРЕННАЯ: Слабый импульс)"
+            prob_col     := color.yellow
+
+        table.cell(risk_tbl, 0, 5, "🎯 ВЕРОЯТНОСТЬ СДЕЛКИ:", bgcolor=color.new(#1e293b, 40), text_color=color.white, text_size=size.small)
+        table.cell(risk_tbl, 1, 5, prob_verdict, bgcolor=color.new(#1e293b, 40), text_color=prob_col, text_size=size.small)
+
+        if swp_detected_long
+            table.cell(risk_tbl, 0, 6, "🎯 СВИП ЛИКВИДНОСТИ:", bgcolor=color.new(#10b981, 20), text_color=color.white, text_size=size.small)
+            table.cell(risk_tbl, 1, 6, "🟢 ЛОЖНЫЙ ПРОБОЙ (-" + str.tostring(swp_pct_val, "#.#") + "%)", bgcolor=color.new(#10b981, 20), text_color=color.lime, text_size=size.small)
+            table.cell(risk_tbl, 0, 7, "  Reclaim план:", text_color=color.silver, text_size=size.small)
+            table.cell(risk_tbl, 1, 7, "TP 0.500 (" + fmt_p(swp_target_val) + ") | SL " + fmt_p(swp_ext_val), text_color=color.yellow, text_size=size.small)
+        else if swp_detected_short
+            table.cell(risk_tbl, 0, 6, "🎯 СВИП ЛИКВИДНОСТИ:", bgcolor=color.new(#ef4444, 20), text_color=color.white, text_size=size.small)
+            table.cell(risk_tbl, 1, 6, "🔴 ЛОЖНЫЙ ВЫНОС (+" + str.tostring(swp_pct_val, "#.#") + "%)", bgcolor=color.new(#ef4444, 20), text_color=color.orange, text_size=size.small)
+            table.cell(risk_tbl, 0, 7, "  Reclaim план:", text_color=color.silver, text_size=size.small)
+            table.cell(risk_tbl, 1, 7, "TP 0.500 (" + fmt_p(swp_target_val) + ") | SL " + fmt_p(swp_ext_val), text_color=color.yellow, text_size=size.small)
 
     // ── 💰 РИСК-КАЛЬКУЛЯТОР ОБЪЕМА ПОЗИЦИИ ──
     bool has_active_long = allow_long and not na(min_l_high) and not na(min_l_low)
     bool has_active_short = allow_short and not na(min_s_high) and not na(min_s_low)
 
-    int cur_row = 5
+    int cur_row = (swp_detected_long or swp_detected_short) ? 8 : 6
 
     if has_active_long or has_active_short
         string sl_mode_str = i_sl_mode
@@ -733,12 +965,11 @@ if barstate.islast
                 float gain_per_coin = (tp236 - e500) - (e500 * fee_maker) - (tp236 * fee_maker)
                 float pnl500 = qty500 * gain_per_coin
                 float roi500 = math.abs(tp236 - e500) / e500 * 100.0
-                float sl_pct500 = (sl_p - e500) / e500 * 100.0
                 table.cell(risk_tbl, 0, cur_row, "🟢 Long 0.500: " + fmt_p(e500), text_color=#f59e0b, text_size=size.small)
-                table.cell(risk_tbl, 1, cur_row, str.tostring(qty500, "#.##") + " шт. ($" + str.tostring(notional500, "#.#") + ") | SL: " + fmt_p(sl_p) + " (" + str.tostring(sl_pct500, "#.##") + "%)", text_color=color.white, text_size=size.small)
+                table.cell(risk_tbl, 1, cur_row, str.tostring(qty500, "#.##") + " шт. ($" + str.tostring(notional500, "#.#") + ")", text_color=color.white, text_size=size.small)
                 cur_row := cur_row + 1
                 table.cell(risk_tbl, 0, cur_row, "  🎯 Тейк 0.236: " + fmt_p(tp236), text_color=color.silver, text_size=size.small)
-                table.cell(risk_tbl, 1, cur_row, "+$" + str.tostring(pnl500, "#.##") + " (ROI +" + str.tostring(roi500, "#.##") + "% / RR 1:" + str.tostring(pnl500 / i_risk_usd, "#.#") + ")", text_color=color.lime, text_size=size.small)
+                table.cell(risk_tbl, 1, cur_row, "+$" + str.tostring(pnl500, "#.##") + " (ROI +" + str.tostring(roi500, "#.##") + "%)", text_color=color.lime, text_size=size.small)
                 cur_row := cur_row + 1
 
             if show_calc_618
@@ -748,12 +979,11 @@ if barstate.islast
                 float gain_per_coin = (tp382 - e618) - (e618 * fee_maker) - (tp382 * fee_maker)
                 float pnl618 = qty618 * gain_per_coin
                 float roi618 = math.abs(tp382 - e618) / e618 * 100.0
-                float sl_pct618 = (sl_p - e618) / e618 * 100.0
                 table.cell(risk_tbl, 0, cur_row, "🟢 Long 0.618: " + fmt_p(e618), text_color=color.yellow, text_size=size.small)
-                table.cell(risk_tbl, 1, cur_row, str.tostring(qty618, "#.##") + " шт. ($" + str.tostring(notional618, "#.#") + ") | SL: " + fmt_p(sl_p) + " (" + str.tostring(sl_pct618, "#.##") + "%)", text_color=color.white, text_size=size.small)
+                table.cell(risk_tbl, 1, cur_row, str.tostring(qty618, "#.##") + " шт. ($" + str.tostring(notional618, "#.#") + ")", text_color=color.white, text_size=size.small)
                 cur_row := cur_row + 1
                 table.cell(risk_tbl, 0, cur_row, "  🎯 Тейк 0.382: " + fmt_p(tp382), text_color=color.silver, text_size=size.small)
-                table.cell(risk_tbl, 1, cur_row, "+$" + str.tostring(pnl618, "#.##") + " (ROI +" + str.tostring(roi618, "#.##") + "% / RR 1:" + str.tostring(pnl618 / i_risk_usd, "#.#") + ")", text_color=color.lime, text_size=size.small)
+                table.cell(risk_tbl, 1, cur_row, "+$" + str.tostring(pnl618, "#.##") + " (ROI +" + str.tostring(roi618, "#.##") + "%)", text_color=color.lime, text_size=size.small)
                 cur_row := cur_row + 1
 
         else if has_active_short
@@ -776,12 +1006,11 @@ if barstate.islast
                 float gain_per_coin = (e500 - tp236) - (e500 * fee_maker) - (tp236 * fee_maker)
                 float pnl500 = qty500 * gain_per_coin
                 float roi500 = math.abs(e500 - tp236) / e500 * 100.0
-                float sl_pct500 = (e500 - sl_p) / e500 * 100.0
                 table.cell(risk_tbl, 0, cur_row, "🔴 Short 0.500: " + fmt_p(e500), text_color=#f59e0b, text_size=size.small)
-                table.cell(risk_tbl, 1, cur_row, str.tostring(qty500, "#.##") + " шт. ($" + str.tostring(notional500, "#.#") + ") | SL: " + fmt_p(sl_p) + " (" + str.tostring(sl_pct500, "#.##") + "%)", text_color=color.white, text_size=size.small)
+                table.cell(risk_tbl, 1, cur_row, str.tostring(qty500, "#.##") + " шт. ($" + str.tostring(notional500, "#.#") + ")", text_color=color.white, text_size=size.small)
                 cur_row := cur_row + 1
                 table.cell(risk_tbl, 0, cur_row, "  🎯 Тейк 0.236: " + fmt_p(tp236), text_color=color.silver, text_size=size.small)
-                table.cell(risk_tbl, 1, cur_row, "+$" + str.tostring(pnl500, "#.##") + " (ROI +" + str.tostring(roi500, "#.##") + "% / RR 1:" + str.tostring(pnl500 / i_risk_usd, "#.#") + ")", text_color=color.lime, text_size=size.small)
+                table.cell(risk_tbl, 1, cur_row, "+$" + str.tostring(pnl500, "#.##") + " (ROI +" + str.tostring(roi500, "#.##") + "%)", text_color=color.lime, text_size=size.small)
                 cur_row := cur_row + 1
 
             if show_calc_618
@@ -791,12 +1020,11 @@ if barstate.islast
                 float gain_per_coin = (e618 - tp382) - (e618 * fee_maker) - (tp382 * fee_maker)
                 float pnl618 = qty618 * gain_per_coin
                 float roi618 = math.abs(e618 - tp382) / e618 * 100.0
-                float sl_pct618 = (e618 - sl_p) / e618 * 100.0
                 table.cell(risk_tbl, 0, cur_row, "🔴 Short 0.618: " + fmt_p(e618), text_color=color.yellow, text_size=size.small)
-                table.cell(risk_tbl, 1, cur_row, str.tostring(qty618, "#.##") + " шт. ($" + str.tostring(notional618, "#.#") + ") | SL: " + fmt_p(sl_p) + " (" + str.tostring(sl_pct618, "#.##") + "%)", text_color=color.white, text_size=size.small)
+                table.cell(risk_tbl, 1, cur_row, str.tostring(qty618, "#.##") + " шт. ($" + str.tostring(notional618, "#.#") + ")", text_color=color.white, text_size=size.small)
                 cur_row := cur_row + 1
                 table.cell(risk_tbl, 0, cur_row, "  🎯 Тейк 0.382: " + fmt_p(tp382), text_color=color.silver, text_size=size.small)
-                table.cell(risk_tbl, 1, cur_row, "+$" + str.tostring(pnl618, "#.##") + " (ROI +" + str.tostring(roi618, "#.##") + "% / RR 1:" + str.tostring(pnl618 / i_risk_usd, "#.#") + ")", text_color=color.lime, text_size=size.small)
+                table.cell(risk_tbl, 1, cur_row, "+$" + str.tostring(pnl618, "#.##") + " (ROI +" + str.tostring(roi618, "#.##") + "%)", text_color=color.lime, text_size=size.small)
                 cur_row := cur_row + 1
     else
         table.cell(risk_tbl, 0, cur_row, "💰 РАСЧЕТ ОБЪЕМА:", bgcolor=color.new(#1e293b, 30), text_color=color.silver, text_size=size.small)

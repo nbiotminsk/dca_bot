@@ -15,6 +15,7 @@ dependencies = [
   "pyarrow>=14.0",
   "pyyaml>=6.0",
   "rich>=13.7",
+  "pyalgotrade>=0.20",
 ]
 
 [project.optional-dependencies]

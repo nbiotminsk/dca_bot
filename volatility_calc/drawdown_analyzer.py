@@ -148,7 +148,7 @@ def _rolling_extreme_after(series: pd.Series, window: int, func: str = "min") ->
     else:
         raise ValueError(f"func должен быть 'min' или 'max', получено {func!r}")
     
-    out = rolled.to_numpy(dtype=float)
+    out = rolled.to_numpy(dtype=float, copy=True)
     out[-1] = np.nan
     return out
 

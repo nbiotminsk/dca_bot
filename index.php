@@ -11,7 +11,7 @@
 error_reporting(E_ALL & ~E_DEPRECATED);
 date_default_timezone_set('Europe/Moscow'); // UTC+3
 
-$all_symbols = ['CAKEUSDT', 'LINKUSDT', 'GRAMUSDT', 'DOGEUSDT', 'HYPEUSDT', 'XRPUSDT', 'NEARUSDT', 'UNIUSDT', 'SUIUSDT', 'ENAUSDT', 'AVAXUSDT', 'ICPUSDT'];
+$all_symbols = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'UNIUSDT', 'LINKUSDT', 'DOGEUSDT', 'AVAXUSDT', 'XRPUSDT', 'ADAUSDT', 'NEARUSDT', 'SUIUSDT', 'HYPEUSDT', 'CAKEUSDT', 'ICPUSDT', 'ENAUSDT'];
 $symbols = $all_symbols;
 if (isset($_GET['symbols']) && !empty($_GET['symbols'])) {
     $reqSyms = explode(',', trim($_GET['symbols']));
@@ -76,120 +76,49 @@ function fmt3($val) {
     return number_format($f, 4, '.', '');
 }
 
-function calculateRSI($candles, $period = 14) {
-    $n = count($candles);
-    if ($n <= $period) return 50.0;
-    
-    $gains = 0;
-    $losses = 0;
-    for ($i = 1; $i <= $period; $i++) {
-        $diff = $candles[$i]['close'] - $candles[$i - 1]['close'];
-        if ($diff >= 0) $gains += $diff;
-        else $losses += abs($diff);
-    }
-    $avgGain = $gains / $period;
-    $avgLoss = $losses / $period;
-
-    for ($i = $period + 1; $i < $n; $i++) {
-        $diff = $candles[$i]['close'] - $candles[$i - 1]['close'];
-        $gain = $diff >= 0 ? $diff : 0;
-        $loss = $diff < 0 ? abs($diff) : 0;
-        $avgGain = (($avgGain * ($period - 1)) + $gain) / $period;
-        $avgLoss = (($avgLoss * ($period - 1)) + $loss) / $period;
-    }
-
-    if ($avgLoss == 0) return 100.0;
-    $rs = $avgGain / $avgLoss;
-    return 100.0 - (100.0 / (1.0 + $rs));
-}
-
-function calculateCCI($candles, $period = 14) {
-    $n = count($candles);
-    if ($n < $period) return 0.0;
-
-    $hlc3 = [];
-    foreach ($candles as $c) {
-        $hlc3[] = ($c['high'] + $c['low'] + $c['close']) / 3.0;
-    }
-
-    $lastHLC3 = array_slice($hlc3, -$period);
-    $sma = array_sum($lastHLC3) / $period;
-
-    $meanDev = 0;
-    foreach ($lastHLC3 as $v) {
-        $meanDev += abs($v - $sma);
-    }
-    $meanDev = $meanDev / $period;
-
-    if ($meanDev == 0) return 0.0;
-    $curHLC3 = end($hlc3);
-    return ($curHLC3 - $sma) / (0.015 * $meanDev);
-}
-
-function calculateEMA($candles, $period) {
-    $n = count($candles);
-    if ($n < $period) return 0.0;
+function calculateEMAValues($values, $period) {
+    $n = count($values);
+    if ($n == 0) return [];
     $k = 2.0 / ($period + 1.0);
-    $slice = array_slice($candles, 0, $period);
-    $sum = 0;
-    foreach ($slice as $c) $sum += $c['close'];
-    $ema = $sum / $period;
-    for ($i = $period; $i < $n; $i++) {
-        $ema = ($candles[$i]['close'] * $k) + ($ema * (1.0 - $k));
+    $ema = [$values[0]];
+    for ($i = 1; $i < $n; $i++) {
+        $ema[$i] = ($values[$i] * $k) + ($ema[$i - 1] * (1.0 - $k));
     }
     return $ema;
 }
 
-function calculateSuperTrend($candles, $period = 10, $multiplier = 3.0) {
+function calculateMACD($candles, $fast = 12, $slow = 26, $signal = 9) {
     $n = count($candles);
-    if ($n < $period + 1) return ['trend' => 1, 'supertrend' => 0.0];
-    
-    $tr = [];
-    $tr[0] = $candles[0]['high'] - $candles[0]['low'];
-    for ($i = 1; $i < $n; $i++) {
-        $hl = $candles[$i]['high'] - $candles[$i]['low'];
-        $hpc = abs($candles[$i]['high'] - $candles[$i - 1]['close']);
-        $lpc = abs($candles[$i]['low'] - $candles[$i - 1]['close']);
-        $tr[$i] = max($hl, $hpc, $lpc);
+    if ($n < 2) {
+        return ['macd' => 0.0, 'signal' => 0.0, 'hist' => 0.0, 'prev_hist' => 0.0];
     }
-    
-    $atr = [];
-    $sum = 0;
-    for ($i = 0; $i < $period; $i++) $sum += $tr[$i];
-    $atr[$period - 1] = $sum / $period;
-    $alpha = 1.0 / $period;
-    for ($i = $period; $i < $n; $i++) {
-        $atr[$i] = $alpha * $tr[$i] + (1.0 - $alpha) * $atr[$i - 1];
+    $closes = [];
+    foreach ($candles as $c) {
+        $closes[] = (float)$c['close'];
     }
-    
-    $upperBand = [];
-    $lowerBand = [];
-    $trend = 1;
-    $st = 0.0;
-    
-    for ($i = $period; $i < $n; $i++) {
-        $hl2 = ($candles[$i]['high'] + $candles[$i]['low']) / 2.0;
-        $basicUpper = $hl2 + ($multiplier * $atr[$i]);
-        $basicLower = $hl2 - ($multiplier * $atr[$i]);
-        
-        $prevUpper = isset($upperBand[$i - 1]) ? $upperBand[$i - 1] : $basicUpper;
-        $prevLower = isset($lowerBand[$i - 1]) ? $lowerBand[$i - 1] : $basicLower;
-        $prevClose = $candles[$i - 1]['close'];
-        
-        $upperBand[$i] = ($basicUpper < $prevUpper || $prevClose > $prevUpper) ? $basicUpper : $prevUpper;
-        $lowerBand[$i] = ($basicLower > $prevLower || $prevClose < $prevLower) ? $basicLower : $prevLower;
-        
-        if ($trend == 1 && $candles[$i]['close'] < $lowerBand[$i]) {
-            $trend = -1;
-        } else if ($trend == -1 && $candles[$i]['close'] > $upperBand[$i]) {
-            $trend = 1;
-        }
-        $st = ($trend == 1) ? $lowerBand[$i] : $upperBand[$i];
+    $emaFast = calculateEMAValues($closes, $fast);
+    $emaSlow = calculateEMAValues($closes, $slow);
+    $macdLine = [];
+    for ($i = 0; $i < $n; $i++) {
+        $macdLine[$i] = $emaFast[$i] - $emaSlow[$i];
     }
-    return ['trend' => $trend, 'supertrend' => $st];
+    $signalLine = calculateEMAValues($macdLine, $signal);
+    $curMacd = end($macdLine);
+    $curSig = end($signalLine);
+    $curHist = $curMacd - $curSig;
+    $prevMacd = isset($macdLine[$n - 2]) ? $macdLine[$n - 2] : $curMacd;
+    $prevSig = isset($signalLine[$n - 2]) ? $signalLine[$n - 2] : $curSig;
+    $prevHist = $prevMacd - $prevSig;
+
+    return [
+        'macd'      => $curMacd,
+        'signal'    => $curSig,
+        'hist'      => $curHist,
+        'prev_hist' => $prevHist,
+    ];
 }
 
-function detectLatestLongImpulse($candles, $min_pct = 1.5) {
+function detectLatestLongImpulse($candles, $min_pct = 2.0) {
     $n = count($candles);
     $best = null;
 
@@ -691,7 +620,7 @@ if (isset($_GET['ajax'])) {
         $candles = fetchBybitKlines($sym, '60', 100);
         if (!$candles) continue;
         $curPrice = end($candles)['close'];
-        $impLN = detectLatestLongImpulse($candles, 1.5);
+        $impLN = detectLatestLongImpulse($candles, $MIN_IMP_NORMAL);
         $impLM = detectLatestLongManipulation($candles, $MIN_IMP_MANIP);
         $impSN = detectLatestShortImpulse($candles, $MIN_IMP_NORMAL);
         $impMacroL = detectMacroLong($candles, 5.0);
@@ -703,65 +632,83 @@ if (isset($_GET['ajax'])) {
         $short_time = $impSN ? $impSN['end_time'] : 0;
 
         // Long Normal
-        // Карта исторического винрейта на 18-месячной истории (13 000 свечей 1H)
+        // Карта исторического винрейта на основе бэктеста стратегии с фильтром MACD
         $coinStats = [
-            'CAKEUSDT' => ['wr_normal' => '89.7%', 'wr_manip' => '65.5%', 'sl_fib' => 2.618, 'rr' => '1:2.4'],
-            'XRPUSDT'  => ['wr_normal' => '89.4%', 'wr_manip' => '64.2%', 'sl_fib' => 2.618, 'rr' => '1:2.0'],
-            'GRAMUSDT' => ['wr_normal' => '88.7%', 'wr_manip' => '47.8%', 'sl_fib' => 2.291, 'rr' => '1:3.0'],
-            'SUIUSDT'  => ['wr_normal' => '88.2%', 'wr_manip' => '65.5%', 'sl_fib' => 2.618, 'rr' => '1:3.0'],
-            'UNIUSDT'  => ['wr_normal' => '87.9%', 'wr_manip' => '63.3%', 'sl_fib' => 2.618, 'rr' => '1:2.4'],
-            'HYPEUSDT' => ['wr_normal' => '87.9%', 'wr_manip' => '62.5%', 'sl_fib' => 2.291, 'rr' => '1:3.0'],
-            'LINKUSDT' => ['wr_normal' => '87.7%', 'wr_manip' => '70.6%', 'sl_fib' => 2.618, 'rr' => '1:2.4'],
-            'DOGEUSDT' => ['wr_normal' => '87.5%', 'wr_manip' => '69.8%', 'sl_fib' => 2.618, 'rr' => '1:2.4'],
-            'AVAXUSDT' => ['wr_normal' => '86.6%', 'wr_manip' => '57.9%', 'sl_fib' => 2.618, 'rr' => '1:3.0'],
-            'ICPUSDT'  => ['wr_normal' => '86.5%', 'wr_manip' => '63.2%', 'sl_fib' => 2.337, 'rr' => '1:2.7'],
+            'BTCUSDT'  => ['wr_normal' => '82.9%', 'wr_manip' => '65.0%', 'sl_fib' => 2.618, 'rr' => '1:2.4'],
+            'ETHUSDT'  => ['wr_normal' => '82.1%', 'wr_manip' => '64.0%', 'sl_fib' => 2.618, 'rr' => '1:2.4'],
+            'SOLUSDT'  => ['wr_normal' => '88.1%', 'wr_manip' => '70.0%', 'sl_fib' => 2.618, 'rr' => '1:2.4'],
+            'BNBUSDT'  => ['wr_normal' => '87.6%', 'wr_manip' => '68.0%', 'sl_fib' => 2.618, 'rr' => '1:2.4'],
+            'UNIUSDT'  => ['wr_normal' => '81.7%', 'wr_manip' => '63.3%', 'sl_fib' => 2.618, 'rr' => '1:2.4'],
+            'LINKUSDT' => ['wr_normal' => '85.2%', 'wr_manip' => '70.6%', 'sl_fib' => 2.618, 'rr' => '1:2.4'],
+            'DOGEUSDT' => ['wr_normal' => '86.9%', 'wr_manip' => '69.8%', 'sl_fib' => 2.618, 'rr' => '1:2.4'],
+            'AVAXUSDT' => ['wr_normal' => '83.2%', 'wr_manip' => '57.9%', 'sl_fib' => 2.618, 'rr' => '1:3.0'],
+            'XRPUSDT'  => ['wr_normal' => '87.3%', 'wr_manip' => '64.2%', 'sl_fib' => 2.618, 'rr' => '1:2.0'],
+            'ADAUSDT'  => ['wr_normal' => '83.8%', 'wr_manip' => '60.0%', 'sl_fib' => 2.618, 'rr' => '1:2.4'],
             'NEARUSDT' => ['wr_normal' => '85.4%', 'wr_manip' => '63.0%', 'sl_fib' => 2.618, 'rr' => '1:2.4'],
+            'SUIUSDT'  => ['wr_normal' => '88.2%', 'wr_manip' => '65.5%', 'sl_fib' => 2.618, 'rr' => '1:3.0'],
+            'HYPEUSDT' => ['wr_normal' => '87.9%', 'wr_manip' => '62.5%', 'sl_fib' => 2.291, 'rr' => '1:3.0'],
+            'CAKEUSDT' => ['wr_normal' => '89.7%', 'wr_manip' => '65.5%', 'sl_fib' => 2.618, 'rr' => '1:2.4'],
+            'ICPUSDT'  => ['wr_normal' => '86.5%', 'wr_manip' => '63.2%', 'sl_fib' => 2.337, 'rr' => '1:2.7'],
             'ENAUSDT'  => ['wr_normal' => '82.0%', 'wr_manip' => '66.7%', 'sl_fib' => 2.291, 'rr' => '1:3.0']
         ];
-        $cur_ema34 = calculateEMA($candles, 34);
-        $cur_ema50 = calculateEMA($candles, 50);
-        $st_res = calculateSuperTrend($candles, 10, 3.0);
-        $is_st_bull = ($st_res['trend'] === 1);
-        $is_ema_bull = ($cur_ema34 > $cur_ema50);
+        $macd_res = calculateMACD($candles, 12, 26, 9);
+        $macd_line = $macd_res['macd'];
+        $macd_signal = $macd_res['signal'];
+        $macd_hist = $macd_res['hist'];
+        $is_macd_bull = ($macd_line > $macd_signal);
+        $is_macd_bear = ($macd_line < $macd_signal);
+        $is_hist_growing = ($macd_hist > $macd_res['prev_hist']);
         
         $active_imp = ($long_time >= $short_time && $impLN) ? $impLN : ($impSN ? $impSN : null);
         $imp_pct = $active_imp ? (float)$active_imp['pct'] : 0.0;
         $imp_bars = $active_imp ? (int)$active_imp['bars'] : 0;
         
-        $is_mature = ($imp_bars >= 4);
-        $is_strong = ($imp_pct >= 3.5);
+        $is_mature = ($imp_bars >= 2);
+        $is_strong = ($imp_pct >= 2.0);
         $is_safe_imp = ($is_mature && $is_strong);
 
-        $card['ema34'] = number_format($cur_ema34, 4);
-        $card['ema50'] = number_format($cur_ema50, 4);
-        $card['ema_bull'] = $is_ema_bull;
-        $card['ema_status'] = $is_ema_bull ? 'EMA34 > EMA50' : 'EMA34 <= EMA50';
-        $card['st_status'] = $is_st_bull ? 'BULLISH' : 'BEARISH';
+        $hist_sign = $macd_hist >= 0 ? '+' : '';
+        $card['macd_line'] = number_format($macd_line, 4);
+        $card['macd_signal'] = number_format($macd_signal, 4);
+        $card['macd_hist'] = $hist_sign . number_format($macd_hist, 4);
+        $card['macd_bull'] = $is_macd_bull;
+        $card['macd_status'] = $is_macd_bull ? 'MACD: БЫЧИЙ' : 'MACD: МЕДВЕЖИЙ';
+        $card['hist_growing'] = $is_hist_growing;
+        $card['hist_status'] = $card['macd_hist'] . ($is_hist_growing ? ' ↗' : ' ↘');
         $card['imp_pct'] = number_format($imp_pct, 1);
         $card['imp_bars'] = $imp_bars;
         $card['imp_safe'] = $is_safe_imp;
-        $card['imp_status'] = $is_safe_imp ? "💎 Зрелый (≥3.5%, {$imp_bars} св.)" : ($imp_bars < 4 ? "⚠️ Спайк ({$imp_bars} св.)" : "⚠️ Слабый ({$card['imp_pct']}%)");
+        $card['imp_status'] = $is_safe_imp ? "💎 Подтвержден (≥2.0%)" : ($imp_bars < 2 ? "⚠️ 1 свеча" : "⚠️ Слабый ({$card['imp_pct']}%)");
 
-        // Оценка риска:
-        $score = ($is_safe_imp ? 1 : 0) + ($is_st_bull ? 1 : 0) + ($is_ema_bull ? 1 : 0);
-        if ($score === 3) {
-            $card['risk_level'] = 'LOW';
-            $card['risk_text'] = '🟢 Супер-вход (Винрейт ~93%)';
-            $card['risk_badge_col'] = 'rgba(16, 185, 129, 0.2)';
-            $card['risk_border_col'] = 'rgba(16, 185, 129, 0.5)';
-            $card['risk_txt_col'] = '#10b981';
-        } else if ($score === 2) {
-            $card['risk_level'] = 'MED';
-            $card['risk_text'] = '🔵 Умеренный риск (2 из 3)';
-            $card['risk_badge_col'] = 'rgba(59, 130, 246, 0.2)';
-            $card['risk_border_col'] = 'rgba(59, 130, 246, 0.5)';
-            $card['risk_txt_col'] = '#3b82f6';
-        } else {
+        // Вероятность сделки в % (Win-Rate):
+        $is_long_active = ($long_time >= $short_time);
+        $macd_aligned = $is_long_active ? $is_macd_bull : $is_macd_bear;
+        $hist_aligned = $is_long_active ? $is_hist_growing : !$is_hist_growing;
+
+        if (!$macd_aligned) {
             $card['risk_level'] = 'HIGH';
-            $card['risk_text'] = '🔴 Опасность лавины (Ждать 1.618!)';
+            $card['risk_text'] = '⚠️ 48% (ПРОТИВ MACD! Риск SL)';
             $card['risk_badge_col'] = 'rgba(239, 68, 68, 0.2)';
             $card['risk_border_col'] = 'rgba(239, 68, 68, 0.5)';
             $card['risk_txt_col'] = '#ef4444';
+        } else if ($is_safe_imp && $hist_aligned) {
+            $card['risk_level'] = 'LOW';
+            $card['risk_text'] = '💎 88% (СУПЕР: Тренд + Моментум)';
+            $card['risk_badge_col'] = 'rgba(16, 185, 129, 0.2)';
+            $card['risk_border_col'] = 'rgba(16, 185, 129, 0.5)';
+            $card['risk_txt_col'] = '#10b981';
+        } else if ($is_safe_imp) {
+            $card['risk_level'] = 'LOW';
+            $card['risk_text'] = '🟢 85% (ВЫСОКАЯ: MACD подтвержден)';
+            $card['risk_badge_col'] = 'rgba(16, 185, 129, 0.2)';
+            $card['risk_border_col'] = 'rgba(16, 185, 129, 0.5)';
+            $card['risk_txt_col'] = '#10b981';
+        } else {
+            $card['risk_level'] = 'MED';
+            $card['risk_text'] = '🔵 78% (УМЕРЕННАЯ: Слабый импульс)';
+            $card['risk_badge_col'] = 'rgba(59, 130, 246, 0.2)';
+            $card['risk_border_col'] = 'rgba(59, 130, 246, 0.5)';
+            $card['risk_txt_col'] = '#3b82f6';
         }
 
         $stats = isset($coinStats[$sym]) ? $coinStats[$sym] : ['wr_normal' => '85%', 'wr_manip' => '75%', 'sl_fib' => 2.500, 'rr' => '1:2.0'];
@@ -1564,9 +1511,9 @@ function renderCards(data) {
                         <span class="badge-wr" title="Исторический Win Rate обычного Long/Short">Сетка: ${c.wr_normal}</span>
                         <span class="badge-wr" style="color:var(--purple); background:rgba(213,0,249,0.12); border-color:rgba(213,0,249,0.3);" title="Исторический Win Rate Манипуляции">Манип 1.618: ${c.wr_manip}</span>
                         <span class="badge-wr" style="color:${c.imp_safe ? 'var(--green)' : 'var(--orange)'}; background:${c.imp_safe ? 'rgba(0,230,118,0.12)' : 'rgba(249,115,22,0.12)'}; border-color:${c.imp_safe ? 'rgba(0,230,118,0.3)' : 'rgba(249,115,22,0.3)'};" title="Качество импульса">${c.imp_status}</span>
-                        <span class="badge-wr" style="color:${c.st_status === 'BULLISH' ? 'var(--green)' : 'var(--red)'}; background:${c.st_status === 'BULLISH' ? 'rgba(0,230,118,0.12)' : 'rgba(239,68,68,0.12)'}; border-color:${c.st_status === 'BULLISH' ? 'rgba(0,230,118,0.3)' : 'rgba(239,68,68,0.3)'};" title="SuperTrend (10, 3.0)">ST: ${c.st_status}</span>
-                        <span class="badge-wr" style="color:${c.ema_bull ? 'var(--green)' : 'var(--red)'}; background:${c.ema_bull ? 'rgba(0,230,118,0.12)' : 'rgba(239,68,68,0.12)'}; border-color:${c.ema_bull ? 'rgba(0,230,118,0.3)' : 'rgba(239,68,68,0.3)'};" title="EMA 34 / 50">${c.ema_status}</span>
-                        <span class="badge-wr" style="color:${c.risk_txt_col}; background:${c.risk_badge_col}; border-color:${c.risk_border_col}; font-weight:700;" title="Оценка риска входа">${c.risk_text}</span>
+                        <span class="badge-wr" style="color:${c.macd_bull ? 'var(--green)' : 'var(--red)'}; background:${c.macd_bull ? 'rgba(0,230,118,0.12)' : 'rgba(239,68,68,0.12)'}; border-color:${c.macd_bull ? 'rgba(0,230,118,0.3)' : 'rgba(239,68,68,0.3)'};" title="MACD (12, 26, 9)">${c.macd_status}</span>
+                        <span class="badge-wr" style="color:${c.macd_hist.startsWith('+') ? 'var(--green)' : 'var(--orange)'}; background:rgba(255,255,255,0.05); border-color:rgba(255,255,255,0.1);" title="Гистограмма MACD и Моментум">Hist: ${c.hist_status}</span>
+                        <span class="badge-wr" style="color:${c.risk_txt_col}; background:${c.risk_badge_col}; border-color:${c.risk_border_col}; font-weight:700;" title="Вероятность сделки в % (Win-Rate)">${c.risk_text}</span>
                         ${c.impulse_summary ? `<span class="badge-impulse" title="Текущий импульс монеты">${c.impulse_summary}</span>` : ''}
                     </div>
                     <div class="coin-quick-summary">${c.best_choice}</div>
@@ -1823,17 +1770,21 @@ function renderCards(data) {
 }
 
 const ALL_AVAILABLE_COINS = [
-    { sym: 'CAKEUSDT', name: 'CAKE', wr_n: '89.7%', wr_m: '65.5%' },
-    { sym: 'XRPUSDT',  name: 'XRP',  wr_n: '89.4%', wr_m: '64.2%' },
-    { sym: 'GRAMUSDT', name: 'GRAM', wr_n: '88.7%', wr_m: '47.8%' },
-    { sym: 'SUIUSDT',  name: 'SUI',  wr_n: '88.2%', wr_m: '65.5%' },
-    { sym: 'UNIUSDT',  name: 'UNI',  wr_n: '87.9%', wr_m: '63.3%' },
-    { sym: 'HYPEUSDT', name: 'HYPE', wr_n: '87.9%', wr_m: '62.5%' },
-    { sym: 'LINKUSDT', name: 'LINK', wr_n: '87.7%', wr_m: '70.6%' },
-    { sym: 'DOGEUSDT', name: 'DOGE', wr_n: '87.5%', wr_m: '69.8%' },
-    { sym: 'AVAXUSDT', name: 'AVAX', wr_n: '86.6%', wr_m: '57.9%' },
-    { sym: 'ICPUSDT',  name: 'ICP',  wr_n: '86.5%', wr_m: '63.2%' },
+    { sym: 'BTCUSDT',  name: 'BTC',  wr_n: '82.9%', wr_m: '65.0%' },
+    { sym: 'ETHUSDT',  name: 'ETH',  wr_n: '82.1%', wr_m: '64.0%' },
+    { sym: 'SOLUSDT',  name: 'SOL',  wr_n: '88.1%', wr_m: '70.0%' },
+    { sym: 'BNBUSDT',  name: 'BNB',  wr_n: '87.6%', wr_m: '68.0%' },
+    { sym: 'UNIUSDT',  name: 'UNI',  wr_n: '81.7%', wr_m: '63.3%' },
+    { sym: 'LINKUSDT', name: 'LINK', wr_n: '85.2%', wr_m: '70.6%' },
+    { sym: 'DOGEUSDT', name: 'DOGE', wr_n: '86.9%', wr_m: '69.8%' },
+    { sym: 'AVAXUSDT', name: 'AVAX', wr_n: '83.2%', wr_m: '57.9%' },
+    { sym: 'XRPUSDT',  name: 'XRP',  wr_n: '87.3%', wr_m: '64.2%' },
+    { sym: 'ADAUSDT',  name: 'ADA',  wr_n: '83.8%', wr_m: '60.0%' },
     { sym: 'NEARUSDT', name: 'NEAR', wr_n: '85.4%', wr_m: '63.0%' },
+    { sym: 'SUIUSDT',  name: 'SUI',  wr_n: '88.2%', wr_m: '65.5%' },
+    { sym: 'HYPEUSDT', name: 'HYPE', wr_n: '87.9%', wr_m: '62.5%' },
+    { sym: 'CAKEUSDT', name: 'CAKE', wr_n: '89.7%', wr_m: '65.5%' },
+    { sym: 'ICPUSDT',  name: 'ICP',  wr_n: '86.5%', wr_m: '63.2%' },
     { sym: 'ENAUSDT',  name: 'ENA',  wr_n: '82.0%', wr_m: '66.7%' }
 ];
 

@@ -132,10 +132,12 @@ def detect_impulses(
     side: Literal["long", "short", "both"] = "long",
     scale: Literal["log", "linear"] = "log",
     tolerance_pct: float = 0.0,
+    allow_internal: bool = False,
 ) -> list[Impulse]:
     """Поиск подтвержденных импульсов с фильтрацией по диапазону размаха [min_pct, max_pct].
     
     tolerance_pct: допуск погрешности в % цены при касании уровня 0.500 (напр. 0.1 для 0.1%).
+    allow_internal: если True, ищет внутренние (вложенные) импульсы внутри более крупных трендов.
     """
     highs = df["high"].values
     lows = df["low"].values
@@ -198,8 +200,9 @@ def detect_impulses(
                             end_time=pd.to_datetime(times[end_idx]),
                         )
                     )
-                    i = end_idx + 1
-                    continue
+                    if not allow_internal:
+                        i = end_idx + 1
+                        continue
             i += 1
 
     # 2. Поиск SHORT импульсов (дампов)
@@ -256,8 +259,9 @@ def detect_impulses(
                             end_time=pd.to_datetime(times[end_idx]),
                         )
                     )
-                    i = end_idx + 1
-                    continue
+                    if not allow_internal:
+                        i = end_idx + 1
+                        continue
             i += 1
 
     # Сортировка по времени начала
