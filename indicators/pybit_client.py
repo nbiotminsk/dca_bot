@@ -241,9 +241,24 @@ class BybitClient:
         raw_q2 = risk_per_order / dist2 if dist2 > 0 else 0.0
         raw_q3 = risk_per_order / dist3 if dist3 > 0 else 0.0
 
-        q1 = max(specs.min_qty, self.round_qty(raw_q1, symbol)) if raw_q1 > 0 else 0.0
-        q2 = max(specs.min_qty, self.round_qty(raw_q2, symbol)) if raw_q2 > 0 else 0.0
-        q3 = max(specs.min_qty, self.round_qty(raw_q3, symbol)) if raw_q3 > 0 else 0.0
+        min_q1 = specs.min_qty
+        min_q2 = specs.min_qty
+        min_q3 = specs.min_qty
+
+        if specs.min_notional > 0:
+            if p_entry1 > 0:
+                req1 = round(math.ceil((specs.min_notional / p_entry1) / specs.qty_step - 1e-9) * specs.qty_step, specs.qty_decimals)
+                min_q1 = max(min_q1, req1)
+            if p_entry2 > 0:
+                req2 = round(math.ceil((specs.min_notional / p_entry2) / specs.qty_step - 1e-9) * specs.qty_step, specs.qty_decimals)
+                min_q2 = max(min_q2, req2)
+            if p_entry3 > 0:
+                req3 = round(math.ceil((specs.min_notional / p_entry3) / specs.qty_step - 1e-9) * specs.qty_step, specs.qty_decimals)
+                min_q3 = max(min_q3, req3)
+
+        q1 = max(min_q1, self.round_qty(raw_q1, symbol)) if raw_q1 > 0 else 0.0
+        q2 = max(min_q2, self.round_qty(raw_q2, symbol)) if raw_q2 > 0 else 0.0
+        q3 = max(min_q3, self.round_qty(raw_q3, symbol)) if raw_q3 > 0 else 0.0
 
         loss1 = q1 * dist1
         loss2 = q2 * dist2

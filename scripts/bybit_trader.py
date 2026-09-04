@@ -1324,9 +1324,9 @@ def main():
             if existing_orders:
                 # Сортируем: для Buy по убыванию цены (верхний e1, средний e2, нижний e3)
                 existing_orders.sort(key=lambda x: float(x.get("price", 0.0)), reverse=(setup.side == "long"))
-                console.print(f"ℹ️ [{sym}] Найдено {len(existing_orders)} активных лимитных ордера(ов) на Bybit. Подключаем к мониторингу!")
 
                 if pos_open_initially:
+                    console.print(f"ℹ️ [{sym}] Найдено {len(existing_orders)} активных лимитных ордера(ов) на Bybit при открытой позиции. Подключаем к мониторингу!")
                     if len(existing_orders) >= 2:
                         o2_info = existing_orders[0]
                         o2_id = o2_info.get("orderId")
@@ -1350,35 +1350,11 @@ def main():
                         initial_state = "O3_FILLED"
                         console.print(f"  ✓ Позиция открыта (все 3 ордера налиты)")
                 else:
-                    o1_info = existing_orders[0]
-                    o1_id = o1_info.get("orderId")
-                    e1 = float(o1_info.get("price", e1))
-                    tp1 = float(o1_info.get("takeProfit") or tp1)
-                    console.print(f"  ✓ Ордер 1 (активен): ID {o1_id} @ {e1}, TP {tp1}")
+                    console.print(f"🔄 [{sym}] Найдено {len(existing_orders)} старых ордеров без открытой позиции. Снимаем их для обновления до актуальной тройной сетки...")
+                    client.cancel_all_orders(sym)
+                    existing_orders = []
 
-                    if len(existing_orders) > 1:
-                        o2_info = existing_orders[1]
-                        o2_id = o2_info.get("orderId")
-                        e2 = float(o2_info.get("price", e2 or 0.0))
-                        tp2 = float(o2_info.get("takeProfit") or (tp2 or 0.0))
-                        console.print(f"  ✓ Ордер 2 (активен): ID {o2_id} @ {e2}, TP {tp2}")
-
-                    if len(existing_orders) > 2:
-                        o3_info = existing_orders[2]
-                        o3_id = o3_info.get("orderId")
-                        e3 = float(o3_info.get("price", e3 or 0.0))
-                        tp3 = float(o3_info.get("takeProfit") or (tp3 or 0.0))
-                        console.print(f"  ✓ Ордер 3 (активен): ID {o3_id} @ {e3}, TP {tp3}")
-                    elif e3 is not None and q3 > 0 and tp3 is not None:
-                        try:
-                            resp3 = client.place_order(symbol=sym, side=side_str, order_type="Limit", qty=q3, price=e3, take_profit=tp3, stop_loss=sl)
-                            o3_id = resp3.get("orderId")
-                            console.print(f"✅ [{sym}] Дополнительно выставлен Ордер 3 (0.786): ID {o3_id} (Limit {side_str} {q3} @ {e3}, TP {tp3}, SL {sl})")
-                        except Exception as err3:
-                            console.print(f"⚠️ [{sym}] Не удалось довыставить Ордер 3: {err3}")
-
-                    initial_state = "TRAILING" if setup.setup_type in ("TRIPLE_GRID_TRAILING", "TRIPLE_GRID_CORRECTION", "DUAL_GRID_TRAILING", "DUAL_GRID_CORRECTION") else setup.setup_type
-            else:
+            if not existing_orders:
                 # Размещаем Ордер 1
                 resp1 = client.place_order(
                     symbol=sym,
