@@ -56,9 +56,11 @@ def test_active_setup_trailing_detector():
 
     setup = find_active_setup(df, min_pct=2.0)
     assert setup is not None
-    assert setup.setup_type == "DUAL_GRID_TRAILING"
+    assert setup.setup_type == "TRIPLE_GRID_TRAILING"
     assert setup.side == "long"
     assert setup.imp_peak_price == pytest.approx(110.2, rel=1e-2)
+    assert setup.entry_1 > setup.entry_2 > setup.entry_3
+    assert setup.tp_1 > setup.tp_2 > setup.tp_3
     assert setup.stop_loss == pytest.approx(99.8, rel=1e-2)
 
 
@@ -324,4 +326,304 @@ strategy:
 
     cfg2 = load_trade_config(cfg_file_str)
     assert cfg2.symbols == ["SUIUSDT.P", "BTCUSDT"]
+
+
+class MockBybitClient:
+    def __init__(self, pos_size=0.0, klines_df=None):
+        self.pos_size = pos_size
+        self.klines_df = klines_df if klines_df is not None else pd.DataFrame()
+        self.tp_sl_calls = []
+        self.cancel_all_calls = []
+        self.placed_orders = []
+
+    def get_position(self, symbol, side="Buy"):
+        if self.pos_size > 0:
+            return {"size": str(self.pos_size), "avgPrice": "100.0"}
+        return None
+
+    def fetch_klines(self, symbol, interval="60", limit=10):
+        return self.klines_df
+
+    def round_price(self, p, s):
+        return round(float(p), 2)
+
+    def round_qty(self, q, s):
+        return round(float(q), 3)
+
+    def get_specs(self, symbol):
+        return InstrumentSpecs(symbol, 0.01, 2, 0.001, 3, 0.001, 1000.0, 1.0)
+
+    def calc_dual_grid_order_sizes(self, e1, e2, sl, total_risk_usd=2.0, symbol="TEST"):
+        return 1.0, 1.0, 1.0, 1.0
+
+    def calc_triple_grid_order_sizes(self, e1, e2, e3, sl, total_risk_usd=2.0, symbol="TEST", equal_weight=True):
+        return 1.0, 1.0, 1.0, 0.67, 0.67, 0.67
+
+    def set_position_tp_sl(self, symbol, take_profit=None, stop_loss=None):
+        self.tp_sl_calls.append({"symbol": symbol, "take_profit": take_profit, "stop_loss": stop_loss})
+
+    def cancel_all_orders(self, symbol):
+        self.cancel_all_calls.append(symbol)
+        return [{"orderId": "mock_cancelled"}]
+
+    def amend_order(self, symbol, order_id, price=None, take_profit=None, stop_loss=None):
+        pass
+
+    def place_order(self, symbol, side, order_type, qty, price=None, take_profit=None, stop_loss=None):
+        self.placed_orders.append({
+            "symbol": symbol, "side": side, "order_type": order_type,
+            "qty": qty, "price": price, "take_profit": take_profit, "stop_loss": stop_loss
+        })
+        return {"orderId": f"order_{len(self.placed_orders)}"}
+
+    def update_stop_loss(self, symbol, order_id, stop_loss):
+        return True
+
+
+def test_process_monitor_step_o1_filled():
+    from scripts.bybit_trader import ActiveTradeMonitor, TradeConfig, process_monitor_step
+    cfg = TradeConfig()
+    m = ActiveTradeMonitor(
+        symbol="TESTUSDT",
+        setup_type="TRIPLE_GRID_TRAILING",
+        state="TRAILING",
+        q1=1.0,
+        q2=1.0,
+        q3=1.0,
+        cur_e1=100.0,
+        cur_tp1=105.0,
+        cur_e2=95.0,
+        cur_tp2=102.0,
+        cur_e3=90.0,
+        cur_tp3=100.0,
+        has_o2=True,
+        has_o3=True,
+    )
+    client = MockBybitClient(pos_size=1.0)
+    process_monitor_step(m, client, cfg, "60")
+    assert m.state == "O1_FILLED"
+    assert m.position_was_open is True
+
+
+def test_process_monitor_step_both_filled_moves_tp():
+    from scripts.bybit_trader import ActiveTradeMonitor, TradeConfig, process_monitor_step
+    cfg = TradeConfig()
+    m = ActiveTradeMonitor(
+        symbol="TESTUSDT",
+        setup_type="TRIPLE_GRID_TRAILING",
+        state="O1_FILLED",
+        q1=1.0,
+        q2=1.0,
+        q3=1.0,
+        cur_tp2=102.0,
+        cur_tp3=100.0,
+        sl=80.0,
+        has_o2=True,
+        has_o3=True,
+        position_was_open=True,
+    )
+    client = MockBybitClient(pos_size=2.0)
+    process_monitor_step(m, client, cfg, "60")
+    assert m.state in ("O2_FILLED", "BOTH_FILLED")
+    assert len(client.tp_sl_calls) == 1
+    assert client.tp_sl_calls[0]["take_profit"] == 102.0
+
+
+def test_process_monitor_step_o1_tp_cancels_orphan_o2():
+    from scripts.bybit_trader import ActiveTradeMonitor, TradeConfig, process_monitor_step
+    cfg = TradeConfig()
+    m = ActiveTradeMonitor(
+        symbol="TESTUSDT",
+        setup_type="DUAL_GRID_TRAILING",
+        state="O1_FILLED",
+        cur_tp1=105.0,
+        sl=90.0,
+        position_was_open=True,
+    )
+    klines = pd.DataFrame([
+        {"timestamp": pd.Timestamp("2026-09-01 01:00"), "open": 104, "high": 105.5, "low": 103, "close": 105, "volume": 100}
+    ])
+    client = MockBybitClient(pos_size=0.0, klines_df=klines)
+    process_monitor_step(m, client, cfg, "60")
+    assert m.state == "IDLE"
+    assert "TESTUSDT" in client.cancel_all_calls
+
+
+def test_process_monitor_step_sl_triggers_awaiting_sweep():
+    from scripts.bybit_trader import ActiveTradeMonitor, TradeConfig, process_monitor_step
+    cfg = TradeConfig()
+    m = ActiveTradeMonitor(
+        symbol="TESTUSDT",
+        setup_type="DUAL_GRID_TRAILING",
+        state="O1_FILLED",
+        cur_tp1=105.0,
+        sl=90.0,
+        position_was_open=True,
+    )
+    klines = pd.DataFrame([
+        {"timestamp": pd.Timestamp("2026-09-01 12:00"), "open": 95, "high": 96, "low": 89.5, "close": 89.8, "volume": 100}
+    ])
+    client = MockBybitClient(pos_size=0.0, klines_df=klines)
+    process_monitor_step(m, client, cfg, "60")
+    assert m.state == "AWAITING_SWEEP_CLOSE"
+    assert m.stop_bar_time == pd.Timestamp("2026-09-01 12:00")
+    assert m.stop_sweep_low == 89.5
+    assert "TESTUSDT" in client.cancel_all_calls
+
+
+def test_process_monitor_step_sweep_reclaim_on_candle_close():
+    from scripts.bybit_trader import ActiveTradeMonitor, TradeConfig, process_monitor_step
+    cfg = TradeConfig(reclaim_max_sweep_pct=0.5)
+    m = ActiveTradeMonitor(
+        symbol="TESTUSDT",
+        setup_type="DUAL_GRID_TRAILING",
+        state="AWAITING_SWEEP_CLOSE",
+        imp_start_price=100.0,
+        cur_peak=110.0,
+        stop_bar_time=pd.Timestamp("2026-09-01 12:00"),
+        stop_sweep_low=99.7,  # 0.3% свип
+    )
+
+    # Создаем 25 баров истории для MACD + бар пробоя 12:00 (close 100.2 >= 100.0) + формирующийся бар 13:00
+    rows = []
+    for k in range(25):
+        t = pd.Timestamp("2026-08-31 00:00") + pd.Timedelta(hours=k)
+        rows.append({"timestamp": t, "open": 100.0, "high": 100.0, "low": 100.0, "close": 100.0, "volume": 50})
+    rows.append({"timestamp": pd.Timestamp("2026-09-01 12:00"), "open": 101.0, "high": 101.0, "low": 99.7, "close": 100.2, "volume": 100})
+    rows.append({"timestamp": pd.Timestamp("2026-09-01 13:00"), "open": 100.2, "high": 101.0, "low": 100.1, "close": 100.5, "volume": 100})
+
+    df = pd.DataFrame(rows)
+    client = MockBybitClient(pos_size=0.0, klines_df=df)
+    process_monitor_step(m, client, cfg, "60")
+
+    assert m.state == "SWEEP_RECLAIM_ACTIVE"
+    assert len(client.placed_orders) == 1
+    assert client.placed_orders[0]["order_type"] == "Market"
+    assert client.placed_orders[0]["stop_loss"] < 99.7
+
+
+def test_process_monitor_step_manipulation_on_candle_close_below():
+    from scripts.bybit_trader import ActiveTradeMonitor, TradeConfig, process_monitor_step
+    cfg = TradeConfig()
+    m = ActiveTradeMonitor(
+        symbol="TESTUSDT",
+        setup_type="DUAL_GRID_TRAILING",
+        state="AWAITING_SWEEP_CLOSE",
+        imp_start_price=100.0,
+        cur_peak=110.0,
+        stop_bar_time=pd.Timestamp("2026-09-01 12:00"),
+        stop_sweep_low=98.0,
+    )
+
+    rows = []
+    for k in range(25):
+        t = pd.Timestamp("2026-08-31 00:00") + pd.Timedelta(hours=k)
+        rows.append({"timestamp": t, "open": 100.0, "high": 100.0, "low": 100.0, "close": 100.0, "volume": 50})
+    # Свеча закрылась на 99.0 (< 100.0) -> Манипуляция
+    rows.append({"timestamp": pd.Timestamp("2026-09-01 12:00"), "open": 101.0, "high": 101.0, "low": 98.0, "close": 99.0, "volume": 100})
+    rows.append({"timestamp": pd.Timestamp("2026-09-01 13:00"), "open": 99.0, "high": 99.5, "low": 98.5, "close": 99.2, "volume": 100})
+
+    df = pd.DataFrame(rows)
+    client = MockBybitClient(pos_size=0.0, klines_df=df)
+    process_monitor_step(m, client, cfg, "60")
+
+    assert m.state == "MANIPULATION_ACTIVE"
+    assert len(client.placed_orders) == 2
+    # Ордер 1 на 1.618 Fib, Ордер 2 на 2.000 Fib
+    assert client.placed_orders[0]["order_type"] == "Limit"
+    assert client.placed_orders[1]["order_type"] == "Limit"
+    assert client.placed_orders[0]["price"] < 100.0
+    assert client.placed_orders[1]["price"] < client.placed_orders[0]["price"]
+
+
+def test_calc_triple_grid_order_sizes():
+    """Проверка расчета объемов тройной сетки (0.500, 0.618, 0.786 со стопом 1.000 на $2.00 суммарного риска)."""
+    from indicators.pybit_client import BybitClient
+    client = BybitClient(testnet=True)
+    client._specs_cache["TESTUSDT"] = InstrumentSpecs(
+        symbol="TESTUSDT",
+        tick_size=0.01,
+        qty_step=0.001,
+        min_qty=0.001,
+        max_qty=10000.0,
+        min_notional=1.0,
+        price_decimals=2,
+        qty_decimals=3,
+    )
+
+    e1 = 926.32
+    e2 = 898.18
+    e3 = 850.00
+    sl = 812.25
+
+    q1, q2, q3, l1, l2, l3 = client.calc_triple_grid_order_sizes(
+        p_entry1=e1,
+        p_entry2=e2,
+        p_entry3=e3,
+        p_sl=sl,
+        total_risk_usd=2.0,
+        symbol="TESTUSDT",
+        equal_weight=True,
+    )
+
+    # Риск на ордер: 2.0 / 3 = 0.6667 USD
+    # Дистанция 1: 926.32 - 812.25 = 114.07 -> raw 0.00584 -> floor to step 0.001 = 0.005
+    # Дистанция 2: 898.18 - 812.25 = 85.93  -> raw 0.00775 -> floor to step 0.001 = 0.007
+    # Дистанция 3: 850.00 - 812.25 = 37.75  -> raw 0.01766 -> floor to step 0.001 = 0.017
+    assert q1 == 0.005
+    assert q2 == 0.007
+    assert q3 == 0.017
+    assert q1 > 0 and q2 > q1 and q3 > q2
+    tot_loss = l1 + l2 + l3
+    assert tot_loss <= 2.0
+    assert tot_loss == pytest.approx(1.814, abs=0.01)
+
+
+def test_process_monitor_step_o2_to_o3_filled_moves_tp():
+    """Проверка перехода O2_FILLED -> O3_FILLED и переноса тейка на 0.500 Fib."""
+    from scripts.bybit_trader import ActiveTradeMonitor, TradeConfig, process_monitor_step
+    cfg = TradeConfig()
+    m = ActiveTradeMonitor(
+        symbol="TESTUSDT",
+        setup_type="TRIPLE_GRID_TRAILING",
+        state="O2_FILLED",
+        q1=1.0,
+        q2=1.0,
+        q3=1.0,
+        cur_tp2=102.0,
+        cur_tp3=100.0,
+        sl=80.0,
+        has_o2=True,
+        has_o3=True,
+        position_was_open=True,
+    )
+    # Исполнен третий ордер -> суммарный объем 3.0
+    client = MockBybitClient(pos_size=3.0)
+    process_monitor_step(m, client, cfg, "60")
+    assert m.state == "O3_FILLED"
+    assert len(client.tp_sl_calls) == 1
+    assert client.tp_sl_calls[0]["take_profit"] == 100.0
+
+
+def test_process_monitor_step_o3_tp_closes_all():
+    """Проверка: при достижении TP 0.500 из O3_FILLED позиция закрывается, сделка завершена."""
+    from scripts.bybit_trader import ActiveTradeMonitor, TradeConfig, process_monitor_step
+    cfg = TradeConfig()
+    m = ActiveTradeMonitor(
+        symbol="TESTUSDT",
+        setup_type="TRIPLE_GRID_TRAILING",
+        state="O3_FILLED",
+        cur_tp3=100.0,
+        sl=80.0,
+        position_was_open=True,
+    )
+    klines = pd.DataFrame([
+        {"timestamp": pd.Timestamp("2026-09-01 01:00"), "open": 98, "high": 100.5, "low": 97, "close": 100.2, "volume": 100}
+    ])
+    client = MockBybitClient(pos_size=0.0, klines_df=klines)
+    process_monitor_step(m, client, cfg, "60")
+    assert m.state == "IDLE"
+    assert "TESTUSDT" in client.cancel_all_calls
+
+
 

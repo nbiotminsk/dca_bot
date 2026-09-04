@@ -216,6 +216,40 @@ class BybitClient:
         loss2 = q2 * dist2
         return q1, q2, loss1, loss2
 
+    def calc_triple_grid_order_sizes(
+        self,
+        p_entry1: float,
+        p_entry2: float,
+        p_entry3: float,
+        p_sl: float,
+        total_risk_usd: float = 2.0,
+        symbol: str = "ZECUSDT",
+        equal_weight: bool = True,
+    ) -> tuple[float, float, float, float, float, float]:
+        """
+        Рассчитывает объемы ордеров 1, 2 и 3 так, чтобы суммарный риск при выбивании стопа был равен total_risk_usd.
+        Возвращает: (qty1, qty2, qty3, loss1_est, loss2_est, loss3_est).
+        """
+        specs = self.get_specs(symbol)
+        risk_per_order = total_risk_usd / 3.0 if equal_weight else total_risk_usd / 3.0
+
+        dist1 = abs(p_entry1 - p_sl)
+        dist2 = abs(p_entry2 - p_sl)
+        dist3 = abs(p_entry3 - p_sl)
+
+        raw_q1 = risk_per_order / dist1 if dist1 > 0 else 0.0
+        raw_q2 = risk_per_order / dist2 if dist2 > 0 else 0.0
+        raw_q3 = risk_per_order / dist3 if dist3 > 0 else 0.0
+
+        q1 = max(specs.min_qty, self.round_qty(raw_q1, symbol)) if raw_q1 > 0 else 0.0
+        q2 = max(specs.min_qty, self.round_qty(raw_q2, symbol)) if raw_q2 > 0 else 0.0
+        q3 = max(specs.min_qty, self.round_qty(raw_q3, symbol)) if raw_q3 > 0 else 0.0
+
+        loss1 = q1 * dist1
+        loss2 = q2 * dist2
+        loss3 = q3 * dist3
+        return q1, q2, q3, loss1, loss2, loss3
+
     def place_order(
         self,
         symbol: str,
@@ -330,6 +364,37 @@ class BybitClient:
                     pass
         return results
 
+    def set_position_tp_sl(
+        self,
+        symbol: str,
+        take_profit: Optional[float] = None,
+        stop_loss: Optional[float] = None,
+        position_idx: Optional[int] = None,
+        tp_trigger_by: str = "MarkPrice",
+        sl_trigger_by: str = "MarkPrice",
+    ) -> dict[str, Any]:
+        """Устанавливает или изменяет Take-Profit и/или Stop-Loss для открытой позиции на Bybit V5."""
+        if position_idx is None:
+            position_idx = self.get_position_idx(symbol, "Buy")
+        specs = self.get_specs(symbol)
+        params: dict[str, Any] = {
+            "category": "linear",
+            "symbol": symbol.upper(),
+            "positionIdx": position_idx,
+        }
+        if take_profit is not None:
+            params["takeProfit"] = f"{self.round_price(take_profit, symbol):.{specs.price_decimals}f}"
+            params["tpTriggerBy"] = tp_trigger_by
+        if stop_loss is not None:
+            params["stopLoss"] = f"{self.round_price(stop_loss, symbol):.{specs.price_decimals}f}"
+            params["slTriggerBy"] = sl_trigger_by
+
+        resp = self.session.set_trading_stop(**params)
+        ret_code = resp.get("retCode", 0)
+        if ret_code != 0:
+            raise RuntimeError(f"Bybit set_trading_stop failed ({ret_code}): {resp.get('retMsg')}")
+        return resp.get("result", {})
+
     def set_position_stop_loss(
         self,
         symbol: str,
@@ -338,22 +403,28 @@ class BybitClient:
         sl_trigger_by: str = "MarkPrice",
     ) -> dict[str, Any]:
         """Устанавливает или изменяет Stop-Loss для открытой позиции на Bybit V5."""
-        if position_idx is None:
-            position_idx = self.get_position_idx(symbol, "Buy")
-        specs = self.get_specs(symbol)
-        sl_str = f"{self.round_price(stop_loss, symbol):.{specs.price_decimals}f}"
-        resp = self.session.set_trading_stop(
-            category="linear",
-            symbol=symbol.upper(),
-            stopLoss=sl_str,
-            slTriggerBy=sl_trigger_by,
-            positionIdx=position_idx,
+        return self.set_position_tp_sl(
+            symbol=symbol,
+            stop_loss=stop_loss,
+            position_idx=position_idx,
+            sl_trigger_by=sl_trigger_by,
         )
 
-        ret_code = resp.get("retCode", 0)
-        if ret_code != 0:
-            raise RuntimeError(f"Bybit set_trading_stop failed ({ret_code}): {resp.get('retMsg')}")
-        return resp.get("result", {})
+    def get_order_status(self, symbol: str, order_id: str) -> Optional[dict[str, Any]]:
+        """Проверяет статус ордера: сначала в открытых, затем в истории."""
+        open_orders = self.get_open_orders(symbol)
+        for o in open_orders:
+            if o.get("orderId") == order_id:
+                return o
+        try:
+            resp = self.session.get_order_history(category="linear", symbol=symbol.upper(), orderId=order_id)
+            if resp.get("retCode", 0) == 0:
+                orders = resp.get("result", {}).get("list", [])
+                if orders:
+                    return orders[0]
+        except Exception:
+            pass
+        return None
 
     def update_stop_loss(self, symbol: str, order_id: Optional[str], stop_loss: float) -> bool:
         """Передвигает Stop-Loss позиции или активного лимитного ордера в безубыток."""

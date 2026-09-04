@@ -127,7 +127,15 @@ def load_trade_config(config_path: Optional[str | Path] = None) -> TradeConfig:
 
 @dataclass
 class SetupSignal:
-    setup_type: Literal["DUAL_GRID_TRAILING", "DUAL_GRID_CORRECTION", "SWEEP_RECLAIM", "MANIPULATION", "NONE"]
+    setup_type: Literal[
+        "TRIPLE_GRID_TRAILING",
+        "TRIPLE_GRID_CORRECTION",
+        "DUAL_GRID_TRAILING",
+        "DUAL_GRID_CORRECTION",
+        "SWEEP_RECLAIM",
+        "MANIPULATION",
+        "NONE",
+    ]
     side: Literal["long", "short"]
     imp_start_time: pd.Timestamp
     imp_end_time: pd.Timestamp
@@ -139,6 +147,8 @@ class SetupSignal:
     tp_1: float
     entry_2: Optional[float] = None
     tp_2: Optional[float] = None
+    entry_3: Optional[float] = None
+    tp_3: Optional[float] = None
     stop_loss: float = 0.0
     # Безубыток (Sweep Reclaim)
     be_trigger: Optional[float] = None
@@ -166,7 +176,7 @@ def find_active_setup(
 ) -> Optional[SetupSignal]:
     """
     Анализирует свечи на наличие активного не отработанного торгового сетапа (ТОЛЬКО В LONG):
-    1. Трейлинг / Активная сетка (0.500 / 0.618) с отступом +0.07% перед входом и -0.1% перед тейком.
+    1. Трейлинг / Активная тройная сетка (0.500, 0.618, 0.786) с буфером +0.07% перед входом и -0.1% перед тейком.
     2. Свип ликвидности + MACD Reclaim.
     3. Манипуляция (1.618 / 2.000) с отступом +0.07% и тейками -0.1%.
     """
@@ -198,6 +208,7 @@ def find_active_setup(
             p_0382 = calc_fib(imp.high, imp.low, 0.382, is_long=is_long, scale=scale)
             p_0500 = calc_fib(imp.high, imp.low, 0.500, is_long=is_long, scale=scale)
             p_0618 = calc_fib(imp.high, imp.low, 0.618, is_long=is_long, scale=scale)
+            p_0786 = calc_fib(imp.high, imp.low, 0.786, is_long=is_long, scale=scale)
             p_1000 = imp.low if is_long else imp.high
 
             p_1618 = calc_fib(imp.high, imp.low, 1.618, is_long=is_long, scale=scale)
@@ -208,6 +219,7 @@ def find_active_setup(
             buf_mult = 1.0 + (entry_buffer_pct / 100.0) if is_long else 1.0 - (entry_buffer_pct / 100.0)
             e_0500 = p_0500 * buf_mult
             e_0618 = p_0618 * buf_mult
+            e_0786 = p_0786 * buf_mult
             e_1618 = p_1618 * buf_mult
             e_2000 = p_2000 * buf_mult
 
@@ -226,7 +238,7 @@ def find_active_setup(
             if len(post_df) == 0:
                 # Импульс находится на самой последней свече -> ТРЕЙЛИНГ
                 return SetupSignal(
-                    setup_type="DUAL_GRID_TRAILING",
+                    setup_type="TRIPLE_GRID_TRAILING",
                     side=side,
                     imp_start_time=imp.start_time,
                     imp_end_time=imp.end_time,
@@ -237,14 +249,18 @@ def find_active_setup(
                     tp_1=tp_0236,
                     entry_2=e_0618,
                     tp_2=tp_0382,
+                    entry_3=e_0786,
+                    tp_3=tp_0500,
                     stop_loss=p_1000,
-                    description=f"Растущий импульс (+{imp.pct:.2f}%) на текущей свече. Трейлинг сетки (вход +{entry_buffer_pct}%, тейк -{tp_buffer_pct}%).",
+                    description=f"Растущий импульс (+{imp.pct:.2f}%) на текущей свече. Трейлинг тройной сетки (вход +{entry_buffer_pct}%, тейк -{tp_buffer_pct}%).",
                 )
 
             touched_0500 = False
             touch_05_idx = -1
             touched_0618 = False
             touch_0618_idx = -1
+            touched_0786 = False
+            touch_0786_idx = -1
             hit_tp = False
             broken = False
             sweep_val = p_1000
@@ -274,11 +290,22 @@ def find_active_setup(
                         touched_0618 = True
                         touch_0618_idx = abs_idx
 
-                    # 3. Взятие тейк-профита:
-                    # Если налиты оба ордера (0.500 и 0.618) -> выход обоих на 0.382!
-                    # Если налит только 0.500 -> выход на 0.236!
+                    # 3. Налив ордера 0.786 (если уже налило 0.618)
+                    if not broken and touched_0618 and not touched_0786 and bar_l <= p_0786:
+                        touched_0786 = True
+                        touch_0786_idx = abs_idx
+
+                    # 4. Взятие тейк-профита:
+                    # Если налиты все три ордера (0.500, 0.618, 0.786) -> выход всех на 0.500 (-0.10%)!
+                    # Если налиты 0.500 и 0.618 -> выход обоих на 0.382 (-0.10%)!
+                    # Если налит только 0.500 -> выход на 0.236 (-0.10%)!
                     if not broken and touched_0500:
-                        if touched_0618:
+                        if touched_0786:
+                            eff_tp = tp_0500 * (1.0 - tp_tol_mult)
+                            if abs_idx > touch_0786_idx and bar_h >= eff_tp:
+                                hit_tp = True
+                                break
+                        elif touched_0618:
                             eff_tp = tp_0382 * (1.0 - tp_tol_mult)
                             if abs_idx > touch_0618_idx and bar_h >= eff_tp:
                                 hit_tp = True
@@ -303,8 +330,17 @@ def find_active_setup(
                         touched_0618 = True
                         touch_0618_idx = abs_idx
 
+                    if not broken and touched_0618 and not touched_0786 and bar_h >= p_0786:
+                        touched_0786 = True
+                        touch_0786_idx = abs_idx
+
                     if not broken and touched_0500:
-                        if touched_0618:
+                        if touched_0786:
+                            eff_tp = tp_0500 * (1.0 + tp_tol_mult)
+                            if abs_idx > touch_0786_idx and bar_l <= eff_tp:
+                                hit_tp = True
+                                break
+                        elif touched_0618:
                             eff_tp = tp_0382 * (1.0 + tp_tol_mult)
                             if abs_idx > touch_0618_idx and bar_l <= eff_tp:
                                 hit_tp = True
@@ -381,7 +417,7 @@ def find_active_setup(
             if not touched_0500:
                 # Импульс еще развивается без отката к 0.500 -> ТРЕЙЛИНГ
                 return SetupSignal(
-                    setup_type="DUAL_GRID_TRAILING",
+                    setup_type="TRIPLE_GRID_TRAILING",
                     side=side,
                     imp_start_time=imp.start_time,
                     imp_end_time=imp.end_time,
@@ -392,18 +428,31 @@ def find_active_setup(
                     tp_1=tp_0236,
                     entry_2=e_0618,
                     tp_2=tp_0382,
+                    entry_3=e_0786,
+                    tp_3=tp_0500,
                     stop_loss=p_1000,
-                    description=f"Растущий импульс (+{imp.pct:.2f}%) без коррекции к 0.500. Режим трейлинга (вход +{entry_buffer_pct}%, тейк -{tp_buffer_pct}%).",
+                    description=f"Растущий импульс (+{imp.pct:.2f}%) без коррекции к 0.500. Режим трейлинга тройной сетки (вход +{entry_buffer_pct}%, тейк -{tp_buffer_pct}%).",
                 )
             else:
-                # Касание 0.500 было, но тейк еще не взят -> АКТИВНАЯ СЕТКА
-                desc = (
-                    f"Активная коррекция к сетке (+{imp.pct:.2f}%): налиты оба уровня (0.500 и 0.618), совместный тейк на 0.382 (-{tp_buffer_pct}%)."
-                    if touched_0618
-                    else f"Активная коррекция к сетке (+{imp.pct:.2f}%): налит ордер 0.500, тейк 0.236 (-{tp_buffer_pct}%)."
-                )
+                # Касание 0.500 было, но тейк еще не взят -> АКТИВНАЯ ТРОЙНАЯ СЕТКА
+                if touched_0786:
+                    desc = f"Активная коррекция к сетке (+{imp.pct:.2f}%): налиты все три уровня (0.500, 0.618, 0.786), общий тейк на 0.500 (-{tp_buffer_pct}%)."
+                    cur_tp1 = tp_0500
+                    cur_tp2 = tp_0500
+                    cur_tp3 = tp_0500
+                elif touched_0618:
+                    desc = f"Активная коррекция к сетке (+{imp.pct:.2f}%): налиты 0.500 и 0.618, тейк обоих на 0.382 (-{tp_buffer_pct}%). Ордер 3 (0.786) активен в стакане."
+                    cur_tp1 = tp_0382
+                    cur_tp2 = tp_0382
+                    cur_tp3 = tp_0500
+                else:
+                    desc = f"Активная коррекция к сетке (+{imp.pct:.2f}%): налит ордер 0.500, тейк 0.236 (-{tp_buffer_pct}%). Ордера 2 и 3 активны в стакане."
+                    cur_tp1 = tp_0236
+                    cur_tp2 = tp_0382
+                    cur_tp3 = tp_0500
+
                 return SetupSignal(
-                    setup_type="DUAL_GRID_CORRECTION",
+                    setup_type="TRIPLE_GRID_CORRECTION",
                     side=side,
                     imp_start_time=imp.start_time,
                     imp_end_time=imp.end_time,
@@ -411,9 +460,11 @@ def find_active_setup(
                     imp_peak_price=imp.high if is_long else imp.low,
                     imp_pct=imp.pct,
                     entry_1=e_0500,
-                    tp_1=tp_0382 if touched_0618 else tp_0236,
+                    tp_1=cur_tp1,
                     entry_2=e_0618,
-                    tp_2=tp_0382,
+                    tp_2=cur_tp2,
+                    entry_3=e_0786,
+                    tp_3=cur_tp3,
                     stop_loss=p_1000,
                     description=desc,
                 )
@@ -437,21 +488,539 @@ def format_symbol(user_input: str) -> str:
 @dataclass
 class ActiveTradeMonitor:
     symbol: str
-    setup_type: str
+    setup_type: str = "IDLE"
+    state: str = "TRAILING"  # "TRAILING", "O1_FILLED", "O2_FILLED", "O3_FILLED", "AWAITING_SWEEP_CLOSE", "SWEEP_RECLAIM_ACTIVE", "MANIPULATION_ACTIVE", "IDLE"
     o1_id: Optional[str] = None
     o2_id: Optional[str] = None
+    o3_id: Optional[str] = None
     cur_peak: float = 0.0
     cur_e1: float = 0.0
     cur_tp1: float = 0.0
     cur_e2: float = 0.0
     cur_tp2: float = 0.0
+    cur_e3: float = 0.0
+    cur_tp3: float = 0.0
     imp_start_price: float = 0.0
     sl: float = 0.0
+    q1: float = 0.0
+    q2: float = 0.0
+    q3: float = 0.0
     has_o2: bool = False
+    has_o3: bool = False
     be_trigger: Optional[float] = None
     be_price: Optional[float] = None
+    be_applied: bool = False
+    tp_basket_applied: bool = False
     position_was_open: bool = False
+    stop_bar_time: Optional[pd.Timestamp] = None
+    stop_sweep_low: float = 0.0
+    last_candle_time: Optional[pd.Timestamp] = None
     done: bool = False
+
+
+def process_monitor_step(
+    m: ActiveTradeMonitor,
+    client: BybitClient,
+    cfg: TradeConfig,
+    interval: str,
+    is_live: bool = True,
+) -> None:
+    """Выполняет один шаг конечного автомата (State Machine) для заданной монеты."""
+    # ─── 1. Состояние: ТРЕЙЛИНГ СЕТКИ ──────────────────────────────────────────
+    if m.state == "TRAILING":
+        pos = client.get_position(m.symbol, "Buy") if is_live else None
+        pos_size = float(pos.get("size", 0.0)) if pos else 0.0
+
+        if pos_size > 0:
+            m.position_was_open = True
+            # Проверяем, налило ли сразу 3 ордера, 2 ордера или 1 ордер
+            if m.has_o3 and m.q3 > 0 and pos_size >= (m.q1 + m.q2 + 0.5 * m.q3):
+                m.state = "O3_FILLED"
+                console.print(f"\n[bold green]⚡ [{m.symbol}] Налиты все 3 ордера (0.500, 0.618, 0.786)! Позиция: {pos_size}.[/bold green]")
+                console.print(f"  ➜ Переносим Take-Profit всей позиции на общий уровень 0.500 Fib (${m.cur_tp3})...")
+                if is_live:
+                    try:
+                        client.set_position_tp_sl(m.symbol, take_profit=m.cur_tp3, stop_loss=m.sl)
+                        m.tp_basket_applied = True
+                    except Exception as err:
+                        console.print(f"  ⚠️ [{m.symbol}] Ошибка переноса TP на 0.500: {err}")
+            elif m.has_o2 and m.q2 > 0 and pos_size >= (m.q1 + 0.5 * m.q2):
+                m.state = "O2_FILLED"
+                console.print(f"\n[bold green]⚡ [{m.symbol}] Налиты 2 ордера (0.500 и 0.618)! Позиция: {pos_size}.[/bold green]")
+                console.print(f"  ➜ Переносим Take-Profit всей позиции на общий уровень 0.382 Fib (${m.cur_tp2}). Ордер 3 в стакане (${m.cur_e3})...")
+                if is_live:
+                    try:
+                        client.set_position_tp_sl(m.symbol, take_profit=m.cur_tp2, stop_loss=m.sl)
+                        m.tp_basket_applied = True
+                    except Exception as err:
+                        console.print(f"  ⚠️ [{m.symbol}] Ошибка переноса TP на 0.382: {err}")
+            else:
+                m.state = "O1_FILLED"
+                console.print(f"\n[bold cyan]🎉 [{m.symbol}] Ордер 1 (0.500) вошел в позицию! Объем: {pos_size}.[/bold cyan]")
+                console.print(f"  ➜ Тейк-профит на 0.236 Fib (${m.cur_tp1}). Ордер 2 (${m.cur_e2}) и Ордер 3 (${m.cur_e3}) активны в стакане.")
+            return
+
+        # Если позиция еще не открыта — сдвигаем сетку за новыми максимумами
+        df_now = client.fetch_klines(m.symbol, interval=interval, limit=10)
+        if len(df_now) == 0:
+            return
+        latest_h = float(df_now["high"].iloc[-1])
+
+        if latest_h > m.cur_peak:
+            new_peak = latest_h
+            new_pct = (new_peak - m.imp_start_price) / m.imp_start_price * 100.0
+
+            new_e1 = client.round_price(
+                calc_fib(new_peak, m.imp_start_price, 0.500, is_long=True, scale=cfg.scale)
+                * (1.0 + cfg.entry_buffer_pct / 100.0), m.symbol
+            )
+            new_tp1 = client.round_price(
+                calc_fib(new_peak, m.imp_start_price, 0.236, is_long=True, scale=cfg.scale)
+                * (1.0 - cfg.tp_buffer_pct / 100.0), m.symbol
+            )
+            new_e2 = client.round_price(
+                calc_fib(new_peak, m.imp_start_price, 0.618, is_long=True, scale=cfg.scale)
+                * (1.0 + cfg.entry_buffer_pct / 100.0), m.symbol
+            ) if m.has_o2 else None
+            new_tp2 = client.round_price(
+                calc_fib(new_peak, m.imp_start_price, 0.382, is_long=True, scale=cfg.scale)
+                * (1.0 - cfg.tp_buffer_pct / 100.0), m.symbol
+            ) if m.has_o2 else None
+
+            new_e3 = client.round_price(
+                calc_fib(new_peak, m.imp_start_price, 0.786, is_long=True, scale=cfg.scale)
+                * (1.0 + cfg.entry_buffer_pct / 100.0), m.symbol
+            ) if m.has_o3 else None
+            new_tp3 = client.round_price(
+                calc_fib(new_peak, m.imp_start_price, 0.500, is_long=True, scale=cfg.scale)
+                * (1.0 - cfg.tp_buffer_pct / 100.0), m.symbol
+            ) if m.has_o3 else None
+
+            # Сдвигаем Ордер 1
+            if new_e1 != m.cur_e1 or new_tp1 != m.cur_tp1:
+                console.print(f"\n[bold green]🚀 [{m.symbol}] Новый максимум ${new_peak} (+{new_pct:.2f}%). Сдвигаем уровни...[/bold green]")
+                if is_live and m.o1_id:
+                    try:
+                        client.amend_order(m.symbol, m.o1_id, price=new_e1, take_profit=new_tp1, stop_loss=m.sl)
+                        m.cur_e1 = new_e1
+                        m.cur_tp1 = new_tp1
+                        console.print(f"  ✓ [{m.symbol}] Ордер 1 сдвинут: Вход ${new_e1}, TP ${new_tp1}")
+                    except Exception as err:
+                        if "order not modified" not in str(err).lower():
+                            console.print(f"  ⚠️ [{m.symbol}] Не удалось изменить Ордер 1: {err}")
+                else:
+                    m.cur_e1 = new_e1
+                    m.cur_tp1 = new_tp1
+
+            # Сдвигаем Ордер 2
+            if m.has_o2 and new_e2 and new_tp2 and (new_e2 != m.cur_e2 or new_tp2 != m.cur_tp2):
+                if is_live and m.o2_id:
+                    try:
+                        client.amend_order(m.symbol, m.o2_id, price=new_e2, take_profit=new_tp2, stop_loss=m.sl)
+                        m.cur_e2 = new_e2
+                        m.cur_tp2 = new_tp2
+                        console.print(f"  ✓ [{m.symbol}] Ордер 2 сдвинут: Вход ${new_e2}, TP ${new_tp2}")
+                    except Exception as err:
+                        if "order not modified" not in str(err).lower():
+                            console.print(f"  ⚠️ [{m.symbol}] Не удалось изменить Ордер 2: {err}")
+                else:
+                    m.cur_e2 = new_e2
+                    m.cur_tp2 = new_tp2
+
+            # Сдвигаем Ордер 3
+            if m.has_o3 and new_e3 and new_tp3 and (new_e3 != m.cur_e3 or new_tp3 != m.cur_tp3):
+                if is_live and m.o3_id:
+                    try:
+                        client.amend_order(m.symbol, m.o3_id, price=new_e3, take_profit=new_tp3, stop_loss=m.sl)
+                        m.cur_e3 = new_e3
+                        m.cur_tp3 = new_tp3
+                        console.print(f"  ✓ [{m.symbol}] Ордер 3 сдвинут: Вход ${new_e3}, TP ${new_tp3}")
+                    except Exception as err:
+                        if "order not modified" not in str(err).lower():
+                            console.print(f"  ⚠️ [{m.symbol}] Не удалось изменить Ордер 3: {err}")
+                else:
+                    m.cur_e3 = new_e3
+                    m.cur_tp3 = new_tp3
+
+            m.cur_peak = new_peak
+
+    # ─── 2. Состояние: НАЛИТ ОРДЕР 1 (Ожидание Ордера 2/3 или TP 0.236) ────────
+    elif m.state == "O1_FILLED":
+        pos = client.get_position(m.symbol, "Buy") if is_live else None
+        pos_size = float(pos.get("size", 0.0)) if pos else 0.0
+
+        if pos_size > 0:
+            m.position_was_open = True
+            # Проверяем, налился ли Ордер 3 или Ордер 2 при проливе
+            if m.has_o3 and m.q3 > 0 and pos_size >= (m.q1 + m.q2 + 0.5 * m.q3):
+                m.state = "O3_FILLED"
+                console.print(f"\n[bold green]🎯 [{m.symbol}] Глубокий пролив: исполнены Ордера 2 и 3! Позиция: {pos_size}.[/bold green]")
+                console.print(f"  ➜ Переносим Take-Profit всей позиции на общий уровень 0.500 Fib (${m.cur_tp3})...")
+                if is_live:
+                    try:
+                        client.set_position_tp_sl(m.symbol, take_profit=m.cur_tp3, stop_loss=m.sl)
+                        m.tp_basket_applied = True
+                    except Exception as err:
+                        console.print(f"  ⚠️ [{m.symbol}] Ошибка переноса TP на 0.500: {err}")
+            elif m.has_o2 and m.q2 > 0 and pos_size >= (m.q1 + 0.5 * m.q2):
+                m.state = "O2_FILLED"
+                console.print(f"\n[bold green]🎯 [{m.symbol}] Добор: Ордер 2 (0.618) исполнен! Позиция: {pos_size}.[/bold green]")
+                console.print(f"  ➜ Переносим Take-Profit всей позиции на общий уровень 0.382 Fib (${m.cur_tp2}). Ордер 3 (${m.cur_e3}) активен в стакане...")
+                if is_live:
+                    try:
+                        client.set_position_tp_sl(m.symbol, take_profit=m.cur_tp2, stop_loss=m.sl)
+                        m.tp_basket_applied = True
+                    except Exception as err:
+                        console.print(f"  ⚠️ [{m.symbol}] Ошибка переноса TP на 0.382: {err}")
+            return
+
+        # Если pos_size == 0 — позиция закрылась (по TP 0.236 или по SL 1.000)
+        df_now = client.fetch_klines(m.symbol, interval=interval, limit=5)
+        latest_h = float(df_now["high"].iloc[-1])
+        latest_l = float(df_now["low"].iloc[-1])
+
+        if latest_h >= m.cur_tp1 * 0.999:
+            console.print(f"\n[bold green]💰 [{m.symbol}] ТЕЙК-ПРОФИТ 0.236 ДОСТИГНУТ! Позиция закрыта в прибыль.[/bold green]")
+            if is_live:
+                cancelled = client.cancel_all_orders(m.symbol)
+                console.print(f"[dim][{m.symbol}] Сняты висящие ордера 2 и 3 [отменено: {len(cancelled)}]. Сделка успешно завершена.[/dim]")
+            m.state = "IDLE"
+            m.position_was_open = False
+        else:
+            console.print(f"\n[bold red]🛑 [{m.symbol}] Стоп-лосс на уровне 1.000 (${m.sl}) сработал![/bold red]")
+            if is_live:
+                client.cancel_all_orders(m.symbol)
+            m.stop_bar_time = df_now["timestamp"].iloc[-1]
+            m.stop_sweep_low = min(latest_l, m.sl)
+            m.state = "AWAITING_SWEEP_CLOSE"
+            m.position_was_open = False
+            console.print(f"[bold yellow]⏳ [{m.symbol}] Ожидаем закрытия часовой свечи ({m.stop_bar_time}) для проверки Ложного пробоя или Сетки манипуляции...[/bold yellow]")
+
+    # ─── 3. Состояние: НАЛИТЫ ОРДЕРА 1 И 2 (Выход на 0.382 или добор 3) ────────
+    elif m.state in ("O2_FILLED", "BOTH_FILLED"):
+        pos = client.get_position(m.symbol, "Buy") if is_live else None
+        pos_size = float(pos.get("size", 0.0)) if pos else 0.0
+
+        if pos_size > 0:
+            m.position_was_open = True
+            # Проверяем, налился ли Ордер 3 (0.786)
+            if m.has_o3 and m.q3 > 0 and pos_size >= (m.q1 + m.q2 + 0.5 * m.q3):
+                m.state = "O3_FILLED"
+                console.print(f"\n[bold green]🎯 [{m.symbol}] Добор: Ордер 3 (0.786) исполнен! Позиция: {pos_size}.[/bold green]")
+                console.print(f"  ➜ Переносим Take-Profit всей позиции на общий уровень 0.500 Fib (${m.cur_tp3})...")
+                if is_live:
+                    try:
+                        client.set_position_tp_sl(m.symbol, take_profit=m.cur_tp3, stop_loss=m.sl)
+                        m.tp_basket_applied = True
+                    except Exception as err:
+                        console.print(f"  ⚠️ [{m.symbol}] Ошибка переноса TP на 0.500: {err}")
+            return
+
+        # Позиция закрылась!
+        df_now = client.fetch_klines(m.symbol, interval=interval, limit=5)
+        latest_h = float(df_now["high"].iloc[-1])
+        latest_l = float(df_now["low"].iloc[-1])
+
+        if latest_h >= m.cur_tp2 * 0.999:
+            console.print(f"\n[bold green]💰 [{m.symbol}] КОРЗИННЫЙ ТЕЙК-ПРОФИТ 0.382 ДОСТИГНУТ! Ордера 1 и 2 закрыты в плюс.[/bold green]")
+            if is_live:
+                cancelled = client.cancel_all_orders(m.symbol)
+                console.print(f"[dim][{m.symbol}] Снят висящий Ордер 3 (0.786) [отменено: {len(cancelled)}].[/dim]")
+            m.state = "IDLE"
+            m.position_was_open = False
+        else:
+            console.print(f"\n[bold red]🛑 [{m.symbol}] Стоп-лосс на уровне 1.000 (${m.sl}) сработал![/bold red]")
+            if is_live:
+                client.cancel_all_orders(m.symbol)
+            m.stop_bar_time = df_now["timestamp"].iloc[-1]
+            m.stop_sweep_low = min(latest_l, m.sl)
+            m.state = "AWAITING_SWEEP_CLOSE"
+            m.position_was_open = False
+            console.print(f"[bold yellow]⏳ [{m.symbol}] Ожидаем закрытия часовой свечи ({m.stop_bar_time}) для проверки Ложного пробоя или Сетки манипуляции...[/bold yellow]")
+
+    # ─── 4. Состояние: НАЛИТЫ ВСЕ 3 ОРДЕРА (Выход всей тройки на 0.500) ─────────
+    elif m.state == "O3_FILLED":
+        pos = client.get_position(m.symbol, "Buy") if is_live else None
+        pos_size = float(pos.get("size", 0.0)) if pos else 0.0
+
+        if pos_size > 0:
+            m.position_was_open = True
+            if not m.tp_basket_applied and is_live:
+                try:
+                    client.set_position_tp_sl(m.symbol, take_profit=m.cur_tp3, stop_loss=m.sl)
+                    m.tp_basket_applied = True
+                except Exception as err:
+                    console.print(f"  ⚠️ [{m.symbol}] Ошибка установки TP на 0.500: {err}")
+            return
+
+        # Позиция закрылась!
+        df_now = client.fetch_klines(m.symbol, interval=interval, limit=5)
+        latest_h = float(df_now["high"].iloc[-1])
+        latest_l = float(df_now["low"].iloc[-1])
+
+        if latest_h >= m.cur_tp3 * 0.999:
+            console.print(f"\n[bold green]💰 [{m.symbol}] СУПЕР-ТЕЙК-ПРОФИТ 0.500 ДОСТИГНУТ! Все 3 ордера закрыты (Ордер 3 в макси-плюс, Ордер 2 в плюс, Ордер 1 в БУ).[/bold green]")
+            if is_live:
+                client.cancel_all_orders(m.symbol)
+            m.state = "IDLE"
+            m.position_was_open = False
+        else:
+            console.print(f"\n[bold red]🛑 [{m.symbol}] Стоп-лосс на уровне 1.000 (${m.sl}) сработал![/bold red]")
+            if is_live:
+                client.cancel_all_orders(m.symbol)
+            m.stop_bar_time = df_now["timestamp"].iloc[-1]
+            m.stop_sweep_low = min(latest_l, m.sl)
+            m.state = "AWAITING_SWEEP_CLOSE"
+            m.position_was_open = False
+            console.print(f"[bold yellow]⏳ [{m.symbol}] Ожидаем закрытия часовой свечи ({m.stop_bar_time}) для проверки Ложного пробоя или Сетки манипуляции...[/bold yellow]")
+
+    # ─── 5. Состояние: ОЖИДАНИЕ ЗАКРЫТИЯ СВЕЧИ СВИПА 1.000 ────────────────────
+    elif m.state == "AWAITING_SWEEP_CLOSE":
+        df_now = client.fetch_klines(m.symbol, interval=interval, limit=15)
+        if len(df_now) < 2:
+            return
+        curr_l = float(df_now["low"].iloc[-1])
+        if curr_l < m.stop_sweep_low:
+            m.stop_sweep_low = curr_l
+
+        latest_time = df_now["timestamp"].iloc[-1]
+        # Свеча закрылась, если время текущей формирующейся свечи больше времени свечи стопа
+        if m.stop_bar_time is not None and latest_time <= m.stop_bar_time:
+            return
+
+        # Свеча закрылась! Находим закрытую свечу пробоя
+        closed_matches = df_now[df_now["timestamp"] == m.stop_bar_time]
+        if len(closed_matches) > 0:
+            closed_bar = closed_matches.iloc[0]
+        else:
+            closed_bar = df_now.iloc[-2]
+
+        bar_close = float(closed_bar["close"])
+        bar_low = float(closed_bar["low"])
+        sweep_low = min(bar_low, m.stop_sweep_low)
+        p_1000 = m.imp_start_price
+        swp_pct = abs(p_1000 - sweep_low) / p_1000 * 100.0 if p_1000 > 0 else 0.0
+
+        # Расчет индикатора MACD
+        macd_df = calculate_macd(df_now["close"])
+        hist = macd_df["hist"].values
+        macd_div = (len(hist) >= 2 and (hist[-1] > hist[-2] or hist[-1] > -0.01))
+
+        # Проверка условий Варианта 1 (Ложный пробой) vs Варианта 3 (Манипуляция)
+        if bar_close >= p_1000 and swp_pct <= cfg.reclaim_max_sweep_pct and macd_div:
+            console.print(f"\n[bold green]🟢 [{m.symbol}] ЛОЖНЫЙ ПРОБОЙ ПОДТВЕРЖДЕН (SWEEP RECLAIM)![/bold green]")
+            console.print(f"  Закрытие ${bar_close} >= ${p_1000}, свип {swp_pct:.2f}% (<= {cfg.reclaim_max_sweep_pct}%), MACD разворот.")
+            reclaim_entry = bar_close
+            reclaim_sl = client.round_price(sweep_low * 0.998, m.symbol)
+            p_0618 = calc_fib(m.cur_peak, m.imp_start_price, 0.618, is_long=True, scale=cfg.scale)
+            reclaim_tp = client.round_price(p_0618 * (1.0 - cfg.reclaim_tp_buffer_pct / 100.0), m.symbol)
+            be_trig = client.round_price(calc_fib(m.cur_peak, m.imp_start_price, cfg.reclaim_be_trigger_fib, is_long=True, scale=cfg.scale), m.symbol)
+            be_price = client.round_price(reclaim_entry * (1.0 + cfg.reclaim_be_offset_pct / 100.0), m.symbol)
+            dist = abs(reclaim_entry - reclaim_sl)
+            specs = client.get_specs(m.symbol)
+            q_reclaim = client.round_qty(cfg.total_risk_usd / dist if dist > 0 else specs.min_qty, m.symbol)
+            if q_reclaim < specs.min_qty:
+                q_reclaim = specs.min_qty
+
+            if is_live:
+                try:
+                    resp = client.place_order(
+                        symbol=m.symbol,
+                        side="Buy",
+                        order_type="Market",
+                        qty=q_reclaim,
+                        take_profit=reclaim_tp,
+                        stop_loss=reclaim_sl,
+                    )
+                    m.o1_id = resp.get("orderId")
+                    console.print(f"  ✓ Вход по рынку: {q_reclaim} @ ${reclaim_entry}, TP: ${reclaim_tp}, SL: ${reclaim_sl}")
+                except Exception as err:
+                    console.print(f"  ❌ Ошибка входа в Sweep Reclaim: {err}")
+                    m.state = "IDLE"
+                    return
+
+            m.state = "SWEEP_RECLAIM_ACTIVE"
+            m.cur_e1 = reclaim_entry
+            m.cur_tp1 = reclaim_tp
+            m.sl = reclaim_sl
+            m.be_trigger = be_trig
+            m.be_price = be_price
+            m.be_applied = False
+            m.position_was_open = True
+        else:
+            # Сетка Манипуляции (Вариант 3)
+            reason = f"закрытие свечи ниже 1.000 (${bar_close} < ${p_1000})" if bar_close < p_1000 else f"глубокий свип ({swp_pct:.2f}% > {cfg.reclaim_max_sweep_pct}%)"
+            console.print(f"\n[bold magenta]🟣 [{m.symbol}] МАНИПУЛЯЦИЯ ({reason}). ВЫСТАВЛЯЕМ СЕТКУ 1.618 & 2.000...[/bold magenta]")
+
+            p_0500 = calc_fib(m.cur_peak, m.imp_start_price, 0.500, is_long=True, scale=cfg.scale)
+            p_1618 = calc_fib(m.cur_peak, m.imp_start_price, 1.618, is_long=True, scale=cfg.scale)
+            p_2000 = calc_fib(m.cur_peak, m.imp_start_price, 2.000, is_long=True, scale=cfg.scale)
+            p_2414 = calc_fib(m.cur_peak, m.imp_start_price, 2.414, is_long=True, scale=cfg.scale)
+
+            e_1618 = client.round_price(p_1618 * (1.0 + cfg.entry_buffer_pct / 100.0), m.symbol)
+            e_2000 = client.round_price(p_2000 * (1.0 + cfg.entry_buffer_pct / 100.0), m.symbol)
+            tp_0500 = client.round_price(p_0500 * (1.0 - cfg.tp_buffer_pct / 100.0), m.symbol)
+            tp_1000 = client.round_price(p_1000 * (1.0 - cfg.tp_buffer_pct / 100.0), m.symbol)
+            sl_2414 = client.round_price(p_2414, m.symbol)
+
+            q1_m, q2_m, l1, l2 = client.calc_dual_grid_order_sizes(
+                e_1618, e_2000, sl_2414, total_risk_usd=cfg.total_risk_usd, symbol=m.symbol
+            )
+
+            if is_live:
+                try:
+                    client.cancel_all_orders(m.symbol)
+                    r1 = client.place_order(symbol=m.symbol, side="Buy", order_type="Limit", qty=q1_m, price=e_1618, take_profit=tp_0500, stop_loss=sl_2414)
+                    r2 = client.place_order(symbol=m.symbol, side="Buy", order_type="Limit", qty=q2_m, price=e_2000, take_profit=tp_1000, stop_loss=sl_2414)
+                    m.o1_id = r1.get("orderId")
+                    m.o2_id = r2.get("orderId")
+                    console.print(f"  ✓ Ордер 1: Limit Buy {q1_m} @ ${e_1618}, TP: ${tp_0500}, SL: ${sl_2414}")
+                    console.print(f"  ✓ Ордер 2: Limit Buy {q2_m} @ ${e_2000}, TP: ${tp_1000}, SL: ${sl_2414}")
+                except Exception as err:
+                    console.print(f"  ❌ Ошибка выставления сетки манипуляции: {err}")
+                    m.state = "IDLE"
+                    return
+
+            m.state = "MANIPULATION_ACTIVE"
+            m.cur_e1 = e_1618
+            m.cur_tp1 = tp_0500
+            m.cur_e2 = e_2000
+            m.cur_tp2 = tp_1000
+            m.sl = sl_2414
+            m.q1 = q1_m
+            m.q2 = q2_m
+            m.has_o2 = True
+            m.position_was_open = False
+
+    # ─── 6. Состояние: АКТИВНЫЙ ЛОЖНЫЙ ПРОБОЙ (Следим за БУ и выходом) ─────────
+    elif m.state == "SWEEP_RECLAIM_ACTIVE":
+        pos = client.get_position(m.symbol, "Buy") if is_live else None
+        pos_size = float(pos.get("size", 0.0)) if pos else 0.0
+
+        if pos_size > 0:
+            m.position_was_open = True
+            # Проверяем триггер переноса в безубыток
+            if m.be_trigger and m.be_price and not m.be_applied:
+                df_now = client.fetch_klines(m.symbol, interval=interval, limit=5)
+                latest_h = float(df_now["high"].iloc[-1])
+                if latest_h >= m.be_trigger:
+                    if is_live:
+                        success = client.update_stop_loss(m.symbol, m.o1_id, m.be_price)
+                    else:
+                        success = True
+                    if success:
+                        m.be_applied = True
+                        console.print(f"\n[bold green]🛡️ [{m.symbol}] Достигнут уровень БУ (${latest_h} >= ${m.be_trigger})! SL перенесен в ${m.be_price}.[/bold green]")
+            return
+
+        if m.position_was_open and pos_size == 0:
+            console.print(f"\n[bold green]🏁 [{m.symbol}] Сделка по Ложному пробою закрыта (TP или SL). Фибоначчи завершена.[/bold green]")
+            if is_live:
+                client.cancel_all_orders(m.symbol)
+            m.state = "IDLE"
+            m.position_was_open = False
+
+    # ─── 7. Состояние: АКТИВНАЯ СЕТКА МАНИПУЛЯЦИИ ──────────────────────────────
+    elif m.state == "MANIPULATION_ACTIVE":
+        pos = client.get_position(m.symbol, "Buy") if is_live else None
+        pos_size = float(pos.get("size", 0.0)) if pos else 0.0
+
+        if pos_size > 0:
+            m.position_was_open = True
+            return
+
+        if m.position_was_open and pos_size == 0:
+            console.print(f"\n[bold green]🏁 [{m.symbol}] Сетка Манипуляции закрыта (TP или SL). Работа с данной Фибоначчи полностью завершена.[/bold green]")
+            if is_live:
+                client.cancel_all_orders(m.symbol)
+            m.state = "IDLE"
+            m.position_was_open = False
+
+    # ─── 8. Состояние: IDLE (Поиск новых импульсов на закрытии свечи) ───────────
+    elif m.state == "IDLE":
+        df_now = client.fetch_klines(m.symbol, interval=interval, limit=80)
+        if len(df_now) < 15:
+            return
+        latest_time = df_now["timestamp"].iloc[-1]
+        if m.last_candle_time is not None and latest_time == m.last_candle_time:
+            return  # Новая свеча еще не появилась
+
+        m.last_candle_time = latest_time
+        setup = find_active_setup(
+            df_now,
+            min_pct=cfg.min_impulse_pct,
+            lookback_bars=cfg.lookback_bars,
+            preferred_side=cfg.preferred_side,
+            scale=cfg.scale,
+            max_sweep_pct=cfg.reclaim_max_sweep_pct,
+            allow_close_below=cfg.reclaim_allow_close_below,
+            entry_buffer_pct=cfg.entry_buffer_pct,
+            tp_buffer_pct=cfg.tp_buffer_pct,
+            reclaim_tp_buffer_pct=cfg.reclaim_tp_buffer_pct,
+            reclaim_be_trigger_fib=cfg.reclaim_be_trigger_fib,
+            reclaim_be_offset_pct=cfg.reclaim_be_offset_pct,
+        )
+
+        if setup is not None:
+            console.print(f"\n[bold green]✨ [{m.symbol}] На закрытии свечи обнаружен новый импульс:[/bold green] {setup.description}")
+            e1 = client.round_price(setup.entry_1, m.symbol)
+            tp1 = client.round_price(setup.tp_1, m.symbol)
+            sl = client.round_price(setup.stop_loss, m.symbol)
+            e2 = client.round_price(setup.entry_2, m.symbol) if setup.entry_2 else None
+            tp2 = client.round_price(setup.tp_2, m.symbol) if setup.tp_2 else None
+            e3 = client.round_price(setup.entry_3, m.symbol) if setup.entry_3 else None
+            tp3 = client.round_price(setup.tp_3, m.symbol) if setup.tp_3 else None
+
+            if e3 is not None and e2 is not None:
+                q1, q2, q3, _, _, _ = client.calc_triple_grid_order_sizes(e1, e2, e3, sl, total_risk_usd=cfg.total_risk_usd, symbol=m.symbol)
+            elif e2 is not None:
+                q1, q2, _, _ = client.calc_dual_grid_order_sizes(e1, e2, sl, total_risk_usd=cfg.total_risk_usd, symbol=m.symbol)
+                q3 = 0.0
+            else:
+                dist1 = abs(e1 - sl)
+                specs = client.get_specs(m.symbol)
+                q1 = client.round_qty(cfg.total_risk_usd / dist1 if dist1 > 0 else specs.min_qty, m.symbol)
+                q2 = 0.0
+                q3 = 0.0
+
+            o1_id, o2_id, o3_id = None, None, None
+            if is_live:
+                try:
+                    r1 = client.place_order(symbol=m.symbol, side="Buy", order_type="Limit", qty=q1, price=e1, take_profit=tp1, stop_loss=sl)
+                    o1_id = r1.get("orderId")
+                    if e2 and q2 > 0 and tp2:
+                        r2 = client.place_order(symbol=m.symbol, side="Buy", order_type="Limit", qty=q2, price=e2, take_profit=tp2, stop_loss=sl)
+                        o2_id = r2.get("orderId")
+                    if e3 and q3 > 0 and tp3:
+                        r3 = client.place_order(symbol=m.symbol, side="Buy", order_type="Limit", qty=q3, price=e3, take_profit=tp3, stop_loss=sl)
+                        o3_id = r3.get("orderId")
+                    console.print(f"  ✓ [{m.symbol}] Размещена новая тройная сетка: Вход 1 ${e1}, Вход 2 ${e2 or '-'}, Вход 3 ${e3 or '-'}")
+                except Exception as err:
+                    console.print(f"[red]❌ [{m.symbol}] Ошибка выставления новой сетки: {err}[/red]")
+                    return
+
+            m.setup_type = setup.setup_type
+            m.state = "TRAILING" if setup.setup_type in ("TRIPLE_GRID_TRAILING", "TRIPLE_GRID_CORRECTION", "DUAL_GRID_TRAILING", "DUAL_GRID_CORRECTION") else setup.setup_type
+            m.o1_id = o1_id
+            m.o2_id = o2_id
+            m.o3_id = o3_id
+            m.cur_peak = setup.imp_peak_price
+            m.cur_e1 = e1
+            m.cur_tp1 = tp1
+            m.cur_e2 = e2 if e2 else 0.0
+            m.cur_tp2 = tp2 if tp2 else 0.0
+            m.cur_e3 = e3 if e3 else 0.0
+            m.cur_tp3 = tp3 if tp3 else 0.0
+            m.imp_start_price = setup.imp_start_price
+            m.sl = sl
+            m.q1 = q1
+            m.q2 = q2
+            m.q3 = q3
+            m.has_o2 = (e2 is not None and q2 > 0)
+            m.has_o3 = (e3 is not None and q3 > 0)
+            m.position_was_open = False
+            m.be_applied = False
+            m.tp_basket_applied = False
 
 
 def main():
@@ -465,6 +1034,7 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="Режим симуляции (без выставления ордеров)")
     parser.add_argument("--live", action="store_true", help="Боевой режим выставления ордеров")
     parser.add_argument("-y", "--yes", action="store_true", help="Автоматическое подтверждение выставления ордеров без интерактивного вопроса")
+    parser.add_argument("--once", action="store_true", help="Одиночный проход без непрерывного фонового цикла")
     args = parser.parse_args()
 
     cfg = load_trade_config(args.config)
@@ -601,9 +1171,17 @@ def main():
         e2 = client.round_price(setup.entry_2, symbol) if setup.entry_2 else None
         tp2 = client.round_price(setup.tp_2, symbol) if setup.tp_2 else None
 
+        e3 = client.round_price(setup.entry_3, symbol) if setup.entry_3 else None
+        tp3 = client.round_price(setup.tp_3, symbol) if setup.tp_3 else None
+
         # Расчет лотов
-        if e2 is not None:
+        if e3 is not None and e2 is not None:
+            q1, q2, q3, loss1, loss2, loss3 = client.calc_triple_grid_order_sizes(e1, e2, e3, sl, total_risk_usd=total_risk, symbol=symbol, equal_weight=True)
+            tot_loss = loss1 + loss2 + loss3
+        elif e2 is not None:
             q1, q2, loss1, loss2 = client.calc_dual_grid_order_sizes(e1, e2, sl, total_risk_usd=total_risk, symbol=symbol, equal_weight=True)
+            q3 = 0.0
+            loss3 = 0.0
             tot_loss = loss1 + loss2
         else:
             dist1 = abs(e1 - sl)
@@ -613,12 +1191,16 @@ def main():
             loss1 = q1 * dist1
             q2 = 0.0
             loss2 = 0.0
+            q3 = 0.0
+            loss3 = 0.0
             tot_loss = loss1
 
         # Отображение информации
         title_map = {
-            "DUAL_GRID_TRAILING": "🚀 ДВОЙНАЯ СЕТКА (РЕЖИМ ТРЕЙЛИНГА)",
-            "DUAL_GRID_CORRECTION": "🎯 ДВОЙНАЯ СЕТКА (АКТИВНАЯ КОРРЕКЦИЯ)",
+            "TRIPLE_GRID_TRAILING": "🚀 ТРОЙНАЯ СЕТКА (РЕЖИМ ТРЕЙЛИНГА)",
+            "TRIPLE_GRID_CORRECTION": "🎯 ТРОЙНАЯ СЕТКА (АКТИВНАЯ КОРРЕКЦИЯ)",
+            "DUAL_GRID_TRAILING": "🚀 ТРОЙНАЯ СЕТКА (РЕЖИМ ТРЕЙЛИНГА)",
+            "DUAL_GRID_CORRECTION": "🎯 ТРОЙНАЯ СЕТКА (АКТИВНАЯ КОРРЕКЦИЯ)",
             "SWEEP_RECLAIM": "🟢 ЛОЖНЫЙ ПРОБОЙ (SWEEP RECLAIM + MACD)",
             "MANIPULATION": "🟣 СЕТКА МАНИПУЛЯЦИИ (1.618 & 2.000)",
         }
@@ -639,8 +1221,13 @@ def main():
         t.add_row("Объем Ордера 1", f"{q1} шт. (${q1 * e1:.2f} notional, риск ${loss1:.2f})")
 
         if e2 is not None and tp2 is not None:
-            t.add_row("Ордер 2 (Вход / Тейк)", f"Вход: ${e2}  |  TP: ${tp2}")
+            lbl_o2 = "Ордер 2 (Вход 0.618 / Тейк 0.382)" if e3 is not None else "Ордер 2 (Вход / Тейк)"
+            t.add_row(lbl_o2, f"Вход: ${e2}  |  TP: ${tp2}")
             t.add_row("Объем Ордера 2", f"{q2} шт. (${q2 * e2:.2f} notional, риск ${loss2:.2f})")
+
+        if e3 is not None and tp3 is not None:
+            t.add_row("Ордер 3 (Вход 0.786 / Тейк 0.500)", f"Вход: ${e3}  |  TP: ${tp3}")
+            t.add_row("Объем Ордера 3", f"{q3} шт. (${q3 * e3:.2f} notional, риск ${loss3:.2f})")
 
         t.add_row("Стоп-Лосс (SL)", f"${sl} (расчетный суммарный убыток: ${tot_loss:.2f} / лимит ${total_risk:.2f})")
         if setup.be_trigger is not None and setup.be_price is not None:
@@ -662,9 +1249,12 @@ def main():
             "tp1": tp1,
             "e2": e2,
             "tp2": tp2,
+            "e3": e3,
+            "tp3": tp3,
             "sl": sl,
             "q1": q1,
             "q2": q2,
+            "q3": q3,
         })
 
     # Если режим Dry-Run — завершаем после отображения всех сетапов
@@ -672,20 +1262,20 @@ def main():
         console.print(f"\n[bold green]Режим Dry-Run завершен.[/bold green] Найдено активных сетапов: [bold cyan]{len(actionable_setups)} из {len(symbols)}[/bold cyan] монет.")
         return
 
-    # В Live режиме — проверяем, есть ли что торговать
-    if not actionable_setups:
+    # В Live режиме — если нет активных сетапов и запрошен одиночный проход
+    if not actionable_setups and args.once:
         console.print(f"\n[yellow]Нет активных сетапов для выставления ордеров среди монет: {', '.join(symbols)}.[/yellow]")
         return
 
-    symbols_to_trade_str = ", ".join(item["symbol"] for item in actionable_setups)
-    if not args.yes:
-        confirm = console.input(f"\n[bold red]ВЫСТАВИТЬ ОРДЕРА НА BYBIT ДЛЯ {symbols_to_trade_str}?[/bold red] (y/N): ").strip().lower()
-        if confirm != "y":
-            console.print("[yellow]Отменено пользователем.[/yellow]")
-            return
-    else:
-        console.print(f"[bold green]Автоподтверждение (-y): выставляем ордера для {symbols_to_trade_str}...[/bold green]")
-
+    if actionable_setups:
+        symbols_to_trade_str = ", ".join(item["symbol"] for item in actionable_setups)
+        if not args.yes:
+            confirm = console.input(f"\n[bold red]ВЫСТАВИТЬ ОРДЕРА НА BYBIT ДЛЯ {symbols_to_trade_str}?[/bold red] (y/N): ").strip().lower()
+            if confirm != "y":
+                console.print("[yellow]Отменено пользователем.[/yellow]")
+                return
+        else:
+            console.print(f"[bold green]Автоподтверждение (-y): выставляем ордера для {symbols_to_trade_str}...[/bold green]")
 
     # Выставляем ордера для всех подтвержденных сетапов
     active_monitors: list[ActiveTradeMonitor] = []
@@ -693,21 +1283,24 @@ def main():
     for item in actionable_setups:
         sym = item["symbol"]
         setup = item["setup"]
-        e1, tp1, e2, tp2, sl = item["e1"], item["tp1"], item["e2"], item["tp2"], item["sl"]
-        q1, q2 = item["q1"], item["q2"]
+        e1, tp1, e2, tp2, e3, tp3, sl = item["e1"], item["tp1"], item["e2"], item["tp2"], item["e3"], item["tp3"], item["sl"]
+        q1, q2, q3 = item["q1"], item["q2"], item["q3"]
 
         console.print(f"\n[bold cyan]Проверка/выставление ордеров для {sym}...[/bold cyan]")
         o1_id = None
         o2_id = None
+        o3_id = None
         pos_open_initially = False
+        initial_state = "TRAILING"
         try:
             side_str = "Buy" if setup.side == "long" else "Sell"
 
             # Проверяем, есть ли уже открытая позиция
             curr_pos = client.get_position(sym, side=side_str)
-            if curr_pos is not None:
+            pos_sz = float(curr_pos.get("size", "0")) if curr_pos else 0.0
+            if pos_sz > 0:
                 pos_open_initially = True
-                console.print(f"ℹ️ [{sym}] Уже есть открытая позиция (объем: {curr_pos.get('size')}, вход: {curr_pos.get('avgPrice')}).")
+                console.print(f"ℹ️ [{sym}] Уже есть открытая позиция (объем: {pos_sz}, вход: {curr_pos.get('avgPrice')}).")
 
             # Проверяем, есть ли уже активные лимитные ордера на Bybit
             existing_orders = [
@@ -716,23 +1309,64 @@ def main():
             ]
 
             if existing_orders:
-                # Сортируем: для Buy по убыванию цены (верхний e1, нижний e2)
+                # Сортируем: для Buy по убыванию цены (верхний e1, средний e2, нижний e3)
                 existing_orders.sort(key=lambda x: float(x.get("price", 0.0)), reverse=(setup.side == "long"))
                 console.print(f"ℹ️ [{sym}] Найдено {len(existing_orders)} активных лимитных ордера(ов) на Bybit. Подключаем к мониторингу!")
-                o1_info = existing_orders[0]
-                o1_id = o1_info.get("orderId")
-                e1 = float(o1_info.get("price", e1))
-                tp1 = float(o1_info.get("takeProfit") or tp1)
-                console.print(f"  ✓ Ордер 1 (активен): ID {o1_id} @ {e1}, TP {tp1}")
 
-                if len(existing_orders) > 1:
-                    o2_info = existing_orders[1]
-                    o2_id = o2_info.get("orderId")
-                    e2 = float(o2_info.get("price", e2 or 0.0))
-                    tp2 = float(o2_info.get("takeProfit") or (tp2 or 0.0))
-                    console.print(f"  ✓ Ордер 2 (активен): ID {o2_id} @ {e2}, TP {tp2}")
+                if pos_open_initially:
+                    if len(existing_orders) >= 2:
+                        o2_info = existing_orders[0]
+                        o2_id = o2_info.get("orderId")
+                        e2 = float(o2_info.get("price", e2 or 0.0))
+                        tp2 = float(o2_info.get("takeProfit") or (tp2 or 0.0))
+
+                        o3_info = existing_orders[1]
+                        o3_id = o3_info.get("orderId")
+                        e3 = float(o3_info.get("price", e3 or 0.0))
+                        tp3 = float(o3_info.get("takeProfit") or (tp3 or 0.0))
+                        initial_state = "O1_FILLED"
+                        console.print(f"  ✓ Позиция открыта (Ордер 1), Ордер 2 ID {o2_id} @ {e2}, Ордер 3 ID {o3_id} @ {e3}")
+                    elif len(existing_orders) == 1:
+                        o3_info = existing_orders[0]
+                        o3_id = o3_info.get("orderId")
+                        e3 = float(o3_info.get("price", e3 or 0.0))
+                        tp3 = float(o3_info.get("takeProfit") or (tp3 or 0.0))
+                        initial_state = "O2_FILLED"
+                        console.print(f"  ✓ Позиция открыта (Ордера 1 и 2), Ордер 3 ID {o3_id} @ {e3}")
+                    else:
+                        initial_state = "O3_FILLED"
+                        console.print(f"  ✓ Позиция открыта (все 3 ордера налиты)")
+                else:
+                    o1_info = existing_orders[0]
+                    o1_id = o1_info.get("orderId")
+                    e1 = float(o1_info.get("price", e1))
+                    tp1 = float(o1_info.get("takeProfit") or tp1)
+                    console.print(f"  ✓ Ордер 1 (активен): ID {o1_id} @ {e1}, TP {tp1}")
+
+                    if len(existing_orders) > 1:
+                        o2_info = existing_orders[1]
+                        o2_id = o2_info.get("orderId")
+                        e2 = float(o2_info.get("price", e2 or 0.0))
+                        tp2 = float(o2_info.get("takeProfit") or (tp2 or 0.0))
+                        console.print(f"  ✓ Ордер 2 (активен): ID {o2_id} @ {e2}, TP {tp2}")
+
+                    if len(existing_orders) > 2:
+                        o3_info = existing_orders[2]
+                        o3_id = o3_info.get("orderId")
+                        e3 = float(o3_info.get("price", e3 or 0.0))
+                        tp3 = float(o3_info.get("takeProfit") or (tp3 or 0.0))
+                        console.print(f"  ✓ Ордер 3 (активен): ID {o3_id} @ {e3}, TP {tp3}")
+                    elif e3 is not None and q3 > 0 and tp3 is not None:
+                        try:
+                            resp3 = client.place_order(symbol=sym, side=side_str, order_type="Limit", qty=q3, price=e3, take_profit=tp3, stop_loss=sl)
+                            o3_id = resp3.get("orderId")
+                            console.print(f"✅ [{sym}] Дополнительно выставлен Ордер 3 (0.786): ID {o3_id} (Limit {side_str} {q3} @ {e3}, TP {tp3}, SL {sl})")
+                        except Exception as err3:
+                            console.print(f"⚠️ [{sym}] Не удалось довыставить Ордер 3: {err3}")
+
+                    initial_state = "TRAILING" if setup.setup_type in ("TRIPLE_GRID_TRAILING", "TRIPLE_GRID_CORRECTION", "DUAL_GRID_TRAILING", "DUAL_GRID_CORRECTION") else setup.setup_type
             else:
-                # Ордер 1
+                # Размещаем Ордер 1
                 resp1 = client.place_order(
                     symbol=sym,
                     side=side_str,
@@ -745,7 +1379,7 @@ def main():
                 o1_id = resp1.get("orderId")
                 console.print(f"✅ [{sym}] Ордер 1 размещен: ID {o1_id} (Limit {side_str} {q1} @ {e1}, TP {tp1}, SL {sl})")
 
-                # Ордер 2
+                # Размещаем Ордер 2
                 if e2 is not None and q2 > 0 and tp2 is not None:
                     resp2 = client.place_order(
                         symbol=sym,
@@ -759,25 +1393,47 @@ def main():
                     o2_id = resp2.get("orderId")
                     console.print(f"✅ [{sym}] Ордер 2 размещен: ID {o2_id} (Limit {side_str} {q2} @ {e2}, TP {tp2}, SL {sl})")
 
+                # Размещаем Ордер 3
+                if e3 is not None and q3 > 0 and tp3 is not None:
+                    resp3 = client.place_order(
+                        symbol=sym,
+                        side=side_str,
+                        order_type="Limit",
+                        qty=q3,
+                        price=e3,
+                        take_profit=tp3,
+                        stop_loss=sl,
+                    )
+                    o3_id = resp3.get("orderId")
+                    console.print(f"✅ [{sym}] Ордер 3 размещен: ID {o3_id} (Limit {side_str} {q3} @ {e3}, TP {tp3}, SL {sl})")
+
+                initial_state = "TRAILING" if setup.setup_type in ("TRIPLE_GRID_TRAILING", "TRIPLE_GRID_CORRECTION", "DUAL_GRID_TRAILING", "DUAL_GRID_CORRECTION") else setup.setup_type
+
             active_monitors.append(ActiveTradeMonitor(
                 symbol=sym,
                 setup_type=setup.setup_type,
+                state=initial_state,
                 o1_id=o1_id,
                 o2_id=o2_id,
+                o3_id=o3_id,
                 cur_peak=setup.imp_peak_price,
                 cur_e1=e1,
                 cur_tp1=tp1,
                 cur_e2=e2 if e2 else 0.0,
                 cur_tp2=tp2 if tp2 else 0.0,
+                cur_e3=e3 if e3 else 0.0,
+                cur_tp3=tp3 if tp3 else 0.0,
                 imp_start_price=setup.imp_start_price,
                 sl=sl,
-                has_o2=(o2_id is not None),
+                q1=q1,
+                q2=q2,
+                q3=q3,
+                has_o2=(o2_id is not None or (e2 is not None and q2 > 0)),
+                has_o3=(o3_id is not None or (e3 is not None and q3 > 0)),
                 be_trigger=client.round_price(setup.be_trigger, sym) if setup.be_trigger is not None else None,
                 be_price=client.round_price(setup.be_price, sym) if setup.be_price is not None else None,
                 position_was_open=pos_open_initially,
             ))
-
-
 
         except Exception as e:
             console.print(f"[bold red]❌ [{sym}] Ошибка выставления ордеров:[/bold red] {e}")
@@ -788,133 +1444,45 @@ def main():
                 except Exception:
                     pass
 
+    # Для монет без начального сетапа создаем мониторы в режиме IDLE для поиска новых импульсов
+    seen_symbols = {item["symbol"] for item in actionable_setups}
+    for sym in symbols:
+        if sym not in seen_symbols:
+            active_monitors.append(ActiveTradeMonitor(
+                symbol=sym,
+                setup_type="IDLE",
+                state="IDLE",
+            ))
+
     if not active_monitors:
-        console.print("[yellow]Ни один ордер не был выставлен. Завершение.[/yellow]")
+        console.print("[yellow]Нет монет для мониторинга. Завершение.[/yellow]")
         return
 
-    # Единый цикл мониторинга для всех активных монет
+    # Единый цикл мониторинга для всех монет
+    mode_desc = "Одиночный (--once)" if args.once else "Непрерывный фоновый (Daemon / автопоиск новых импульсов)"
     console.print(Panel(
         f"[bold yellow]Запущен автоматический мониторинг {len(active_monitors)} монет:[/bold yellow]\n"
         f"[green]{', '.join(m.symbol for m in active_monitors)}[/green]\n"
-        "Бот отслеживает трейлинг, закрытие по SL и перенос в безубыток.\n"
+        "Бот отслеживает трейлинг, налив ордеров, закрытие по SL/TP, ложный пробой и сетку манипуляции.\n"
+        f"Режим: [cyan]{mode_desc}[/cyan].\n"
         "[dim]Для остановки нажмите Ctrl+C.[/dim]",
         border_style="yellow",
     ))
 
     try:
-        while any(not m.done for m in active_monitors):
+        while True:
             time.sleep(15)
 
             for m in active_monitors:
                 if m.done:
                     continue
-
                 try:
-                    pos = client.get_position(m.symbol)
-                    is_open = (pos is not None)
-
-                    # 1. Трейлинг сетки
-                    if m.setup_type == "DUAL_GRID_TRAILING":
-                        if is_open:
-                            m.position_was_open = True
-
-                        if m.position_was_open and not is_open:
-                            console.print(f"\n[red]⛔ [{m.symbol}] Позиция закрыта (SL). Отменяем незаполненные ордера...[/red]")
-                            cancelled = client.cancel_all_orders(m.symbol)
-                            console.print(f"[yellow][{m.symbol}] Отменено: {len(cancelled)} ордер(ов).[/yellow]")
-                            m.done = True
-                            continue
-
-                        df_now = client.fetch_klines(m.symbol, interval=interval, limit=10)
-                        latest_h = df_now["high"].iloc[-1]
-                        latest_c = df_now["close"].iloc[-1]
-
-                        if latest_h > m.cur_peak and not m.position_was_open:
-                            new_peak = latest_h
-                            new_pct = (new_peak - m.imp_start_price) / m.imp_start_price * 100.0
-
-                            new_e1 = client.round_price(
-                                calc_fib(new_peak, m.imp_start_price, 0.500, is_long=True, scale=cfg.scale)
-                                * (1.0 + cfg.entry_buffer_pct / 100.0), m.symbol
-                            )
-                            new_tp1 = client.round_price(
-                                calc_fib(new_peak, m.imp_start_price, 0.236, is_long=True, scale=cfg.scale)
-                                * (1.0 - cfg.tp_buffer_pct / 100.0), m.symbol
-                            )
-                            new_e2 = client.round_price(
-                                calc_fib(new_peak, m.imp_start_price, 0.618, is_long=True, scale=cfg.scale)
-                                * (1.0 + cfg.entry_buffer_pct / 100.0), m.symbol
-                            ) if m.has_o2 else None
-                            new_tp2 = client.round_price(
-                                calc_fib(new_peak, m.imp_start_price, 0.382, is_long=True, scale=cfg.scale)
-                                * (1.0 - cfg.tp_buffer_pct / 100.0), m.symbol
-                            ) if m.has_o2 else None
-
-                            # Сдвигаем Ордер 1 только если уровни изменились хотя бы на 1 шаг цены
-                            if new_e1 != m.cur_e1 or new_tp1 != m.cur_tp1:
-                                console.print(f"\n[bold green]🚀 [{m.symbol}] Новый максимум ${new_peak} (+{new_pct:.2f}%). Сдвигаем уровни...[/bold green]")
-                                try:
-                                    client.amend_order(m.symbol, m.o1_id, price=new_e1, take_profit=new_tp1, stop_loss=m.sl)
-                                    m.cur_e1 = new_e1
-                                    m.cur_tp1 = new_tp1
-                                    console.print(f"  ✓ [{m.symbol}] Ордер 1 сдвинут: Вход ${new_e1}, TP ${new_tp1}")
-                                except Exception as err:
-                                    if "order not modified" not in str(err).lower():
-                                        console.print(f"  ⚠️ [{m.symbol}] Не удалось изменить Ордер 1: {err}")
-
-
-                            # Сдвигаем Ордер 2 только если уровни изменились
-                            if m.o2_id and new_e2 and new_tp2 and (new_e2 != m.cur_e2 or new_tp2 != m.cur_tp2):
-                                try:
-                                    client.amend_order(m.symbol, m.o2_id, price=new_e2, take_profit=new_tp2, stop_loss=m.sl)
-                                    m.cur_e2 = new_e2
-                                    m.cur_tp2 = new_tp2
-                                    console.print(f"  ✓ [{m.symbol}] Ордер 2 сдвинут: Вход ${new_e2}, TP ${new_tp2}")
-                                except Exception as err:
-                                    if "order not modified" not in str(err).lower():
-                                        console.print(f"  ⚠️ [{m.symbol}] Не удалось изменить Ордер 2: {err}")
-
-                            m.cur_peak = new_peak
-
-
-                        if latest_c <= m.cur_e1 and not m.position_was_open:
-                            console.print(f"\n[bold cyan]🎉 [{m.symbol}] Ордер 1 вошел в позицию! Трейлинг завершен. Сделка на бирже.[/bold cyan]")
-                            m.done = True
-
-                    # 2. Мониторинг активной коррекционной сетки
-                    elif m.setup_type == "DUAL_GRID_CORRECTION" and m.o2_id:
-                        if is_open and not m.position_was_open:
-                            m.position_was_open = True
-                            console.print(f"✅ [{m.symbol}] Позиция открыта (Ордер 1 исполнен).")
-
-                        if m.position_was_open and not is_open:
-                            console.print(f"\n[red]⛔ [{m.symbol}] Позиция закрыта (SL или TP). Отменяем незаполненные ордера...[/red]")
-                            cancelled = client.cancel_all_orders(m.symbol)
-                            console.print(f"[yellow][{m.symbol}] Отменено: {len(cancelled)} ордер(ов).[/yellow]")
-                            m.done = True
-
-                    # 3. Мониторинг безубытка для ложного пробоя (Sweep Reclaim)
-                    elif m.setup_type == "SWEEP_RECLAIM" and m.be_trigger is not None and m.be_price is not None:
-                        if not is_open and m.position_was_open:
-                            console.print(f"\n[yellow][{m.symbol}] Позиция уже закрыта (SL или TP). Мониторинг завершен.[/yellow]")
-                            m.done = True
-                            continue
-                        if is_open:
-                            m.position_was_open = True
-
-                        df_now = client.fetch_klines(m.symbol, interval=interval, limit=5)
-                        latest_h = df_now["high"].iloc[-1]
-
-                        if latest_h >= m.be_trigger:
-                            success = client.update_stop_loss(m.symbol, m.o1_id, m.be_price)
-                            if success:
-                                console.print(f"\n[bold green]🛡️ [{m.symbol}] Достигнут триггер (${latest_h})! SL перенесен в БЕЗУБЫТОК (${m.be_price}).[/bold green]")
-                                m.done = True
-                            else:
-                                console.print(f"\n[yellow]⚠️ [{m.symbol}] Триггер БУ достигнут, но не удалось перенести SL. Повторим в следующей итерации...[/yellow]")
-
+                    process_monitor_step(m, client, cfg, interval, is_live=is_live)
                 except Exception as sym_err:
                     console.print(f"[red]⚠️ [{m.symbol}] Ошибка мониторинга: {sym_err}[/red]")
+
+            if args.once and all(m.done or m.state == "IDLE" for m in active_monitors):
+                break
 
     except KeyboardInterrupt:
         console.print("\n[yellow]Мониторинг остановлен пользователем.[/yellow]")
