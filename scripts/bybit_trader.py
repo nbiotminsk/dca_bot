@@ -1353,11 +1353,25 @@ def main():
                         initial_state = "O3_FILLED"
                         console.print("  ✓ Позиция открыта (все 3 ордера налиты)")
                 else:
-                    console.print(f"🔄 [{sym}] Найдено {len(existing_orders)} старых ордеров без открытой позиции. Снимаем их для обновления до актуальной тройной сетки...")
-                    client.cancel_all_orders(sym)
-                    existing_orders = []
+                    match_existing = False
+                    if len(existing_orders) == 3 and e2 is not None and e3 is not None:
+                        p1 = float(existing_orders[0].get("price", 0.0))
+                        p2 = float(existing_orders[1].get("price", 0.0))
+                        p3 = float(existing_orders[2].get("price", 0.0))
+                        if abs(p1 - e1) / e1 < 0.002 and abs(p2 - e2) / e2 < 0.002 and abs(p3 - e3) / e3 < 0.002:
+                            match_existing = True
+                            o1_id = existing_orders[0].get("orderId")
+                            o2_id = existing_orders[1].get("orderId")
+                            o3_id = existing_orders[2].get("orderId")
+                            initial_state = "TRAILING" if setup.setup_type in ("TRIPLE_GRID_TRAILING", "TRIPLE_GRID_CORRECTION", "DUAL_GRID_TRAILING", "DUAL_GRID_CORRECTION") else setup.setup_type
+                            console.print(f"ℹ️ [{sym}] Найдена готовая сетка из 3 ордеров на Bybit (e1={p1}, e2={p2}, e3={p3}). Подключаем к мониторингу без перевыставления!")
 
-            if not existing_orders:
+                    if not match_existing:
+                        console.print(f"🔄 [{sym}] Найдено {len(existing_orders)} старых ордеров без открытой позиции. Снимаем их для обновления до актуальной тройной сетки...")
+                        client.cancel_all_orders(sym)
+                        existing_orders = []
+
+            if not o1_id:
                 # Размещаем Ордер 1
                 resp1 = client.place_order(
                     symbol=sym,
