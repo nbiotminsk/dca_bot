@@ -281,7 +281,7 @@ class BybitClient:
         """Размещает ордер на Bybit V5."""
         specs = self.get_specs(symbol)
         qty_str = f"{self.round_qty(qty, symbol):.{specs.qty_decimals}f}"
-        
+
         pos_idx = self.get_position_idx(symbol, side)
         params: dict[str, Any] = {
             "category": "linear",

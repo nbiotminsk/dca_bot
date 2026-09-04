@@ -15,8 +15,6 @@
 """
 
 import argparse
-import math
-import os
 import sys
 import time
 from dataclasses import dataclass, field
@@ -30,14 +28,13 @@ root_dir = Path(__file__).resolve().parent.parent
 if str(root_dir) not in sys.path:
     sys.path.insert(0, str(root_dir))
 
-import numpy as np
 import pandas as pd
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
 from indicators.macd import calculate_macd
-from indicators.pybit_client import BybitClient, InstrumentSpecs
+from indicators.pybit_client import BybitClient
 from scripts.backtest_strategy_interactive import calc_fib
 
 console = Console()
@@ -53,11 +50,11 @@ class TradeConfig:
     reclaim_be_offset_pct: float = 0.05
     reclaim_max_sweep_pct: float = 0.5
     reclaim_allow_close_below: bool = False
-    preferred_side: str = "long"
+    preferred_side: Literal["long", "short"] = "long"
     min_impulse_pct: float = 2.0
     lookback_bars: int = 60
     timeframe: str = "1h"
-    scale: str = "log"
+    scale: Literal["log", "linear"] = "log"
     symbols: list[str] = field(default_factory=list)
     config_path: Optional[str] = None
 
@@ -99,7 +96,9 @@ def load_trade_config(config_path: Optional[str | Path] = None) -> TradeConfig:
 
         strat_data = data.get("strategy", {})
         if "preferred_side" in strat_data:
-            cfg.preferred_side = str(strat_data["preferred_side"]).lower()
+            s_side = str(strat_data["preferred_side"]).lower()
+            if s_side in ("long", "short"):
+                cfg.preferred_side = s_side  # type: ignore[assignment]
         if "min_impulse_pct" in strat_data:
             cfg.min_impulse_pct = float(strat_data["min_impulse_pct"])
         if "lookback_bars" in strat_data:
@@ -107,7 +106,9 @@ def load_trade_config(config_path: Optional[str | Path] = None) -> TradeConfig:
         if "timeframe" in strat_data:
             cfg.timeframe = str(strat_data["timeframe"])
         if "scale" in strat_data:
-            cfg.scale = str(strat_data["scale"])
+            s_scale = str(strat_data["scale"]).lower()
+            if s_scale in ("log", "linear"):
+                cfg.scale = s_scale  # type: ignore[assignment]
         if "symbols" in strat_data:
             raw_syms = strat_data["symbols"]
             if isinstance(raw_syms, list):
@@ -164,8 +165,8 @@ def find_active_setup(
     df: pd.DataFrame,
     min_pct: float = 2.0,
     lookback_bars: int = 60,
-    preferred_side: str = "long",
-    scale: str = "log",
+    preferred_side: Literal["long", "short", "both"] = "long",
+    scale: Literal["log", "linear"] = "log",
     max_sweep_pct: float = 0.5,
     allow_close_below: bool = False,
     entry_buffer_pct: float = 0.07,
@@ -193,7 +194,9 @@ def find_active_setup(
 
     from scripts.backtest_strategy_interactive import detect_impulses
 
-    sides_to_check = [preferred_side] if preferred_side in ("long", "short") else ["long"]
+    sides_to_check: list[Literal["long", "short"]] = (
+        ["long"] if preferred_side == "long" else (["short"] if preferred_side == "short" else ["long", "short"])
+    )
 
     for side in sides_to_check:
         is_long = (side == "long")
@@ -414,7 +417,7 @@ def find_active_setup(
                         stop_loss=p_2414,
                         sweep_price=sweep_val,
                         sweep_pct=swp_pct,
-                        description=f"Манипуляция: выход за 1.000 на {swp_pct:.2f}% (порог {max_sweep_pct}%)" + (" с закреплением" if has_consolidated else "") + f". Сетка на 1.618 и 2.000, стоп 2.414.",
+                        description=f"Манипуляция: выход за 1.000 на {swp_pct:.2f}% (порог {max_sweep_pct}%)" + (" с закреплением" if has_consolidated else "") + ". Сетка на 1.618 и 2.000, стоп 2.414.",
                     ))
                 continue
 
@@ -1121,7 +1124,7 @@ def main():
         mode_input = console.input("[bold yellow]Режим работы: 1) Dry-Run (предпросмотр)  2) Live (боевые ордера) [1]: [/bold yellow]").strip()
         is_live = mode_input == "2"
 
-    console.print(f"\n[dim]Подключение к Bybit V5...[/dim]")
+    console.print("\n[dim]Подключение к Bybit V5...[/dim]")
     try:
         client = BybitClient()
     except Exception as e:
@@ -1348,7 +1351,7 @@ def main():
                         console.print(f"  ✓ Позиция открыта (Ордера 1 и 2), Ордер 3 ID {o3_id} @ {e3}")
                     else:
                         initial_state = "O3_FILLED"
-                        console.print(f"  ✓ Позиция открыта (все 3 ордера налиты)")
+                        console.print("  ✓ Позиция открыта (все 3 ордера налиты)")
                 else:
                     console.print(f"🔄 [{sym}] Найдено {len(existing_orders)} старых ордеров без открытой позиции. Снимаем их для обновления до актуальной тройной сетки...")
                     client.cancel_all_orders(sym)
