@@ -163,6 +163,43 @@ def test_active_setup_manipulation():
     assert setup.stop_loss < setup.entry_2  # Стоп 2.414 Fib
 
 
+def test_active_setup_prioritizes_unbroken_over_broken_sub_impulse():
+    """Проверка, что живой несломанный старший импульс имеет приоритет над сломанным вложенным подимпульсом."""
+    # Старший импульс: 100 -> 130 (+30%)
+    data_major = [
+        {"timestamp": pd.Timestamp("2026-09-01 00:00"), "open": 100, "high": 101, "low": 100, "close": 101, "volume": 100},
+        {"timestamp": pd.Timestamp("2026-09-01 01:00"), "open": 101, "high": 115, "low": 101, "close": 115, "volume": 100},
+        {"timestamp": pd.Timestamp("2026-09-01 02:00"), "open": 115, "high": 130, "low": 114, "close": 130, "volume": 100},
+    ]
+    # Плавный откат до 120 (0.500 Fib для 100->130 это ~114, поэтому 120 выше 0.500)
+    data_pullback = [
+        {"timestamp": pd.Timestamp("2026-09-01 03:00"), "open": 130, "high": 130, "low": 122, "close": 122, "volume": 100},
+        {"timestamp": pd.Timestamp("2026-09-01 04:00"), "open": 122, "high": 122, "low": 120, "close": 120, "volume": 100},
+    ]
+    # Вложенный подимпульс: 120 -> 125 (+4.17%)
+    data_sub = [
+        {"timestamp": pd.Timestamp("2026-09-01 05:00"), "open": 120, "high": 123, "low": 120, "close": 123, "volume": 100},
+        {"timestamp": pd.Timestamp("2026-09-01 06:00"), "open": 123, "high": 125, "low": 122, "close": 125, "volume": 100},
+    ]
+    # Подимпульс ломается ниже 120 (слив до 117), но старший 100->130 остается живым (117 > 114)
+    data_break_sub = [
+        {"timestamp": pd.Timestamp("2026-09-01 07:00"), "open": 125, "high": 125, "low": 117, "close": 117.5, "volume": 100},
+        {"timestamp": pd.Timestamp("2026-09-01 08:00"), "open": 117.5, "high": 119, "low": 117.2, "close": 118, "volume": 100},
+    ]
+    front = []
+    for k in range(25):
+        t = pd.Timestamp("2026-08-31 00:00") + pd.Timedelta(hours=k)
+        front.append({"timestamp": t, "open": 100, "high": 100.5, "low": 99.5, "close": 100, "volume": 50})
+
+    df = pd.DataFrame(front + data_major + data_pullback + data_sub + data_break_sub)
+    setup = find_active_setup(df, min_pct=2.0)
+    assert setup is not None
+    # Должен быть выбран старший несломанный импульс, а не манипуляция по сломанному подимпульсу
+    assert setup.setup_type in ("TRIPLE_GRID_TRAILING", "TRIPLE_GRID_CORRECTION")
+    assert setup.imp_start_price == pytest.approx(100.0, rel=1e-2)
+    assert setup.imp_peak_price == pytest.approx(130.0, rel=1e-2)
+
+
 def test_entry_buffer_007():
     """Проверка, что буфер 0.07% сдвигает входы ровно на +0.07% выше уровня Фибоначчи."""
     # Импульс 812.25 -> 1054.94 (как на ZEC)

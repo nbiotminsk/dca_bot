@@ -202,6 +202,10 @@ def find_active_setup(
         if not imps:
             continue
 
+        unbroken_setups: list[SetupSignal] = []
+        reclaim_setups: list[SetupSignal] = []
+        manipulation_setups: list[SetupSignal] = []
+
         # Перебираем от самых свежих к старым в поиске неотработанного
         for imp in reversed(imps):
             p_0236 = calc_fib(imp.high, imp.low, 0.236, is_long=is_long, scale=scale)
@@ -237,7 +241,7 @@ def find_active_setup(
             post_df = df.iloc[imp.end_idx + 1:]
             if len(post_df) == 0:
                 # Импульс находится на самой последней свече -> ТРЕЙЛИНГ
-                return SetupSignal(
+                unbroken_setups.append(SetupSignal(
                     setup_type="TRIPLE_GRID_TRAILING",
                     side=side,
                     imp_start_time=imp.start_time,
@@ -253,7 +257,8 @@ def find_active_setup(
                     tp_3=tp_0500,
                     stop_loss=p_1000,
                     description=f"Растущий импульс (+{imp.pct:.2f}%) на текущей свече. Трейлинг тройной сетки (вход +{entry_buffer_pct}%, тейк -{tp_buffer_pct}%).",
-                )
+                ))
+                continue
 
             touched_0500 = False
             touch_05_idx = -1
@@ -375,7 +380,7 @@ def find_active_setup(
                     p_0786 = calc_fib(imp.high, imp.low, reclaim_be_trigger_fib, is_long=is_long, scale=scale)
                     be_mult = 1.0 + (reclaim_be_offset_pct / 100.0) if is_long else 1.0 - (reclaim_be_offset_pct / 100.0)
                     be_price_val = latest_c * be_mult
-                    return SetupSignal(
+                    reclaim_setups.append(SetupSignal(
                         setup_type="SWEEP_RECLAIM",
                         side=side,
                         imp_start_time=imp.start_time,
@@ -392,9 +397,9 @@ def find_active_setup(
                         sweep_pct=swp_pct,
                         macd_divergent=True,
                         description=f"Ложный пробой 1.000 ({swp_pct:.2f}% <= {max_sweep_pct}%) без закрепления с дивергенцией MACD. Тейк 0.618 Fib (-{reclaim_tp_buffer_pct}%), БУ на {reclaim_be_trigger_fib} Fib.",
-                    )
+                    ))
                 elif swp_pct > max_sweep_pct or has_consolidated:
-                    return SetupSignal(
+                    manipulation_setups.append(SetupSignal(
                         setup_type="MANIPULATION",
                         side=side,
                         imp_start_time=imp.start_time,
@@ -410,13 +415,13 @@ def find_active_setup(
                         sweep_price=sweep_val,
                         sweep_pct=swp_pct,
                         description=f"Манипуляция: выход за 1.000 на {swp_pct:.2f}% (порог {max_sweep_pct}%)" + (" с закреплением" if has_consolidated else "") + f". Сетка на 1.618 и 2.000, стоп 2.414.",
-                    )
+                    ))
                 continue
 
             # ─── Сценарий 2: Уровень 1.000 НЕ пробит ────────────────────────────
             if not touched_0500:
                 # Импульс еще развивается без отката к 0.500 -> ТРЕЙЛИНГ
-                return SetupSignal(
+                unbroken_setups.append(SetupSignal(
                     setup_type="TRIPLE_GRID_TRAILING",
                     side=side,
                     imp_start_time=imp.start_time,
@@ -432,7 +437,7 @@ def find_active_setup(
                     tp_3=tp_0500,
                     stop_loss=p_1000,
                     description=f"Растущий импульс (+{imp.pct:.2f}%) без коррекции к 0.500. Режим трейлинга тройной сетки (вход +{entry_buffer_pct}%, тейк -{tp_buffer_pct}%).",
-                )
+                ))
             else:
                 # Касание 0.500 было, но тейк еще не взят -> АКТИВНАЯ ТРОЙНАЯ СЕТКА
                 if touched_0786:
@@ -451,7 +456,7 @@ def find_active_setup(
                     cur_tp2 = tp_0382
                     cur_tp3 = tp_0500
 
-                return SetupSignal(
+                unbroken_setups.append(SetupSignal(
                     setup_type="TRIPLE_GRID_CORRECTION",
                     side=side,
                     imp_start_time=imp.start_time,
@@ -467,7 +472,15 @@ def find_active_setup(
                     tp_3=cur_tp3,
                     stop_loss=p_1000,
                     description=desc,
-                )
+                ))
+
+        # Приоритет: живые несломанные импульсы > ложный пробой (свип) > манипуляция
+        if unbroken_setups:
+            return unbroken_setups[0]
+        if reclaim_setups:
+            return reclaim_setups[0]
+        if manipulation_setups:
+            return manipulation_setups[0]
 
     return None
 
