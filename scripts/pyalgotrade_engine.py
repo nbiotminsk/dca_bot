@@ -410,15 +410,18 @@ def run_pyalgotrade_backtest(
     dd_analyzer = drawdown.DrawDown()
     strat.attachAnalyzer(dd_analyzer)
 
-    strat.run()
+    import warnings
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=RuntimeWarning)
+        strat.run()
 
-    trades = strat.get_trades()
-    metrics = {
-        "final_equity": strat.getResult(),
-        "total_return_pct": ret_analyzer.getCumulativeReturns()[-1] * 100.0 if len(ret_analyzer.getCumulativeReturns()) > 0 else 0.0,
-        "max_drawdown_pct": dd_analyzer.getMaxDrawDown() * 100.0,
-        "sharpe_ratio": sharpe_analyzer.getSharpeRatio(0.0) if sharpe_analyzer.getSharpeRatio(0.0) is not None else 0.0,
-        "n_trades": len(trades),
-    }
+        trades = strat.get_trades()
+        metrics = {
+            "final_equity": strat.getResult(),
+            "total_return_pct": ret_analyzer.getCumulativeReturns()[-1] * 100.0 if len(ret_analyzer.getCumulativeReturns()) > 0 else 0.0,
+            "max_drawdown_pct": dd_analyzer.getMaxDrawDown() * 100.0,
+            "sharpe_ratio": sharpe_analyzer.getSharpeRatio(0.0) if sharpe_analyzer.getSharpeRatio(0.0) is not None else 0.0,
+            "n_trades": len(trades),
+        }
 
     return trades, metrics
