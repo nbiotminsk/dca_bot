@@ -1,66 +1,163 @@
-# Hedge DCA Volatility Analyzer & Trade Tracker
+# DCA Bot — Bybit V5 Algorithmic Trading System & Fibonacci Grid
 
-Standalone-инструмент из двух модулей:
+Профессиональная алгоритмическая система для торговли бессрочными фьючерсами Bybit (**Linear USDT Perpetuals**) по стратегии **«Манипуляция на часе» (1H Fibonacci Price Action & Dual Grid)**.
 
-- **`volatility_calc/`** — волатильность, backtest DCA, оптимизация, regime detection (Bybit Linear Futures).
-- **`trade_tracker/`** — журнал реальных сделок с per-trade метриками, A/B сравнением эпох.
+Система включает в себя:
+* 🤖 **Боевой торговый бот Bybit V5** (`scripts/bybit_trader.py`) с поддержкой мульти-монетной торговли, динамического трейлинга уровней, автоматического безубытка и защиты от дублирования ордеров.
+* 📈 **Индикатор TradingView** (`indicators/fib_dual_grid.pine`) — синхронизированная Pine Script v5 версия с визуализацией импульсов, сеток и сигналов ложного пробоя.
+* 🧪 **Интерактивный бэктестер** (`scripts/backtest_strategy_interactive.py`) с Rich-интерфейсом и эмуляцией рыночного исполнения.
+* 📊 **Модули волатильности и оптимизации DCA** (`volatility_calc/`).
+* 🛡️ **Комплекс тестов** (`tests/test_bybit_trader.py`, 151 unit-тест).
 
-## Установка
+---
+
+## 1. Три варианта торговой стратегии (1H Timeframe)
+
+Все варианты базируются на логарифмической сетке Фибоначчи от часового импульса ($H$ — абсолютный максимум волны, $L$ — старт импульса):
+
+$$\text{Price}(\text{level}) = \exp\Big(\ln(H) - \text{level} \times \big(\ln(H) - \ln(L)\big)\Big)$$
+
+### 🔹 Вариант 1: Ложный пробой (Sweep Reclaim + MACD + Безубыток)
+* **Условия:** Закол уровня `1.000 Fib` не более чем на **0.5%** без закрепления (ни одна свеча не закрывается телом ниже 1.000) + подтверждение отскока гистограммы MACD.
+* **Вход:** На возврате цены выше уровня `1.000` (Reclaim).
+* **Стоп-Лосс:** За минимум тени свипа (`SweepLow * 0.9995`).
+* **Тейк-Профит:** Уровень **0.618 Fib МИНУС 2.0%**.
+* **Безубыток:** При росте цены до уровня **0.786 Fib** стоп-лосс автоматически переносится в безубыток (`Вход + 0.05%`).
+
+### 🔹 Вариант 2: Двойная сетка коррекции (Dual Grid) с Трейлингом
+* **Ордер 1:** Уровень **0.500 Fib** $+0.07\%$ буфер входа. Тейк: **0.236 Fib** $-0.10\%$ буфер.
+* **Ордер 2:** Уровень **0.618 Fib** $+0.07\%$ буфер входа.
+* **Совместный Тейк (Basket TP):** При исполнении Ордера 2 тейк-профит всей позиции выставляется на **0.382 Fib** $-0.10\%$ буфер.
+* **Стоп-Лосс:** Уровень **1.000 Fib**. Суммарный риск ($2.00) делится поровну: **по $1.00 на каждый ордер**.
+* **Трейлинг:** При обновлении максимума импульса без коррекции к 0.500 ордера динамически подтягиваются вверх вслед за рынком.
+* **Защита от зависания:** При срабатывании SL или закрытии позиции незаполненные парные ордера немедленно снимаются.
+
+### 🔹 Вариант 3: Сетка манипуляции (Deep Manipulation Grid 1.618 & 2.000)
+* **Условия:** Пробой $1.000$ глубже **0.5%** или закрытие часовой свечи телом ниже 1.000.
+* **Ордер 1:** Уровень **1.618 Fib** $+0.07\%$ буфер.
+* **Ордер 2 (DCA):** Уровень **2.000 Fib** $+0.07\%$ буфер.
+* **Тейк-Профит:** Возврат к уровню **0.500 Fib** от исходного импульса.
+* **Стоп-Лосс:** Уровень **2.414 Fib** (или аварийный 5.0–6.0 Fib / тайм-аут 30 дней).
+
+---
+
+## 2. Установка и настройка окружения
+
+Проект использует современный быстрый менеджер пакетов **`uv`** (Python 3.11+):
 
 ```bash
-pip install -r requirements.txt
-# или
-pip install -e ".[dev]"
+# Клонирование репозитория
+git clone https://github.com/nbiotminsk/dca_bot.git
+cd dca_bot
+
+# Установка зависимостей через uv
+uv sync
 ```
 
-## Волатильность
+### Настройка API-ключей Bybit (`.env`)
+Создайте в корне проекта файл `.env`:
+```env
+BYBIT_API_KEY="ваш_api_key"
+BYBIT_API_SECRET="ваш_api_secret"
+BYBIT_TESTNET="false"   # true для тестовой сети, false для Mainnet
+```
 
+---
+
+## 3. Конфигурация (`config/trade_config.yaml`)
+
+Файл параметров стратегии и риск-менеджмента:
+
+```yaml
+risk:
+  total_risk_usd: 2.0          # Суммарный риск на сделку ($2.00)
+
+buffers:
+  entry_buffer_pct: 0.07       # Буфер входа перед Фибой (+0.07%)
+  tp_buffer_pct: 0.10          # Буфер тейка перед Фибой (-0.10%)
+  reclaim_max_sweep_pct: 0.5   # Порог закола для ложного пробоя (0.5%)
+  reclaim_allow_close_below: false # Запрет закрытия свечи под 1.000
+  reclaim_tp_buffer_pct: 2.0   # Тейк ложного пробоя: 0.618 Fib минус 2%
+  reclaim_be_trigger_fib: 0.786 # Триггер безубытка: 0.786 Fib
+  reclaim_be_offset_pct: 0.05  # Отступ безубытка к входу (+0.05%)
+
+strategy:
+  preferred_side: "long"       # Торговля только в LONG
+  min_impulse_pct: 2.0         # Минимальный размер импульса (2.0%)
+  lookback_bars: 60            # Окно анализа (60 часовых свечей)
+  timeframe: "1h"              # Рабочий таймфрейм
+  scale: "log"                 # Логарифмическая шкала Fib
+  symbols:                     # Список монет для сканирования и торговли
+    - "NEARUSDT.P"
+    - "ZECUSDT.P"
+    - "ARBUSDT.P"
+```
+
+---
+
+## 4. Запуск торгового бота (`bybit_trader.py`)
+
+### 4.1. Режим симуляции (Dry-Run / Сканер)
+Сканирует рынок по всем монетам из конфига, рассчитывает параметры ордеров и выводит сводные таблицы без отправки транзакций:
 ```bash
-python scripts/calc_volatility.py ETHUSDT
-python scripts/calc_volatility.py HYPEUSDT --days 90 --leverage 2 --json results/hype.json
+uv run python scripts/bybit_trader.py --dry-run
 ```
 
-## Backtest / тест стратегии
-
-По умолчанию **non-overlapping** сделки (следующий entry только после exit).
-
+Выборочный запуск для определенных монет:
 ```bash
-python scripts/test_strategy.py ETHUSDT
-python scripts/test_strategy.py --config config/settings_hype.yaml --symbol HYPEUSDT
-python scripts/test_strategy.py ETHUSDT --days 180 --overlapping   # старый режим
-python scripts/backtest_long.py ETHUSDT
+uv run python scripts/bybit_trader.py --symbols "NEARUSDT.P,SOLUSDT,BTCUSDT" --dry-run
 ```
 
-## Оптимизация DCA
-
+### 4.2. Боевой режим (Live Trading)
+Запуск торговли на реальном аккаунте Bybit с автоматическим выставлением ордеров и переходом в непрерывный мониторинг:
 ```bash
-python scripts/optimize_dca.py HYPEUSDT --days 180
-python scripts/optimize_dca.py HYPEUSDT --days 180 --walk-forward 4 --json results/opt.json
+uv run python scripts/bybit_trader.py --live -y
 ```
 
-## Сделки
+### 4.3. Особенности боевого режима:
+* **Поддержка Bybit Hedge Mode:** Автоматическое определение режима позиций аккаунта (Hedge Mode `positionIdx: 1/2` vs One-Way Mode `positionIdx: 0`).
+* **Идемпотентный перезапуск (Order Adoption):** При перезапуске бот проверяет открытые ордера на бирже и подключает их к мониторингу без создания дубликатов.
+* **Трейлинг без лишних запросов:** Бот проверяет изменение цены на биржевой шаг (`tick_size`) перед отправкой `amend_order`, предотвращая ошибку Bybit `10001 (order not modified)`.
 
+---
+
+## 5. Диагностика и Бэктестинг
+
+### Проверка подключения к Bybit API
 ```bash
-python scripts/add_trade.py ETHUSDT long 2026-01-15 --exit-price 2450 --fees 1.85 \
-    --bot-long-coverage 0.18 --bot-long-orders 5
-python scripts/import_trades.py --template > trades_template.csv
-python scripts/import_trades.py trades.csv --fill-bot-defaults
-python scripts/trade_report.py --group-by bot_long_coverage --mae-coverage-check
+uv run python scripts/test_bybit_connection.py
+```
+Проверяет статус ключей, тип кошелька (UNIFIED/CONTRACT), баланс и текущие открытые позиции.
+
+### Запуск интерактивного бэктестера
+```bash
+uv run python scripts/backtest_strategy_interactive.py --symbol HYPEUSDT --days 90
 ```
 
-## Ключевые улучшения симулятора
+### Бэктест сетки манипуляции (1.618 & 2.000)
+```bash
+uv run python scripts/backtest_manipulation_grid.py --symbol UNIUSDT --days 180
+```
 
-- Non-overlapping trades (по умолчанию)
-- Liq price пересчитывается после DCA-fill
-- Комиссии от notional in+out; опциональный funding
-- Short: filter / trailing / dynamic TP (паритет с long)
-- Equity curve с compound
-- Walk-forward OOS в `optimize_dca.py --walk-forward N`
-- Cache TTL (6ч) + проверка покрытия `days`
+---
 
-## Отчеты и исследования стратегии
+## 6. Тестирование (Unit Tests)
 
-- [Отчет по ТОП-30 монетам за 6 месяцев (Dual Grid + MACD)](docs/coins/TOP_30_COINS_6M_COMPARISON.md)
-- [Сравнительный отчет 12 монет (90 дней)](docs/coins/12_COINS_COMPARISON_90D.md)
+Набор из **151 автоматического теста** покрывает:
+* Форматирование тикеров (включая TV-суффиксы `.P` и `.PERP`).
+* Округление шага цены и лота по биржевым спецификациям.
+* Детекторы импульсов, сетки трейлинга, ложного пробоя и манипуляции.
+* Распределение риска 50/50 и перенос тейка корзины на 0.382.
+* Загрузку конфигурации со списком монет.
 
-См. `PLAN.md` / `ARCHITECTURE_PLAN.md` для архитектуры.
+Запуск тестов:
+```bash
+uv run pytest -v
+```
+
+---
+
+## 7. Документация для разработчиков и AI-агентов
+
+* 🧠 **[`AGENT.md`](AGENT.md)** — полное руководство и карта проекта для AI-ассистентов.
+* 📜 **[`strategiya-manipulyaciya-na-chase-gemini.md`](strategiya-manipulyaciya-na-chase-gemini.md)** — глубокая математическая спецификация 3 вариантов стратегии.
