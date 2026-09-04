@@ -62,6 +62,7 @@ show_min    = input.bool(true, "Показывать Младшую Фибу (Л
 min_min_p   = input.float(2.0, "Мин. размах Младшей (%)", minval=0.5, step=0.5, tooltip="Минимальный процент движения от старта до текущей вершины", group=grp_min_set)
 min_bars    = input.int(6, "Макс. длительность импульса (свечей)", minval=2, maxval=20, tooltip="Сколько свечей развивался сам импульс до вершины", group=grp_min_set)
 min_lookb   = input.int(60, "Глубина поиска Младшей (свечей)", minval=10, maxval=300, group=grp_min_set)
+min_tol_p   = input.float(0.05, "Допуск касания 0.500 (%)", minval=0.0, maxval=0.5, step=0.01, tooltip="Погрешность в % цены при проверке касания уровня 0.500 (напр. 0.05%)", group=grp_min_set)
 
 grp_min_col = "🎨 Младшая Фиба: Цвета и Толщина уровней"
 col_min_023 = input.color(color.gray, "0.236 (Дальний Тейк)", group=grp_min_col)
@@ -114,7 +115,7 @@ i_macd_sig  = input.int(9,  "MACD Signal Length", minval=1, group=grp_macd)
 
 grp_swp     = "🎯 Детектор Ложного Пробоя (Свип Ликвидности & MACD)"
 show_swp    = input.bool(true, "Показывать сигналы Ложного Пробоя (Sweep Reclaim)", group=grp_swp)
-max_swp_p   = input.float(3.5, "Макс. глубина свипа за 1.0 (%)", minval=0.5, step=0.5, tooltip="Максимальный допустимый прокол уровня 1.000 для сбора ликвидности (рекомендовано 0.5% - 3.5%)", group=grp_swp)
+max_swp_p   = input.float(0.5, "Макс. глубина свипа за 1.0 (%)", minval=0.1, step=0.1, tooltip="Максимальный допустимый прокол уровня 1.000 для сбора ликвидности без закрепления (по умолчанию 0.5%)", group=grp_swp)
 
 grp_qual    = "🛡️ Модуль Качества Импульса (RSI + Фитиль + MACD)"
 use_qual    = input.bool(true, "Включить Модуль Качества (Anti-Dump Filter)", group=grp_qual)
@@ -295,22 +296,25 @@ find_minor_long(int lookback, float min_pct, int max_duration) =>
                         broken := true
                         break
                     float fib_05_first = calc_fib_long(h_s, l_s, 0.500, use_log)
-                    if low[k] <= fib_05_first
+                    float tol_05 = fib_05_first * (min_tol_p / 100.0)
+                    if low[k] <= (fib_05_first + tol_05)
                         broken := true
                         break
-                    if high[k] > h_s
+                    // Импульс подтверждается ТОЛЬКО закрытием выше High первой свечи бычьей свечой
+                    if close[k] > h_s and close[k] > open[k]
                         is_impulse := true
                         cur_h := high[k]
                         end_idx := k
                 else
                     if not entered_05
                         float fib_05_cur = calc_fib_long(cur_h, l_s, 0.500, use_log)
-                        if low[k] <= fib_05_cur
+                        float tol_cur = fib_05_cur * (min_tol_p / 100.0)
+                        if low[k] <= (fib_05_cur + tol_cur)
                             // Вход на 0.500 состоялся!
                             entered_05 := true
                             entry_k_05 := k
                         else
-                            // Входа на 0.5 еще не было — продолжаем тянуть фибу вслед за новыми максимумами
+                            // Входа на 0.5 еще не было — продолжаем тянуть фибу при новом максимуме
                             if high[k] > cur_h
                                 cur_h := high[k]
                                 end_idx := k
@@ -328,14 +332,22 @@ find_minor_long(int lookback, float min_pct, int max_duration) =>
                                 entry_k_0618 := k
 
                         // 1. Проверка взятия тейка:
-                        // Если вошли оба ордера: сетка полностью закрыта, только когда закрыт Ордер 1 (TP 0.236 или пик cur_h)
-                        // Если вошел только Ордер 1: закрывается на TP 0.236
-                        int entry_ref = entered_0618 ? entry_k_05 : entry_k_05
-                        bool tp_hit = (k < entry_ref and (high[k] >= tp_0236 or close[k] >= tp_0236 or high[k] >= cur_h or close[k] >= cur_h)) or
-                                      (k == entry_ref and (close[k] >= tp_0236 or close[k] >= cur_h))
-                        if tp_hit
-                            broken := true
-                            break
+                        // Если вошли оба ордера (0.500 и 0.618): тейк обоих ордеров на уровне 0.382!
+                        // Если вошел только ордер 0.500: тейк на уровне 0.236!
+                        float tp_tol_382 = tp_0382 * 0.0005
+                        float tp_tol_236 = tp_0236 * 0.0005
+                        if entered_0618
+                            bool tp_0382_hit = (k < entry_k_0618 and (high[k] >= (tp_0382 - tp_tol_382) or close[k] >= (tp_0382 - tp_tol_382) or high[k] >= cur_h or close[k] >= cur_h)) or
+                                               (k == entry_k_0618 and (close[k] >= (tp_0382 - tp_tol_382) or close[k] >= cur_h))
+                            if tp_0382_hit
+                                broken := true
+                                break
+                        else
+                            bool tp_0236_hit = (k < entry_k_05 and (high[k] >= (tp_0236 - tp_tol_236) or close[k] >= (tp_0236 - tp_tol_236) or high[k] >= cur_h or close[k] >= cur_h)) or
+                                               (k == entry_k_05 and (close[k] >= (tp_0236 - tp_tol_236) or close[k] >= cur_h))
+                            if tp_0236_hit
+                                broken := true
+                                break
                         
                         // 2. Если упали ниже уровня 1.0 (l_s)
                         if low[k] < l_s
@@ -360,7 +372,8 @@ find_minor_long(int lookback, float min_pct, int max_duration) =>
                         cur_h := high[0]
                         end_idx := 0
                     float fib_05_live = calc_fib_long(cur_h, l_s, 0.500, use_log)
-                    if low[0] <= fib_05_live
+                    float tol_live = fib_05_live * (min_tol_p / 100.0)
+                    if low[0] <= (fib_05_live + tol_live)
                         entered_05 := true
                         entry_k_05 := 0
                 else
@@ -371,11 +384,18 @@ find_minor_long(int lookback, float min_pct, int max_duration) =>
                         entered_0618 := true
                         entry_k_0618 := 0
                     
-                    int entry_live_ref = entered_0618 ? entry_k_05 : entry_k_05
-                    bool tp_live_hit = (entry_live_ref > 0 and (high[0] >= tp_0236 or close[0] >= tp_0236 or high[0] >= cur_h or close[0] >= cur_h)) or
-                                       (entry_live_ref == 0 and (close[0] >= tp_0236 or close[0] >= cur_h))
-                    if tp_live_hit
-                        broken := true
+                    float tp_tol_382 = tp_0382 * 0.0005
+                    float tp_tol_236 = tp_0236 * 0.0005
+                    if entered_0618
+                        bool tp_live_hit = (entry_k_0618 > 0 and (high[0] >= (tp_0382 - tp_tol_382) or close[0] >= (tp_0382 - tp_tol_382) or high[0] >= cur_h or close[0] >= cur_h)) or
+                                           (entry_k_0618 == 0 and (close[0] >= (tp_0382 - tp_tol_382) or close[0] >= cur_h))
+                        if tp_live_hit
+                            broken := true
+                    else
+                        bool tp_live_hit = (entry_k_05 > 0 and (high[0] >= (tp_0236 - tp_tol_236) or close[0] >= (tp_0236 - tp_tol_236) or high[0] >= cur_h or close[0] >= cur_h)) or
+                                           (entry_k_05 == 0 and (close[0] >= (tp_0236 - tp_tol_236) or close[0] >= cur_h))
+                        if tp_live_hit
+                            broken := true
                     
                     if not broken
                         float sl_lim = show_manip ? calc_fib_long(cur_h, l_s, 2.000, use_log) : calc_fib_long(cur_h, l_s, 0.860, use_log)
@@ -425,20 +445,24 @@ find_minor_short(int lookback, float min_pct, int max_duration) =>
                         broken := true
                         break
                     float fib_05_first = calc_fib_short(h_s, l_s, 0.500, use_log)
-                    if high[k] >= fib_05_first
+                    float tol_05 = fib_05_first * (min_tol_p / 100.0)
+                    if high[k] >= (fib_05_first - tol_05)
                         broken := true
                         break
-                    if low[k] < l_s
+                    // Дамп подтверждается ТОЛЬКО закрытием ниже Low первой свечи медвежьей свечой
+                    if close[k] < l_s and close[k] < open[k]
                         is_dump := true
                         cur_l := low[k]
                         end_idx := k
                 else
                     if not entered_05
                         float fib_05_cur = calc_fib_short(h_s, cur_l, 0.500, use_log)
-                        if high[k] >= fib_05_cur
+                        float tol_cur = fib_05_cur * (min_tol_p / 100.0)
+                        if high[k] >= (fib_05_cur - tol_cur)
                             entered_05 := true
                             entry_k_05 := k
                         else
+                            // При новом минимуме продолжаем тянуть фибу
                             if low[k] < cur_l
                                 cur_l := low[k]
                                 end_idx := k
@@ -456,14 +480,22 @@ find_minor_short(int lookback, float min_pct, int max_duration) =>
                                 entry_k_0618 := k
 
                         // 1. Проверка взятия тейка:
-                        // Если вошли оба ордера: сетка полностью закрыта, только когда закрыт Ордер 1 (TP 0.236 или пик cur_l)
-                        // Если вошел только Ордер 1: закрывается на TP 0.236
-                        int entry_short_ref = entered_0618 ? entry_k_05 : entry_k_05
-                        bool tp_hit = (k < entry_short_ref and (low[k] <= tp_0236 or close[k] <= tp_0236 or low[k] <= cur_l or close[k] <= cur_l)) or
-                                      (k == entry_short_ref and (close[k] <= tp_0236 or close[k] <= cur_l))
-                        if tp_hit
-                            broken := true
-                            break
+                        // Если вошли оба ордера (0.500 и 0.618): тейк обоих ордеров на уровне 0.382!
+                        // Если вошел только ордер 0.500: тейк на уровне 0.236!
+                        float tp_tol_382 = tp_0382 * 0.0005
+                        float tp_tol_236 = tp_0236 * 0.0005
+                        if entered_0618
+                            bool tp_0382_hit = (k < entry_k_0618 and (low[k] <= (tp_0382 + tp_tol_382) or close[k] <= (tp_0382 + tp_tol_382) or low[k] <= cur_l or close[k] <= cur_l)) or
+                                               (k == entry_k_0618 and (close[k] <= (tp_0382 + tp_tol_382) or close[k] <= cur_l))
+                            if tp_0382_hit
+                                broken := true
+                                break
+                        else
+                            bool tp_0236_hit = (k < entry_k_05 and (low[k] <= (tp_0236 + tp_tol_236) or close[k] <= (tp_0236 + tp_tol_236) or low[k] <= cur_l or close[k] <= cur_l)) or
+                                               (k == entry_k_05 and (close[k] <= (tp_0236 + tp_tol_236) or close[k] <= cur_l))
+                            if tp_0236_hit
+                                broken := true
+                                break
                         
                         if high[k] > h_s
                             if show_manip
@@ -485,7 +517,8 @@ find_minor_short(int lookback, float min_pct, int max_duration) =>
                         cur_l := low[0]
                         end_idx := 0
                     float fib_05_live = calc_fib_short(h_s, cur_l, 0.500, use_log)
-                    if high[0] >= fib_05_live
+                    float tol_live = fib_05_live * (min_tol_p / 100.0)
+                    if high[0] >= (fib_05_live - tol_live)
                         entered_05 := true
                         entry_k_05 := 0
                 else
@@ -496,11 +529,18 @@ find_minor_short(int lookback, float min_pct, int max_duration) =>
                         entered_0618 := true
                         entry_k_0618 := 0
                     
-                    int entry_live_ref = entered_0618 ? entry_k_05 : entry_k_05
-                    bool tp_live_hit = (entry_live_ref > 0 and (low[0] <= tp_0236 or close[0] <= tp_0236 or low[0] <= cur_l or close[0] <= cur_l)) or
-                                       (entry_live_ref == 0 and (close[0] <= tp_0236 or close[0] <= cur_l))
-                    if tp_live_hit
-                        broken := true
+                    float tp_tol_382 = tp_0382 * 0.0005
+                    float tp_tol_236 = tp_0236 * 0.0005
+                    if entered_0618
+                        bool tp_live_hit = (entry_k_0618 > 0 and (low[0] <= (tp_0382 + tp_tol_382) or close[0] <= (tp_0382 + tp_tol_382) or low[0] <= cur_l or close[0] <= cur_l)) or
+                                           (entry_k_0618 == 0 and (close[0] <= (tp_0382 + tp_tol_382) or close[0] <= cur_l))
+                        if tp_live_hit
+                            broken := true
+                    else
+                        bool tp_live_hit = (entry_k_05 > 0 and (low[0] <= (tp_0236 + tp_tol_236) or close[0] <= (tp_0236 + tp_tol_236) or low[0] <= cur_l or close[0] <= cur_l)) or
+                                           (entry_k_05 == 0 and (close[0] <= (tp_0236 + tp_tol_236) or close[0] <= cur_l))
+                        if tp_live_hit
+                            broken := true
                     
                     if not broken
                         float sl_lim = show_manip ? calc_fib_short(h_s, cur_l, 2.000, use_log) : calc_fib_short(h_s, cur_l, 0.860, use_log)
@@ -649,14 +689,16 @@ if barstate.islast
                     if sweep_low < l
                         float swp_pct = (l - sweep_low) / l * 100.0
                         if swp_pct <= max_swp_p
-                            // Проверяем возврат (Reclaim) выше 1.000
-                            bool has_reclaim = false
-                            int  reclaim_k   = -1
-                            for k = sweep_k to 0
-                                if close[k] >= l or (close[k] > open[k] and (close[k] - low[k]) > (high[k] - close[k]))
-                                    has_reclaim := true
-                                    reclaim_k   := k
+                            // Проверяем отсутствие закрепления цены под 1.000 (ни одна свеча не должна закрыться ниже l)
+                            bool closed_below = false
+                            for k = bars_since_start - 1 to 0
+                                if close[k] < l
+                                    closed_below := true
                                     break
+                            
+                            // Проверяем возврат (Reclaim) выше 1.000 без закрепления
+                            bool has_reclaim = not closed_below and (close[0] >= l or close[sweep_k] >= l)
+                            int  reclaim_k   = (close[0] >= l) ? 0 : sweep_k
                             
                             // Проверяем моментум / дивергенцию MACD
                             int prev_k = math.min(sweep_k + 1, 200)
@@ -666,7 +708,9 @@ if barstate.islast
                                 swp_detected_long := true
                                 swp_pct_val       := swp_pct
                                 swp_ext_val       := sweep_low
-                                swp_target_val    := calc_fib_long(h, l, 0.500, use_log)
+                                float p_0618      = calc_fib_long(h, l, 0.618, use_log)
+                                swp_target_val    := p_0618 * 0.98 // Тейк: 0.618 Fib минус 2.0%
+                                float p_0786      = calc_fib_long(h, l, 0.786, use_log) // Триггер безубытка
                                 
                                 int swp_bar_idx = bar_index - sweep_k
                                 int rec_bar_idx = bar_index - (reclaim_k >= 0 ? reclaim_k : 0)
@@ -677,7 +721,8 @@ if barstate.islast
                                          "Бычья дивергенция MACD\n" +
                                          "Свип: -" + str.tostring(swp_pct, "#.##") + "% (" + fmt_p(sweep_low) + ")\n" +
                                          "Вход: Reclaim " + fmt_p(l) + "\n" +
-                                         "🎯 Цель (0.500): " + fmt_p(swp_target_val) + "\n" +
+                                         "🎯 Цель (0.618 - 2%): " + fmt_p(swp_target_val) + "\n" +
+                                         "🛡️ БУ (0.786): " + fmt_p(p_0786) + "\n" +
                                          "🛑 Стоп: " + fmt_p(sweep_low),
                                     color=color.new(#10b981, 0), textcolor=color.white,
                                     style=label.style_label_up, size=size.normal)
@@ -786,13 +831,16 @@ if barstate.islast
                     if sweep_high > h
                         float swp_pct = (sweep_high - h) / h * 100.0
                         if swp_pct <= max_swp_p
-                            bool has_reclaim = false
-                            int  reclaim_k   = -1
-                            for k = sweep_k to 0
-                                if close[k] <= h or (close[k] < open[k] and (high[k] - close[k]) > (close[k] - low[k]))
-                                    has_reclaim := true
-                                    reclaim_k   := k
+                            // Проверяем отсутствие закрепления цены над 1.000 (ни одна свеча не должна закрыться выше h)
+                            bool closed_above = false
+                            for k = bars_since_start - 1 to 0
+                                if close[k] > h
+                                    closed_above := true
                                     break
+                            
+                            // Проверяем возврат (Reclaim) ниже 1.000 без закрепления
+                            bool has_reclaim = not closed_above and (close[0] <= h or close[sweep_k] <= h)
+                            int  reclaim_k   = (close[0] <= h) ? 0 : sweep_k
                             
                             int prev_k = math.min(sweep_k + 1, 200)
                             bool macd_rebound = (hist_line[sweep_k] < hist_line[prev_k]) or (hist_line[0] < hist_line[sweep_k]) or (hist_line[0] < 0)
@@ -801,7 +849,9 @@ if barstate.islast
                                 swp_detected_short := true
                                 swp_pct_val        := swp_pct
                                 swp_ext_val        := sweep_high
-                                swp_target_val     := calc_fib_short(h, l, 0.500, use_log)
+                                float p_0618       = calc_fib_short(h, l, 0.618, use_log)
+                                swp_target_val     := p_0618 * 1.02 // Тейк: 0.618 Fib плюс 2.0%
+                                float p_0786       = calc_fib_short(h, l, 0.786, use_log) // Триггер безубытка
                                 
                                 int swp_bar_idx = bar_index - sweep_k
                                 int rec_bar_idx = bar_index - (reclaim_k >= 0 ? reclaim_k : 0)
@@ -811,7 +861,8 @@ if barstate.islast
                                          "Медвежья дивергенция MACD\n" +
                                          "Свип: +" + str.tostring(swp_pct, "#.##") + "% (" + fmt_p(sweep_high) + ")\n" +
                                          "Вход: Reclaim " + fmt_p(h) + "\n" +
-                                         "🎯 Цель (0.500): " + fmt_p(swp_target_val) + "\n" +
+                                         "🎯 Цель (0.618 + 2%): " + fmt_p(swp_target_val) + "\n" +
+                                         "🛡️ БУ (0.786): " + fmt_p(p_0786) + "\n" +
                                          "🛑 Стоп: " + fmt_p(sweep_high),
                                     color=color.new(#ef4444, 0), textcolor=color.white,
                                     style=label.style_label_down, size=size.normal)
@@ -929,12 +980,12 @@ if barstate.islast
             table.cell(risk_tbl, 0, 6, "🎯 СВИП ЛИКВИДНОСТИ:", bgcolor=color.new(#10b981, 20), text_color=color.white, text_size=size.small)
             table.cell(risk_tbl, 1, 6, "🟢 ЛОЖНЫЙ ПРОБОЙ (-" + str.tostring(swp_pct_val, "#.#") + "%)", bgcolor=color.new(#10b981, 20), text_color=color.lime, text_size=size.small)
             table.cell(risk_tbl, 0, 7, "  Reclaim план:", text_color=color.silver, text_size=size.small)
-            table.cell(risk_tbl, 1, 7, "TP 0.500 (" + fmt_p(swp_target_val) + ") | SL " + fmt_p(swp_ext_val), text_color=color.yellow, text_size=size.small)
+            table.cell(risk_tbl, 1, 7, "TP 0.618-2% (" + fmt_p(swp_target_val) + ") | SL " + fmt_p(swp_ext_val), text_color=color.yellow, text_size=size.small)
         else if swp_detected_short
             table.cell(risk_tbl, 0, 6, "🎯 СВИП ЛИКВИДНОСТИ:", bgcolor=color.new(#ef4444, 20), text_color=color.white, text_size=size.small)
             table.cell(risk_tbl, 1, 6, "🔴 ЛОЖНЫЙ ВЫНОС (+" + str.tostring(swp_pct_val, "#.#") + "%)", bgcolor=color.new(#ef4444, 20), text_color=color.orange, text_size=size.small)
             table.cell(risk_tbl, 0, 7, "  Reclaim план:", text_color=color.silver, text_size=size.small)
-            table.cell(risk_tbl, 1, 7, "TP 0.500 (" + fmt_p(swp_target_val) + ") | SL " + fmt_p(swp_ext_val), text_color=color.yellow, text_size=size.small)
+            table.cell(risk_tbl, 1, 7, "TP 0.618+2% (" + fmt_p(swp_target_val) + ") | SL " + fmt_p(swp_ext_val), text_color=color.yellow, text_size=size.small)
 
     // ── 💰 РИСК-КАЛЬКУЛЯТОР ОБЪЕМА ПОЗИЦИИ ──
     bool has_active_long = allow_long and not na(min_l_high) and not na(min_l_low)

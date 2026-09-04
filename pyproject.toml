@@ -16,6 +16,8 @@ dependencies = [
   "pyyaml>=6.0",
   "rich>=13.7",
   "pyalgotrade>=0.20",
+  "pybit>=5.17.0",
+  "python-dotenv>=1.2.3",
 ]
 
 [project.optional-dependencies]

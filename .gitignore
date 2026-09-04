@@ -11,3 +11,5 @@ results/*.json
 .idea/
 .vscode/
 .DS_Store
+.env
+.env.*
