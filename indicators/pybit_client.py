@@ -2,6 +2,7 @@
 
 import math
 import os
+import time
 from dataclasses import dataclass
 from typing import Any, Optional
 
@@ -84,6 +85,25 @@ class BybitClient:
         )
         self._specs_cache: dict[str, InstrumentSpecs] = {}
         self._position_idx_cache: dict[str, int] = {}
+        self._last_request_time: float = 0.0
+        self._min_request_interval: float = 0.08  # ~12.5 req/sec max to avoid Bybit 10006
+        self._klines_cache: dict[tuple[str, str], tuple[float, pd.DataFrame]] = {}
+        self._klines_cache_ttl: float = 8.0  # 8.0s TTL
+        self._positions_cache: dict[str, tuple[float, list[dict[str, Any]]]] = {}
+        self._positions_cache_ttl: float = 3.0  # 3.0s TTL
+        self._ticker_cache: dict[str, tuple[float, float]] = {}
+        self._ticker_cache_ttl: float = 3.0  # 3.0s TTL
+        self._balance_cache: Optional[tuple[float, float]] = None
+        self._balance_cache_ttl: float = 5.0  # 5.0s TTL
+
+    def _throttle(self, min_interval: Optional[float] = None) -> None:
+        """Ограничивает частоту исходящих запросов к Bybit API во избежание 10006 Rate Limit."""
+        interval = min_interval if min_interval is not None else self._min_request_interval
+        now = time.time()
+        elapsed = now - self._last_request_time
+        if elapsed < interval:
+            time.sleep(interval - elapsed)
+        self._last_request_time = time.time()
 
     def get_position_idx(self, symbol: str, side: str = "Buy") -> int:
         """
@@ -95,6 +115,7 @@ class BybitClient:
         sym = symbol.upper()
         if sym not in self._position_idx_cache:
             try:
+                self._throttle()
                 resp = self.session.get_positions(category="linear", symbol=sym)
                 positions = resp.get("result", {}).get("list", [])
                 has_hedge = any(p.get("positionIdx") in (1, 2) for p in positions)
@@ -113,6 +134,7 @@ class BybitClient:
         if sym in self._specs_cache:
             return self._specs_cache[sym]
 
+        self._throttle()
         resp = self.session.get_instruments_info(category="linear", symbol=sym)
         ret_code = resp.get("retCode", 0)
         if ret_code != 0:
@@ -151,7 +173,16 @@ class BybitClient:
         interval: 1, 3, 5, 15, 30, 60, 120, 240, 360, 720, D, M, W
         """
         sym = symbol.upper()
-        resp = self.session.get_kline(category="linear", symbol=sym, interval=str(interval), limit=limit)
+        cache_key = (sym, str(interval))
+        now = time.time()
+        if cache_key in self._klines_cache:
+            cached_time, cached_df = self._klines_cache[cache_key]
+            if (now - cached_time) < self._klines_cache_ttl and len(cached_df) >= limit:
+                return cached_df.tail(limit).copy()
+
+        self._throttle()
+        fetch_limit = max(limit, 140)
+        resp = self.session.get_kline(category="linear", symbol=sym, interval=str(interval), limit=fetch_limit)
         ret_code = resp.get("retCode", 0)
         if ret_code != 0:
             raise ValueError(f"Ошибка загрузки kline для {sym}: {resp.get('retMsg')}")
@@ -179,7 +210,8 @@ class BybitClient:
             )
 
         df = pd.DataFrame(data)
-        return df
+        self._klines_cache[cache_key] = (time.time(), df)
+        return df.tail(limit).copy()
 
     def round_price(self, price: float, symbol: str) -> float:
         specs = self.get_specs(symbol)
@@ -411,6 +443,9 @@ class BybitClient:
         if reduce_only:
             params["reduceOnly"] = True
 
+        self._throttle()
+        self._positions_cache.pop(symbol.upper(), None)
+        self._balance_cache = None
         resp = self.session.place_order(**params)
         ret_code = resp.get("retCode", 0)
         if ret_code != 0:
@@ -448,6 +483,8 @@ class BybitClient:
         if stop_loss is not None:
             params["stopLoss"] = f"{self.round_price(stop_loss, symbol):.{specs.price_decimals}f}"
 
+        self._throttle()
+        self._positions_cache.pop(symbol.upper(), None)
         resp = self.session.amend_order(**params)
         ret_code = resp.get("retCode", 0)
         if ret_code != 0:
@@ -456,6 +493,8 @@ class BybitClient:
 
     def cancel_order(self, symbol: str, order_id: str) -> dict[str, Any]:
         """Отменяет ордер."""
+        self._throttle()
+        self._positions_cache.pop(symbol.upper(), None)
         resp = self.session.cancel_order(category="linear", symbol=symbol.upper(), orderId=order_id)
         ret_code = resp.get("retCode", 0)
         if ret_code != 0:
@@ -464,13 +503,22 @@ class BybitClient:
 
     def get_open_orders(self, symbol: str) -> list[dict[str, Any]]:
         """Получает список открытых ордеров по символу."""
+        self._throttle()
         resp = self.session.get_open_orders(category="linear", symbol=symbol.upper())
         return resp.get("result", {}).get("list", [])
 
     def get_position(self, symbol: str, side: str = "Buy") -> Optional[dict[str, Any]]:
         """Возвращает открытую позицию по символу или None если позиции нет."""
-        resp = self.session.get_positions(category="linear", symbol=symbol.upper())
-        positions = resp.get("result", {}).get("list", [])
+        sym = symbol.upper()
+        now = time.time()
+        if sym in self._positions_cache and (now - self._positions_cache[sym][0]) < self._positions_cache_ttl:
+            positions = self._positions_cache[sym][1]
+        else:
+            self._throttle()
+            resp = self.session.get_positions(category="linear", symbol=sym)
+            positions = resp.get("result", {}).get("list", [])
+            self._positions_cache[sym] = (time.time(), positions)
+
         target_idx = self.get_position_idx(symbol, side)
         for pos in positions:
             if float(pos.get("size", "0")) > 0:
@@ -516,6 +564,8 @@ class BybitClient:
             params["stopLoss"] = f"{self.round_price(stop_loss, symbol):.{specs.price_decimals}f}"
             params["slTriggerBy"] = sl_trigger_by
 
+        self._throttle()
+        self._positions_cache.pop(symbol.upper(), None)
         resp = self.session.set_trading_stop(**params)
         ret_code = resp.get("retCode", 0)
         if ret_code != 0:
@@ -544,6 +594,7 @@ class BybitClient:
             if o.get("orderId") == order_id:
                 return o
         try:
+            self._throttle()
             resp = self.session.get_order_history(category="linear", symbol=symbol.upper(), orderId=order_id)
             if resp.get("retCode", 0) == 0:
                 orders = resp.get("result", {}).get("list", [])
@@ -574,20 +625,29 @@ class BybitClient:
         """
         Возвращает доступную свободную маржу на Unified Trading Account (в USD/USDT).
         """
+        now = time.time()
+        if self._balance_cache is not None and (now - self._balance_cache[0]) < self._balance_cache_ttl:
+            return self._balance_cache[1]
+
         try:
+            self._throttle()
             resp = self.session.get_wallet_balance(accountType="UNIFIED")
             if resp.get("retCode", 0) == 0:
                 acc_list = resp.get("result", {}).get("list", [])
                 if acc_list:
                     tot_avail = acc_list[0].get("totalAvailableBalance")
                     if tot_avail is not None and str(tot_avail).strip():
-                        return float(tot_avail)
+                        val = float(tot_avail)
+                        self._balance_cache = (time.time(), val)
+                        return val
                     # fallback к монете USDT
                     for coin_info in acc_list[0].get("coin", []):
                         if coin_info.get("coin") == "USDT":
                             w_avail = coin_info.get("availableToWithdraw") or coin_info.get("walletBalance")
                             if w_avail:
-                                return float(w_avail)
+                                val = float(w_avail)
+                                self._balance_cache = (time.time(), val)
+                                return val
         except Exception:
             pass
         return 0.0
@@ -603,6 +663,7 @@ class BybitClient:
             return self._leverage_cache[sym]
 
         try:
+            self._throttle()
             resp = self.session.get_positions(category="linear", symbol=sym)
             if resp.get("retCode", 0) == 0:
                 p_list = resp.get("result", {}).get("list", [])
@@ -629,14 +690,22 @@ class BybitClient:
         """
         Возвращает текущую рыночную цену (lastPrice) инструмента.
         """
+        sym = symbol.upper()
+        now = time.time()
+        if sym in self._ticker_cache and (now - self._ticker_cache[sym][0]) < self._ticker_cache_ttl:
+            return self._ticker_cache[sym][1]
+
         try:
-            resp = self.session.get_tickers(category="linear", symbol=symbol.upper())
+            self._throttle()
+            resp = self.session.get_tickers(category="linear", symbol=sym)
             if resp.get("retCode", 0) == 0:
                 t_list = resp.get("result", {}).get("list", [])
                 if t_list:
                     p = t_list[0].get("lastPrice")
                     if p:
-                        return float(p)
+                        price = float(p)
+                        self._ticker_cache[sym] = (time.time(), price)
+                        return price
         except Exception:
             pass
         return 0.0

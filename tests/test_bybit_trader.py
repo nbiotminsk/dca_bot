@@ -1392,5 +1392,92 @@ def test_find_active_setup_awaiting_break_below_vs_skipped():
     assert setup2 is None or setup2.imp_start_price > 100.0
 
 
+def test_bybit_client_throttle():
+    """Проверка работы внутреннего ограничителя скорости запросов (_throttle)."""
+    import time
+    from indicators.pybit_client import BybitClient
+    client = BybitClient(testnet=True)
+    client._min_request_interval = 0.05
+    client._last_request_time = time.time()
+    t0 = time.time()
+    client._throttle(0.05)
+    t1 = time.time()
+    assert (t1 - t0) >= 0.04
+
+
+def test_bybit_client_kline_caching():
+    """Проверка кэширования свечей: minor и major слои используют один кэш без повторных API-запросов."""
+    from indicators.pybit_client import BybitClient
+    client = BybitClient(testnet=True)
+    call_count = 0
+
+    def mock_get_kline(category, symbol, interval, limit):
+        nonlocal call_count
+        call_count += 1
+        now_ms = 1700000000000
+        return {
+            "retCode": 0,
+            "result": {
+                "list": [
+                    [str(now_ms - i * 60000), "100", "105", "99", "102", "50", "5000"]
+                    for i in range(limit)
+                ]
+            }
+        }
+
+    client.session.get_kline = mock_get_kline
+    client._klines_cache_ttl = 5.0
+
+    # Первый вызов (minor layer): запрашивает 10 свечей, fetch_klines запрашивает max(10, 140) = 140
+    df1 = client.fetch_klines("BTCUSDT", interval="60", limit=10)
+    assert call_count == 1
+    assert len(df1) == 10
+
+    # Второй вызов (major layer) для той же монеты с limit=140 -> должен взять из кэша!
+    df2 = client.fetch_klines("BTCUSDT", interval="60", limit=140)
+    assert call_count == 1
+    assert len(df2) == 140
+
+    # Вызов для другого символа -> делает сетевой запрос
+    df3 = client.fetch_klines("ETHUSDT", interval="60", limit=10)
+    assert call_count == 2
+
+
+def test_bybit_client_position_caching_and_invalidation():
+    """Проверка кэширования позиций и их инвалидации при операциях."""
+    from indicators.pybit_client import BybitClient
+    client = BybitClient(testnet=True)
+    pos_calls = 0
+
+    def mock_get_positions(category, symbol):
+        nonlocal pos_calls
+        pos_calls += 1
+        return {
+            "retCode": 0,
+            "result": {
+                "list": [{"symbol": symbol, "size": "10.0", "positionIdx": 0, "avgPrice": "50.0"}]
+            }
+        }
+
+    client.session.get_positions = mock_get_positions
+    client._position_idx_cache["SOLUSDT"] = 0
+    client._positions_cache_ttl = 3.0
+
+    # 1. Первый запрос
+    p1 = client.get_position("SOLUSDT")
+    assert pos_calls == 1
+    assert p1 is not None and float(p1["size"]) == 10.0
+
+    # 2. Второй запрос сразу же -> из кэша
+    p2 = client.get_position("SOLUSDT")
+    assert pos_calls == 1
+
+    # 3. Инвалидация при выставлении ордера / отмене
+    client._positions_cache.pop("SOLUSDT", None)
+    p3 = client.get_position("SOLUSDT")
+    assert pos_calls == 2
+
+
+
 
 

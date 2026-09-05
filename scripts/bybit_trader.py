@@ -2636,6 +2636,8 @@ def main():
                     process_monitor_step(m, client, cfg, interval, is_live=is_live)
                 except Exception as sym_err:
                     console.print(f"[red]⚠️ [{m.symbol}] Ошибка мониторинга: {sym_err}[/red]")
+                # Плавная пауза между мониторами во избежание пиковых всплесков запросов
+                time.sleep(0.08)
 
             if args.once and all(m.done or m.state == "IDLE" for m in active_monitors):
                 break
