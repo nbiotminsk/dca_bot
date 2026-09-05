@@ -1523,12 +1523,29 @@ def main():
         if sym not in seen_symbols:
             if is_live:
                 try:
+                    pos_info = client.get_position(sym)
+                    pos_size = float(pos_info.get("size", 0)) if pos_info else 0.0
+                    if pos_size > 0:
+                        tp_val = float(pos_info.get("takeProfit", 0)) if pos_info.get("takeProfit") else None
+                        sl_val = float(pos_info.get("stopLoss", 0)) if pos_info.get("stopLoss") else None
+                        console.print(f"ℹ️ [{sym}] Обнаружена открытая позиция {pos_size} шт. (TP: {tp_val}, SL: {sl_val}). Подключаем к мониторингу!")
+                        active_monitors.append(ActiveTradeMonitor(
+                            symbol=sym,
+                            setup_type="TRIPLE_GRID_TRAILING",
+                            state="O1_FILLED",
+                            position_was_open=True,
+                            cur_e1=float(pos_info.get("avgPrice", 0)),
+                            cur_tp1=tp_val or 0.0,
+                            sl=sl_val or 0.0,
+                        ))
+                        continue
+
                     lingering = client.get_open_orders(sym)
                     if lingering:
                         console.print(f"🔄 [{sym}] Сетап не активен (IDLE / таймаут). Снимаем {len(lingering)} висящих ордеров с биржи...")
                         client.cancel_all_orders(sym)
                 except Exception as err:
-                    console.print(f"⚠️ [{sym}] Ошибка отмены ордеров для неактивной монеты: {err}")
+                    console.print(f"⚠️ [{sym}] Ошибка проверки позиции/ордеров для неактивной монеты: {err}")
             active_monitors.append(ActiveTradeMonitor(
                 symbol=sym,
                 setup_type="IDLE",
