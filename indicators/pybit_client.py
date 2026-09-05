@@ -78,9 +78,9 @@ class BybitClient:
             api_key=self.api_key,
             api_secret=self.api_secret,
             force_retry=True,
-            max_retries=3,
-            retry_delay=1,
-            timeout=15,
+            max_retries=10,
+            retry_delay=3,
+            timeout=20,
         )
         self._specs_cache: dict[str, InstrumentSpecs] = {}
         self._position_idx_cache: dict[str, int] = {}

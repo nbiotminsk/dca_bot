@@ -138,7 +138,7 @@ def test_active_setup_sweep_reclaim_consolidation_reject():
 
 
 def test_active_setup_manipulation():
-    """Синтетический глубокий пробой основания без возврата (манипуляция к 1.618/2.000)."""
+    """Синтетический глубокий пробой основания без возврата (манипуляция к 1.414/1.618)."""
     # Импульс 100 -> 110 (+10%)
     # Затем обвал до 92.0 (пробой 100 на 8%)
     data = [
@@ -158,9 +158,11 @@ def test_active_setup_manipulation():
     setup = find_active_setup(df, min_pct=2.0)
     assert setup is not None
     assert setup.setup_type == "MANIPULATION"
-    assert setup.entry_1 < 100.0  # Уровень 1.618 Fib
-    assert setup.entry_2 < setup.entry_1  # Уровень 2.000 Fib
+    assert setup.entry_1 < 100.0  # Уровень 1.414 Fib
+    assert setup.entry_2 < setup.entry_1  # Уровень 1.618 Fib
     assert setup.stop_loss < setup.entry_2  # Стоп 2.414 Fib
+    assert setup.tp_1 == pytest.approx(setup.imp_start_price * 0.999, rel=1e-3)  # Тейк 1-го ордера на 1.000 Fib (-0.1%)
+    assert setup.tp_2 == setup.entry_1  # Тейк корзины на 1.414 Fib
 
 
 def test_active_setup_prioritizes_unbroken_over_broken_sub_impulse():
@@ -371,6 +373,7 @@ class MockBybitClient:
         self.klines_df = klines_df if klines_df is not None else pd.DataFrame()
         self.tp_sl_calls = []
         self.cancel_all_calls = []
+        self.cancelled_order_ids = []
         self.placed_orders = []
 
     def get_position(self, symbol, side="Buy"):
@@ -390,7 +393,7 @@ class MockBybitClient:
     def get_specs(self, symbol):
         return InstrumentSpecs(symbol, 0.01, 2, 0.001, 3, 0.001, 1000.0, 1.0)
 
-    def calc_dual_grid_order_sizes(self, e1, e2, sl, total_risk_usd=2.0, symbol="TEST"):
+    def calc_dual_grid_order_sizes(self, e1, e2, sl, total_risk_usd=2.0, symbol="TEST", equal_weight=True, **kwargs):
         return 1.0, 1.0, 1.0, 1.0
 
     def calc_triple_grid_order_sizes(self, e1, e2, e3, sl, total_risk_usd=2.0, symbol="TEST", equal_weight=True):
@@ -403,15 +406,29 @@ class MockBybitClient:
         self.cancel_all_calls.append(symbol)
         return [{"orderId": "mock_cancelled"}]
 
+    def cancel_order(self, symbol, order_id=None, order_link_id=None, **kwargs):
+        self.cancelled_order_ids.append(order_id or order_link_id)
+        return {"orderId": order_id or order_link_id}
+
+    def get_open_orders(self, symbol):
+        return [
+            o for o in self.placed_orders
+            if o.get("orderId") not in self.cancelled_order_ids
+        ]
+
     def amend_order(self, symbol, order_id, price=None, take_profit=None, stop_loss=None):
         pass
 
-    def place_order(self, symbol, side, order_type, qty, price=None, take_profit=None, stop_loss=None):
-        self.placed_orders.append({
+    def place_order(self, symbol, side, order_type, qty, price=None, take_profit=None, stop_loss=None, order_link_id=None, **kwargs):
+        oid = f"order_{len(self.placed_orders) + 1}"
+        order_dict = {
+            "orderId": oid,
+            "orderLinkId": order_link_id or "",
             "symbol": symbol, "side": side, "order_type": order_type,
             "qty": qty, "price": price, "take_profit": take_profit, "stop_loss": stop_loss
-        })
-        return {"orderId": f"order_{len(self.placed_orders)}"}
+        }
+        self.placed_orders.append(order_dict)
+        return {"orderId": oid}
 
     def update_stop_loss(self, symbol, order_id, stop_loss):
         return True
@@ -473,6 +490,7 @@ def test_process_monitor_step_o1_tp_cancels_orphan_o2():
         symbol="TESTUSDT",
         setup_type="DUAL_GRID_TRAILING",
         state="O1_FILLED",
+        o2_id="order_2_id",
         cur_tp1=105.0,
         sl=90.0,
         position_was_open=True,
@@ -483,7 +501,7 @@ def test_process_monitor_step_o1_tp_cancels_orphan_o2():
     client = MockBybitClient(pos_size=0.0, klines_df=klines)
     process_monitor_step(m, client, cfg, "60")
     assert m.state == "IDLE"
-    assert "TESTUSDT" in client.cancel_all_calls
+    assert "order_2_id" in client.cancelled_order_ids
 
 
 def test_process_monitor_step_sl_triggers_awaiting_sweep():
@@ -493,6 +511,7 @@ def test_process_monitor_step_sl_triggers_awaiting_sweep():
         symbol="TESTUSDT",
         setup_type="DUAL_GRID_TRAILING",
         state="O1_FILLED",
+        o2_id="order_2_id",
         cur_tp1=105.0,
         sl=90.0,
         position_was_open=True,
@@ -505,7 +524,7 @@ def test_process_monitor_step_sl_triggers_awaiting_sweep():
     assert m.state == "AWAITING_SWEEP_CLOSE"
     assert m.stop_bar_time == pd.Timestamp("2026-09-01 12:00")
     assert m.stop_sweep_low == 89.5
-    assert "TESTUSDT" in client.cancel_all_calls
+    assert "order_2_id" in client.cancelled_order_ids
 
 
 def test_process_monitor_step_sweep_reclaim_on_candle_close():
@@ -566,11 +585,83 @@ def test_process_monitor_step_manipulation_on_candle_close_below():
 
     assert m.state == "MANIPULATION_ACTIVE"
     assert len(client.placed_orders) == 2
-    # Ордер 1 на 1.618 Fib, Ордер 2 на 2.000 Fib
+    # Ордер 1 на 1.414 Fib, Ордер 2 на 1.618 Fib
     assert client.placed_orders[0]["order_type"] == "Limit"
     assert client.placed_orders[1]["order_type"] == "Limit"
     assert client.placed_orders[0]["price"] < 100.0
     assert client.placed_orders[1]["price"] < client.placed_orders[0]["price"]
+    # Проверяем тейки: для ордера 1 тейк на 1.000, для ордера 2 тейк на 1.414 (m.cur_e1)
+    assert client.placed_orders[0]["take_profit"] == pytest.approx(100.0 * 0.999, rel=1e-3)
+    assert client.placed_orders[1]["take_profit"] == client.placed_orders[0]["price"]
+
+
+def test_process_monitor_step_manipulation_basket_tp():
+    """Проверка переноса тейк-профита корзины на 1.414 при наливе 2-го ордера (1.618 Fib)."""
+    from scripts.bybit_trader import ActiveTradeMonitor, TradeConfig, process_monitor_step
+    cfg = TradeConfig()
+    m = ActiveTradeMonitor(
+        symbol="TESTUSDT",
+        setup_type="MANIPULATION",
+        state="MANIPULATION_ACTIVE",
+        cur_e1=95.86,
+        cur_tp1=99.9,
+        cur_e2=93.82,
+        cur_tp2=95.86,
+        sl=85.86,
+        q1=10.0,
+        q2=15.0,
+        has_o2=True,
+        tp_basket_applied=False,
+    )
+    # Имитируем, что налило оба ордера (q1 + q2 = 25.0)
+    client = MockBybitClient(pos_size=25.0)
+    process_monitor_step(m, client, cfg, "60")
+
+    assert m.tp_basket_applied is True
+    assert m.position_was_open is True
+
+
+def test_config_separated_risks(tmp_path):
+    """Проверка разделения параметров риска: total_risk_usd ($2 на обычную сетку) и manipulation_risk_usd ($2 на каждый ордер манипуляции)."""
+    from scripts.bybit_trader import load_trade_config
+    cfg_file = tmp_path / "custom_trade_config.yaml"
+    cfg_file.write_text("""
+risk:
+  total_risk_usd: 3.0
+  manipulation_risk_usd: 1.5
+""", encoding="utf-8")
+
+    cfg = load_trade_config(cfg_file)
+    assert cfg.total_risk_usd == 3.0
+    assert cfg.manipulation_risk_usd == 1.5
+
+
+def test_manipulation_grid_separated_risk_sizing():
+    """Проверка, что для ордеров манипуляции (1.414 и 1.618) выделяется самостоятельный риск $2.0 на каждый ($4.0 на корзину)."""
+    from indicators.pybit_client import BybitClient
+    client = BybitClient(testnet=True)
+    client._specs_cache["TESTUSDT"] = InstrumentSpecs(
+        symbol="TESTUSDT",
+        tick_size=0.01,
+        qty_step=0.001,
+        min_qty=0.001,
+        max_qty=10000.0,
+        min_notional=0.0,
+        price_decimals=2,
+        qty_decimals=3,
+    )
+    e_1414 = 95.86
+    e_1618 = 93.82
+    sl_2414 = 85.86
+    manipulation_risk = 2.0  # $2.0 на каждый ордер -> $4.0 на корзину
+
+    q1, q2, loss1, loss2 = client.calc_dual_grid_order_sizes(
+        e_1414, e_1618, sl_2414, total_risk_usd=manipulation_risk * 2.0, symbol="TESTUSDT", equal_weight=True
+    )
+    # На каждый ордер риск должен быть ровно ~$2.0
+    assert loss1 == pytest.approx(2.0, rel=0.05)
+    assert loss2 == pytest.approx(2.0, rel=0.05)
+    assert (loss1 + loss2) == pytest.approx(4.0, rel=0.05)
 
 
 def test_calc_triple_grid_order_sizes():
@@ -652,6 +743,7 @@ def test_process_monitor_step_o3_tp_closes_all():
         state="O3_FILLED",
         cur_tp3=100.0,
         sl=80.0,
+        o2_id="order_2_id",
         position_was_open=True,
     )
     klines = pd.DataFrame([
@@ -660,7 +752,7 @@ def test_process_monitor_step_o3_tp_closes_all():
     client = MockBybitClient(pos_size=0.0, klines_df=klines)
     process_monitor_step(m, client, cfg, "60")
     assert m.state == "IDLE"
-    assert "TESTUSDT" in client.cancel_all_calls
+    assert "order_2_id" in client.cancelled_order_ids
 
 
 def test_tolerance_and_minor_impulse_sui_case():
@@ -701,6 +793,151 @@ def test_tolerance_and_minor_impulse_sui_case():
     # База должна быть 0.7631 (свежий импульс), а НЕ 0.7501 (отработавший откат)
     assert setup.imp_start_price == pytest.approx(0.7631, rel=1e-3)
     assert setup.imp_peak_price == pytest.approx(0.7937, rel=1e-3)
+
+
+def test_find_active_setup_dual_layer_filtering():
+    """Проверка разделения сетапов по длине импульса: minor (<= 24) и major (25..96)."""
+    # 1. Короткий импульс длиной 15 баров (100 -> 110)
+    prices_short = np.linspace(100, 110, 15)
+    ts_short = pd.date_range("2026-09-01", periods=15, freq="1h")
+    rows_short = []
+    for i, p in enumerate(prices_short):
+        rows_short.append({"timestamp": ts_short[i], "open": p - 0.1, "high": p + 0.1, "low": p - 0.1, "close": p, "volume": 100})
+    df_short = pd.DataFrame(rows_short)
+
+    # Minor (<= 24) находит короткий импульс
+    setup_minor = find_active_setup(df_short, min_pct=2.0, max_impulse_bars=24, layer="minor")
+    assert setup_minor is not None
+    assert setup_minor.layer == "minor"
+
+    # Major (>= 25) НЕ находит 15-баровый импульс (слишком короткий)
+    setup_major = find_active_setup(df_short, min_pct=2.0, min_impulse_bars=25, max_impulse_bars=96, layer="major")
+    assert setup_major is None
+
+    # 2. Длинный импульс: 30 баров, где min_pct=15% (поэтому локальные под-отрезки < 15% отсекаются)
+    prices_long = np.linspace(100, 120, 30)  # +20%
+    ts_long = pd.date_range("2026-09-01", periods=30, freq="1h")
+    rows_long = []
+    for i, p in enumerate(prices_long):
+        rows_long.append({"timestamp": ts_long[i], "open": p - 0.1, "high": p + 0.1, "low": p - 0.1, "close": p, "volume": 100})
+    df_long = pd.DataFrame(rows_long)
+
+    # При min_pct=18% единственный импульс — полный 30-баровый (100 -> 120, +20%). Отрезки <= 24 баров дают < 16%.
+    setup_minor_long = find_active_setup(df_long, min_pct=18.0, max_impulse_bars=24, layer="minor")
+    assert setup_minor_long is None
+
+    setup_major_long = find_active_setup(df_long, min_pct=18.0, min_impulse_bars=25, max_impulse_bars=96, layer="major")
+    assert setup_major_long is not None
+    assert setup_major_long.layer == "major"
+    assert setup_major_long.imp_start_price == pytest.approx(100.0, rel=1e-2)
+    assert setup_major_long.imp_peak_price == pytest.approx(120.1, rel=1e-2)
+
+
+def test_major_setup_touched_0382_flag():
+    """Проверка флага touched_0382: False когда цена выше 0.382, True когда пробит 0.382."""
+    # Импульс 100 -> 130 за 26 баров
+    prices = np.linspace(100, 130, 26)
+    ts = pd.date_range("2026-09-01", periods=26, freq="1h")
+    rows = []
+    for i, p in enumerate(prices):
+        rows.append({"timestamp": ts[i], "open": p - 0.1, "high": p + 0.1, "low": p - 0.1, "close": p, "volume": 100})
+
+    # Свеча 27: цена держится на 129 (выше 0.382 ~ 117.5)
+    rows.append({"timestamp": ts[-1] + pd.Timedelta(hours=1), "open": 130, "high": 130.2, "low": 128.5, "close": 129.0, "volume": 100})
+    df_untouched = pd.DataFrame(rows)
+
+    setup_untouched = find_active_setup(df_untouched, min_pct=2.0, min_impulse_bars=25, max_impulse_bars=96, layer="major")
+    assert setup_untouched is not None
+    assert setup_untouched.p_0382 is not None
+    assert setup_untouched.p_0382 < 128.5  # 0.382 ниже 128.5
+    assert setup_untouched.touched_0382 is False
+
+    # Добавляем свечу 28: глубокий откат ниже 0.382 (шпилька до 115)
+    rows.append({"timestamp": ts[-1] + pd.Timedelta(hours=2), "open": 129, "high": 129, "low": 115.0, "close": 118.0, "volume": 100})
+    df_touched = pd.DataFrame(rows)
+
+    setup_touched = find_active_setup(df_touched, min_pct=2.0, min_impulse_bars=25, max_impulse_bars=96, layer="major")
+    assert setup_touched is not None
+    assert setup_touched.touched_0382 is True
+
+
+def test_process_monitor_step_awaiting_major_0382_triggers_grid():
+    """Проверка: монитор AWAITING_MAJOR_0382 при касании low <= p_0382 выставляет сетку MAJ и переходит в TRAILING."""
+    from scripts.bybit_trader import ActiveTradeMonitor, TradeConfig, process_monitor_step
+    cfg = TradeConfig(major_risk_usd=2.0)
+    m = ActiveTradeMonitor(
+        symbol="ZECUSDT",
+        setup_type="TRIPLE_GRID_TRAILING",
+        state="AWAITING_MAJOR_0382",
+        layer="major",
+        cur_peak=1000.0,
+        p_0382=950.0,
+        cur_e1=920.0,
+        cur_tp1=970.0,
+        cur_e2=890.0,
+        cur_tp2=940.0,
+        cur_e3=850.0,
+        cur_tp3=920.0,
+        sl=800.0,
+        imp_start_price=750.0,
+        touched_0382=False,
+    )
+
+    # 1. Свеча, где low = 960 > 950 (еще не коснулись 0.382)
+    klines_before = pd.DataFrame([
+        {"timestamp": pd.Timestamp("2026-09-01 12:00"), "open": 980, "high": 990, "low": 960, "close": 970, "volume": 100}
+    ])
+    client = MockBybitClient(pos_size=0.0, klines_df=klines_before)
+    process_monitor_step(m, client, cfg, "60", is_live=True)
+    assert m.state == "AWAITING_MAJOR_0382"
+    assert len(client.placed_orders) == 0
+
+    # 2. Свеча, где low = 945 <= 950 (коснулись 0.382!)
+    klines_touch = pd.DataFrame([
+        {"timestamp": pd.Timestamp("2026-09-01 13:00"), "open": 970, "high": 975, "low": 945, "close": 955, "volume": 100}
+    ])
+    client.klines_df = klines_touch
+    process_monitor_step(m, client, cfg, "60", is_live=True)
+
+    assert m.state == "TRAILING"
+    assert m.touched_0382 is True
+    # Проверяем, что были выставлены 3 лимитных ордера с тегом MAJ
+    assert len(client.placed_orders) == 3
+    assert client.placed_orders[0]["orderLinkId"] == "FIB-ZEC-MAJ-B-O1"
+    assert client.placed_orders[1]["orderLinkId"] == "FIB-ZEC-MAJ-B-O2"
+    assert client.placed_orders[2]["orderLinkId"] == "FIB-ZEC-MAJ-B-O3"
+
+
+def test_cancel_monitor_orders_only_cancels_own_layer():
+    """Проверка: cancel_monitor_orders отменяет только ордера своего слоя (MIN vs MAJ)."""
+    from scripts.bybit_trader import ActiveTradeMonitor, cancel_monitor_orders
+    client = MockBybitClient()
+    # Размещаем ордера для обоих слоев
+    client.placed_orders = [
+        {"orderId": "ord_min_1", "orderLinkId": "FIB-ZEC-MIN-B-O1", "symbol": "ZECUSDT"},
+        {"orderId": "ord_min_2", "orderLinkId": "FIB-ZEC-MIN-B-O2", "symbol": "ZECUSDT"},
+        {"orderId": "ord_maj_1", "orderLinkId": "FIB-ZEC-MAJ-B-O1", "symbol": "ZECUSDT"},
+        {"orderId": "ord_maj_2", "orderLinkId": "FIB-ZEC-MAJ-B-O2", "symbol": "ZECUSDT"},
+    ]
+
+    m_minor = ActiveTradeMonitor(
+        symbol="ZECUSDT",
+        setup_type="TRIPLE_GRID_TRAILING",
+        state="TRAILING",
+        layer="minor",
+        o1_id="ord_min_1",
+        o2_id="ord_min_2",
+    )
+
+    cancelled = cancel_monitor_orders(client, m_minor)
+    cancelled_ids = [c.get("orderId") for c in cancelled]
+
+    # Должны быть отменены ord_min_1 и ord_min_2
+    assert "ord_min_1" in cancelled_ids
+    assert "ord_min_2" in cancelled_ids
+    # Ордера MAJ НЕ должны быть отменены!
+    assert "ord_maj_1" not in cancelled_ids
+    assert "ord_maj_2" not in cancelled_ids
 
 
 

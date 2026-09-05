@@ -43,6 +43,9 @@ console = Console()
 @dataclass
 class TradeConfig:
     total_risk_usd: float = 2.0
+    minor_risk_usd: float = 2.0
+    major_risk_usd: float = 2.0
+    manipulation_risk_usd: float = 2.0
     entry_buffer_pct: float = 0.10
     tp_buffer_pct: float = 0.10
     reclaim_tp_buffer_pct: float = 2.0
@@ -54,8 +57,10 @@ class TradeConfig:
     min_impulse_pct: float = 2.0
     atr_multiplier: float = 2.5
     timeout_hours: int = 24
-    lookback_bars: int = 60
-    max_impulse_bars: int = 10
+    lookback_bars: int = 120
+    max_impulse_bars: int = 24
+    minor_max_impulse_bars: int = 24
+    major_max_impulse_bars: int = 96
     timeframe: str = "1h"
     scale: Literal["log", "linear"] = "log"
     symbols: list[str] = field(default_factory=list)
@@ -80,6 +85,13 @@ def load_trade_config(config_path: Optional[str | Path] = None) -> TradeConfig:
         risk_data = data.get("risk", {})
         if "total_risk_usd" in risk_data:
             cfg.total_risk_usd = float(risk_data["total_risk_usd"])
+            cfg.minor_risk_usd = float(risk_data["total_risk_usd"])
+        if "minor_risk_usd" in risk_data:
+            cfg.minor_risk_usd = float(risk_data["minor_risk_usd"])
+        if "major_risk_usd" in risk_data:
+            cfg.major_risk_usd = float(risk_data["major_risk_usd"])
+        if "manipulation_risk_usd" in risk_data:
+            cfg.manipulation_risk_usd = float(risk_data["manipulation_risk_usd"])
 
         buffer_data = data.get("buffers", {})
         if "entry_buffer_pct" in buffer_data:
@@ -114,6 +126,12 @@ def load_trade_config(config_path: Optional[str | Path] = None) -> TradeConfig:
             cfg.lookback_bars = int(strat_data["lookback_bars"])
         if "max_impulse_bars" in strat_data:
             cfg.max_impulse_bars = int(strat_data["max_impulse_bars"])
+            cfg.minor_max_impulse_bars = int(strat_data["max_impulse_bars"])
+        if "minor_max_impulse_bars" in strat_data:
+            cfg.minor_max_impulse_bars = int(strat_data["minor_max_impulse_bars"])
+            cfg.max_impulse_bars = cfg.minor_max_impulse_bars
+        if "major_max_impulse_bars" in strat_data:
+            cfg.major_max_impulse_bars = int(strat_data["major_max_impulse_bars"])
         if "timeframe" in strat_data:
             cfg.timeframe = str(strat_data["timeframe"])
         if "scale" in strat_data:
@@ -170,6 +188,10 @@ class SetupSignal:
     sweep_pct: Optional[float] = None
     macd_divergent: bool = False
     description: str = ""
+    # Двухуровневая сетка (minor до 24 свечей / major до 96 свечей)
+    layer: Literal["minor", "major"] = "minor"
+    p_0382: Optional[float] = None
+    touched_0382: bool = True
 
 
 def find_active_setup(
@@ -188,6 +210,8 @@ def find_active_setup(
     atr_multiplier: Optional[float] = None,
     timeout_hours: Optional[int] = None,
     max_impulse_bars: Optional[int] = None,
+    min_impulse_bars: Optional[int] = None,
+    layer: Literal["minor", "major"] = "minor",
 ) -> Optional[SetupSignal]:
     """
     Анализирует свечи на наличие активного не отработанного торгового сетапа (ТОЛЬКО В LONG):
@@ -236,9 +260,11 @@ def find_active_setup(
         if not imps:
             continue
 
-        # Ограничение по макс. длительности импульса (как в TradingView Minor Grid: <= max_impulse_bars свечей)
+        # Ограничение по длительности импульса (Minor <= minor_max_impulse_bars; Major 25..96 баров)
         if max_impulse_bars is not None and max_impulse_bars > 0:
             imps = [imp for imp in imps if (imp.end_idx - imp.start_idx + 1) <= max_impulse_bars]
+        if min_impulse_bars is not None and min_impulse_bars > 0:
+            imps = [imp for imp in imps if (imp.end_idx - imp.start_idx + 1) >= min_impulse_bars]
         if not imps:
             continue
 
@@ -255,6 +281,7 @@ def find_active_setup(
             p_0786 = calc_fib(imp.high, imp.low, 0.786, is_long=is_long, scale=scale)
             p_1000 = imp.low if is_long else imp.high
 
+            p_1414 = calc_fib(imp.high, imp.low, 1.414, is_long=is_long, scale=scale)
             p_1618 = calc_fib(imp.high, imp.low, 1.618, is_long=is_long, scale=scale)
             p_2000 = calc_fib(imp.high, imp.low, 2.000, is_long=is_long, scale=scale)
             p_2414 = calc_fib(imp.high, imp.low, 2.414, is_long=is_long, scale=scale)
@@ -264,6 +291,7 @@ def find_active_setup(
             e_0500 = p_0500 * buf_mult
             e_0618 = p_0618 * buf_mult
             e_0786 = p_0786 * buf_mult
+            e_1414 = p_1414 * buf_mult
             e_1618 = p_1618 * buf_mult
             e_2000 = p_2000 * buf_mult
 
@@ -280,6 +308,15 @@ def find_active_setup(
 
             post_df = df.iloc[imp.end_idx + 1:]
 
+            # Для Большой фибы: проверяем, коснулась ли коррекция уровня 0.382
+            if layer == "major":
+                if len(post_df) == 0:
+                    touched_0382 = False
+                else:
+                    touched_0382 = bool((post_df["low"].min() <= p_0382) if is_long else (post_df["high"].max() >= p_0382))
+            else:
+                touched_0382 = True
+
             # Проверка тайм-аута свежести:
             # Если от пика прошло больше timeout_hours, и цена за первые timeout_hours так и не коснулась 0.500 — остыл
             if timeout_hours is not None and timeout_hours > 0 and len(post_df) > timeout_hours:
@@ -290,6 +327,11 @@ def find_active_setup(
 
             if len(post_df) == 0:
                 # Импульс находится на самой последней свече -> ТРЕЙЛИНГ
+                desc = (
+                    f"Большая фиба (+{imp.pct:.2f}%): цена на вершине выше 0.382 (${p_0382:.4f}). Ожидание отката к 0.382, лимитки не выставляются, маржа свободна."
+                    if (layer == "major" and not touched_0382)
+                    else f"Растущий импульс (+{imp.pct:.2f}%) на текущей свече [ATR {atr_pct:.2f}%]. Трейлинг тройной сетки (вход +{entry_buffer_pct}%, тейк -{tp_buffer_pct}%)."
+                )
                 unbroken_setups.append(SetupSignal(
                     setup_type="TRIPLE_GRID_TRAILING",
                     side=side,
@@ -305,7 +347,10 @@ def find_active_setup(
                     entry_3=e_0786,
                     tp_3=tp_0500,
                     stop_loss=p_1000,
-                    description=f"Растущий импульс (+{imp.pct:.2f}%) на текущей свече [ATR {atr_pct:.2f}%]. Трейлинг тройной сетки (вход +{entry_buffer_pct}%, тейк -{tp_buffer_pct}%).",
+                    description=desc,
+                    layer=layer,
+                    p_0382=p_0382,
+                    touched_0382=touched_0382,
                 ))
                 continue
 
@@ -350,9 +395,6 @@ def find_active_setup(
                         touch_0786_idx = abs_idx
 
                     # 4. Взятие тейк-профита:
-                    # Если налиты все три ордера (0.500, 0.618, 0.786) -> выход всех на 0.500 (-0.10%)!
-                    # Если налиты 0.500 и 0.618 -> выход обоих на 0.382 (-0.10%)!
-                    # Если налит только 0.500 -> выход на 0.236 (-0.10%)!
                     if not broken and touched_0500:
                         if touched_0786:
                             eff_tp = tp_0500 * (1.0 - tp_tol_mult)
@@ -416,7 +458,6 @@ def find_active_setup(
                 is_reclaimed = (latest_c >= p_1000) if is_long else (latest_c <= p_1000)
 
                 # Проверка отсутствия закрепления цены под уровнем 1.000:
-                # Если allow_close_below == False, ни одна свеча после импульса не должна закрываться ниже 1.000.
                 closed_below = (post_df["close"] < p_1000) if is_long else (post_df["close"] > p_1000)
                 has_consolidated = closed_below.any() if not allow_close_below else (closed_below.sum() > 1)
 
@@ -426,7 +467,7 @@ def find_active_setup(
 
                 if swp_pct <= max_sweep_pct and is_reclaimed and not has_consolidated and macd_div:
                     sl_target = sweep_val * (0.998 if is_long else 1.002)
-                    p_0786 = calc_fib(imp.high, imp.low, reclaim_be_trigger_fib, is_long=is_long, scale=scale)
+                    p_0786_f = calc_fib(imp.high, imp.low, reclaim_be_trigger_fib, is_long=is_long, scale=scale)
                     be_mult = 1.0 + (reclaim_be_offset_pct / 100.0) if is_long else 1.0 - (reclaim_be_offset_pct / 100.0)
                     be_price_val = latest_c * be_mult
                     reclaim_setups.append(SetupSignal(
@@ -440,12 +481,15 @@ def find_active_setup(
                         entry_1=latest_c,
                         tp_1=tp_reclaim_0618,
                         stop_loss=sl_target,
-                        be_trigger=p_0786,
+                        be_trigger=p_0786_f,
                         be_price=be_price_val,
                         sweep_price=sweep_val,
                         sweep_pct=swp_pct,
                         macd_divergent=True,
                         description=f"Ложный пробой 1.000 ({swp_pct:.2f}% <= {max_sweep_pct}%) без закрепления с дивергенцией MACD. Тейк 0.618 Fib (-{reclaim_tp_buffer_pct}%), БУ на {reclaim_be_trigger_fib} Fib.",
+                        layer=layer,
+                        p_0382=p_0382,
+                        touched_0382=touched_0382,
                     ))
                 elif swp_pct > max_sweep_pct or has_consolidated:
                     manipulation_setups.append(SetupSignal(
@@ -456,20 +500,28 @@ def find_active_setup(
                         imp_start_price=p_1000,
                         imp_peak_price=imp.high if is_long else imp.low,
                         imp_pct=imp.pct,
-                        entry_1=e_1618,
-                        tp_1=tp_0500,
-                        entry_2=e_2000,
-                        tp_2=tp_1000,
+                        entry_1=e_1414,
+                        tp_1=tp_1000,
+                        entry_2=e_1618,
+                        tp_2=e_1414,
                         stop_loss=p_2414,
                         sweep_price=sweep_val,
                         sweep_pct=swp_pct,
-                        description=f"Манипуляция: выход за 1.000 на {swp_pct:.2f}% (порог {max_sweep_pct}%)" + (" с закреплением" if has_consolidated else "") + ". Сетка на 1.618 и 2.000, стоп 2.414.",
+                        description=f"Манипуляция: выход за 1.000 на {swp_pct:.2f}% (порог {max_sweep_pct}%)" + (" с закреплением" if has_consolidated else "") + ". Сетка на 1.414 и 1.618, стоп 2.414.",
+                        layer=layer,
+                        p_0382=p_0382,
+                        touched_0382=touched_0382,
                     ))
                 continue
 
             # ─── Сценарий 2: Уровень 1.000 НЕ пробит ────────────────────────────
             if not touched_0500:
                 # Импульс еще развивается без отката к 0.500 -> ТРЕЙЛИНГ
+                desc = (
+                    f"Большая фиба (+{imp.pct:.2f}%): цена выше 0.382 (${p_0382:.4f}). Ожидание отката к 0.382, лимитки не выставляются, маржа свободна."
+                    if (layer == "major" and not touched_0382)
+                    else f"Растущий импульс (+{imp.pct:.2f}%) без коррекции к 0.500. Режим трейлинга тройной сетки (вход +{entry_buffer_pct}%, тейк -{tp_buffer_pct}%)."
+                )
                 unbroken_setups.append(SetupSignal(
                     setup_type="TRIPLE_GRID_TRAILING",
                     side=side,
@@ -485,22 +537,26 @@ def find_active_setup(
                     entry_3=e_0786,
                     tp_3=tp_0500,
                     stop_loss=p_1000,
-                    description=f"Растущий импульс (+{imp.pct:.2f}%) без коррекции к 0.500. Режим трейлинга тройной сетки (вход +{entry_buffer_pct}%, тейк -{tp_buffer_pct}%).",
+                    description=desc,
+                    layer=layer,
+                    p_0382=p_0382,
+                    touched_0382=touched_0382,
                 ))
             else:
                 # Касание 0.500 было, но тейк еще не взят -> АКТИВНАЯ ТРОЙНАЯ СЕТКА
+                desc_prefix = f"Большая фиба (пробит 0.382 | +{imp.pct:.2f}%): " if layer == "major" else f"Активная коррекция к сетке (+{imp.pct:.2f}%): "
                 if touched_0786:
-                    desc = f"Активная коррекция к сетке (+{imp.pct:.2f}%): налиты все три уровня (0.500, 0.618, 0.786), общий тейк на 0.500 (-{tp_buffer_pct}%)."
+                    desc = desc_prefix + f"налиты все три уровня (0.500, 0.618, 0.786), общий тейк на 0.500 (-{tp_buffer_pct}%)."
                     cur_tp1 = tp_0500
                     cur_tp2 = tp_0500
                     cur_tp3 = tp_0500
                 elif touched_0618:
-                    desc = f"Активная коррекция к сетке (+{imp.pct:.2f}%): налиты 0.500 и 0.618, тейк обоих на 0.382 (-{tp_buffer_pct}%). Ордер 3 (0.786) активен в стакане."
+                    desc = desc_prefix + f"налиты 0.500 и 0.618, тейк обоих на 0.382 (-{tp_buffer_pct}%). Ордер 3 (0.786) активен в стакане."
                     cur_tp1 = tp_0382
                     cur_tp2 = tp_0382
                     cur_tp3 = tp_0500
                 else:
-                    desc = f"Активная коррекция к сетке (+{imp.pct:.2f}%): налит ордер 0.500, тейк 0.236 (-{tp_buffer_pct}%). Ордера 2 и 3 активны в стакане."
+                    desc = desc_prefix + f"налит ордер 0.500, тейк 0.236 (-{tp_buffer_pct}%). Ордера 2 и 3 активны в стакане."
                     cur_tp1 = tp_0236
                     cur_tp2 = tp_0382
                     cur_tp3 = tp_0500
@@ -521,6 +577,9 @@ def find_active_setup(
                     tp_3=cur_tp3,
                     stop_loss=p_1000,
                     description=desc,
+                    layer=layer,
+                    p_0382=p_0382,
+                    touched_0382=touched_0382,
                 ))
 
         # Приоритет: живые несломанные импульсы > ложный пробой (свип) > манипуляция
@@ -584,6 +643,56 @@ class ActiveTradeMonitor:
     imp_end_time: Optional[pd.Timestamp] = None
     close_only: bool = False
     done: bool = False
+    layer: Literal["minor", "major"] = "minor"
+    p_0382: Optional[float] = None
+    touched_0382: bool = True
+
+
+def cancel_monitor_orders(client: Any, m: ActiveTradeMonitor) -> list[dict[str, Any]]:
+    """
+    Отменяет только ордера, принадлежащие данному монитору и его слою (MIN или MAJ),
+    не затрагивая ордера другого слоя на том же символе.
+    """
+    cancelled: list[dict[str, Any]] = []
+
+    # 1. Отмена по известным ID ордеров монитора
+    for oid in (m.o1_id, m.o2_id, m.o3_id):
+        if oid and hasattr(client, "cancel_order"):
+            try:
+                cancelled.append(client.cancel_order(m.symbol, oid))
+            except Exception:
+                pass
+
+    # 2. Поиск открытых ордеров по orderLinkId с префиксом слоя
+    layer_tag = "MAJ" if m.layer == "major" else "MIN"
+    sym_short = m.symbol.replace("USDT.P", "").replace("USDT", "")
+    prefix = f"FIB-{sym_short}-{layer_tag}-"
+    try:
+        if hasattr(client, "get_open_orders") and hasattr(client, "cancel_order"):
+            open_orders = client.get_open_orders(m.symbol)
+            for o in open_orders:
+                link_id = str(o.get("orderLinkId", ""))
+                oid = str(o.get("orderId", ""))
+                is_layer_match = link_id.startswith(prefix) or (
+                    m.layer == "minor"
+                    and "-MIN-" not in link_id
+                    and "-MAJ-" not in link_id
+                    and link_id.startswith(f"FIB-{sym_short}-")
+                )
+                if is_layer_match and oid and oid not in (m.o1_id, m.o2_id, m.o3_id):
+                    try:
+                        cancelled.append(client.cancel_order(m.symbol, oid))
+                    except Exception:
+                        pass
+        elif not hasattr(client, "cancel_order") and hasattr(client, "cancel_all_orders"):
+            cancelled.extend(client.cancel_all_orders(m.symbol))
+    except Exception:
+        pass
+
+    m.o1_id = None
+    m.o2_id = None
+    m.o3_id = None
+    return cancelled
 
 
 def process_monitor_step(
@@ -605,10 +714,11 @@ def process_monitor_step(
             imp_ts = pd.to_datetime(m.imp_end_time, utc=True)
             elapsed_hours = (now_ts - imp_ts).total_seconds() / 3600.0
             if elapsed_hours > cfg.timeout_hours:
-                console.print(f"\n[bold yellow]⏰ [{m.symbol}] Истек тайм-аут свежести импульса ({elapsed_hours:.1f}ч > {cfg.timeout_hours}ч без коррекции к 0.500).[/bold yellow]")
+                layer_log = "[MAJOR]" if m.layer == "major" else "[MINOR]"
+                console.print(f"\n[bold yellow]⏰ [{m.symbol}] {layer_log} Истек тайм-аут свежести импульса ({elapsed_hours:.1f}ч > {cfg.timeout_hours}ч без коррекции к 0.500).[/bold yellow]")
                 console.print(f"  ➜ Снимаем ордера сетки и переводим {m.symbol} в режим ожидания нового импульса (IDLE).")
                 if is_live:
-                    client.cancel_all_orders(m.symbol)
+                    cancel_monitor_orders(client, m)
                 if m.close_only:
                     m.state = "FINISHED"
                     m.done = True
@@ -623,33 +733,45 @@ def process_monitor_step(
                 return
 
         if pos_size > 0:
-            m.position_was_open = True
-            # Проверяем, налило ли сразу 3 ордера, 2 ордера или 1 ордер
-            if m.has_o3 and m.q3 > 0 and pos_size >= (m.q1 + m.q2 + 0.5 * m.q3):
-                m.state = "O3_FILLED"
-                console.print(f"\n[bold green]⚡ [{m.symbol}] Налиты все 3 ордера (0.500, 0.618, 0.786)! Позиция: {pos_size}.[/bold green]")
-                console.print(f"  ➜ Переносим Take-Profit всей позиции на общий уровень 0.500 Fib (${m.cur_tp3})...")
-                if is_live:
-                    try:
-                        client.set_position_tp_sl(m.symbol, take_profit=m.cur_tp3, stop_loss=m.sl)
-                        m.tp_basket_applied = True
-                    except Exception as err:
-                        console.print(f"  ⚠️ [{m.symbol}] Ошибка переноса TP на 0.500: {err}")
-            elif m.has_o2 and m.q2 > 0 and pos_size >= (m.q1 + 0.5 * m.q2):
-                m.state = "O2_FILLED"
-                console.print(f"\n[bold green]⚡ [{m.symbol}] Налиты 2 ордера (0.500 и 0.618)! Позиция: {pos_size}.[/bold green]")
-                console.print(f"  ➜ Переносим Take-Profit всей позиции на общий уровень 0.382 Fib (${m.cur_tp2}). Ордер 3 в стакане (${m.cur_e3})...")
-                if is_live:
-                    try:
-                        client.set_position_tp_sl(m.symbol, take_profit=m.cur_tp2, stop_loss=m.sl)
-                        m.tp_basket_applied = True
-                    except Exception as err:
-                        console.print(f"  ⚠️ [{m.symbol}] Ошибка переноса TP на 0.382: {err}")
-            else:
-                m.state = "O1_FILLED"
-                console.print(f"\n[bold cyan]🎉 [{m.symbol}] Ордер 1 (0.500) вошел в позицию! Объем: {pos_size}.[/bold cyan]")
-                console.print(f"  ➜ Тейк-профит на 0.236 Fib (${m.cur_tp1}). Ордер 2 (${m.cur_e2}) и Ордер 3 (${m.cur_e3}) активны в стакане.")
-            return
+            # Если o1_id выставлен, проверяем, не остался ли он еще открытым в стакане
+            o1_still_open = False
+            if m.o1_id and hasattr(client, "get_open_orders"):
+                try:
+                    open_ords = client.get_open_orders(m.symbol)
+                    open_ids = {o.get("orderId") for o in open_ords}
+                    if m.o1_id in open_ids:
+                        o1_still_open = True
+                except Exception:
+                    pass
+
+            if not o1_still_open:
+                m.position_was_open = True
+                # Проверяем, налило ли сразу 3 ордера, 2 ордера или 1 ордер
+                if m.has_o3 and m.q3 > 0 and pos_size >= (m.q1 + m.q2 + 0.5 * m.q3):
+                    m.state = "O3_FILLED"
+                    console.print(f"\n[bold green]⚡ [{m.symbol}] Налиты все 3 ордера (0.500, 0.618, 0.786)! Позиция: {pos_size}.[/bold green]")
+                    console.print(f"  ➜ Переносим Take-Profit всей позиции на общий уровень 0.500 Fib (${m.cur_tp3})...")
+                    if is_live:
+                        try:
+                            client.set_position_tp_sl(m.symbol, take_profit=m.cur_tp3, stop_loss=m.sl)
+                            m.tp_basket_applied = True
+                        except Exception as err:
+                            console.print(f"  ⚠️ [{m.symbol}] Ошибка переноса TP на 0.500: {err}")
+                elif m.has_o2 and m.q2 > 0 and pos_size >= (m.q1 + 0.5 * m.q2):
+                    m.state = "O2_FILLED"
+                    console.print(f"\n[bold green]⚡ [{m.symbol}] Налиты 2 ордера (0.500 и 0.618)! Позиция: {pos_size}.[/bold green]")
+                    console.print(f"  ➜ Переносим Take-Profit всей позиции на общий уровень 0.382 Fib (${m.cur_tp2}). Ордер 3 в стакане (${m.cur_e3})...")
+                    if is_live:
+                        try:
+                            client.set_position_tp_sl(m.symbol, take_profit=m.cur_tp2, stop_loss=m.sl)
+                            m.tp_basket_applied = True
+                        except Exception as err:
+                            console.print(f"  ⚠️ [{m.symbol}] Ошибка переноса TP на 0.382: {err}")
+                else:
+                    m.state = "O1_FILLED"
+                    console.print(f"\n[bold cyan]🎉 [{m.symbol}] Ордер 1 (0.500) вошел в позицию! Объем: {pos_size}.[/bold cyan]")
+                    console.print(f"  ➜ Тейк-профит на 0.236 Fib (${m.cur_tp1}). Ордер 2 (${m.cur_e2}) и Ордер 3 (${m.cur_e3}) активны в стакане.")
+                return
 
         # Если позиция еще не открыта — сдвигаем сетку за новыми максимумами
         df_now = client.fetch_klines(m.symbol, interval=interval, limit=10)
@@ -736,6 +858,92 @@ def process_monitor_step(
             m.cur_peak = new_peak
             m.imp_end_time = pd.Timestamp.now(tz="UTC")
 
+    # ─── 1.1 Состояние: ОЖИДАНИЕ ПРОБОЯ 0.382 (БОЛЬШАЯ ФИБА) ────────────────────
+    elif m.state == "AWAITING_MAJOR_0382":
+        if m.close_only:
+            m.state = "FINISHED"
+            m.done = True
+            return
+
+        df_now = client.fetch_klines(m.symbol, interval=interval, limit=15)
+        if len(df_now) == 0:
+            return
+
+        latest_h = float(df_now["high"].iloc[-1])
+        latest_l = float(df_now["low"].iloc[-1])
+
+        # 1. Трейлинг вершины: если цена обновила максимум
+        if latest_h > m.cur_peak:
+            new_peak = latest_h
+            m.cur_peak = new_peak
+            m.p_0382 = calc_fib(new_peak, m.imp_start_price, 0.382, is_long=True, scale=cfg.scale)
+            m.cur_e1 = client.round_price(calc_fib(new_peak, m.imp_start_price, 0.500, is_long=True, scale=cfg.scale) * (1.0 + cfg.entry_buffer_pct / 100.0), m.symbol)
+            m.cur_tp1 = client.round_price(calc_fib(new_peak, m.imp_start_price, 0.236, is_long=True, scale=cfg.scale) * (1.0 - cfg.tp_buffer_pct / 100.0), m.symbol)
+            m.cur_e2 = client.round_price(calc_fib(new_peak, m.imp_start_price, 0.618, is_long=True, scale=cfg.scale) * (1.0 + cfg.entry_buffer_pct / 100.0), m.symbol) if m.has_o2 else None
+            m.cur_tp2 = client.round_price(calc_fib(new_peak, m.imp_start_price, 0.382, is_long=True, scale=cfg.scale) * (1.0 - cfg.tp_buffer_pct / 100.0), m.symbol) if m.has_o2 else None
+            m.cur_e3 = client.round_price(calc_fib(new_peak, m.imp_start_price, 0.786, is_long=True, scale=cfg.scale) * (1.0 + cfg.entry_buffer_pct / 100.0), m.symbol) if m.has_o3 else None
+            m.cur_tp3 = client.round_price(calc_fib(new_peak, m.imp_start_price, 0.500, is_long=True, scale=cfg.scale) * (1.0 - cfg.tp_buffer_pct / 100.0), m.symbol) if m.has_o3 else None
+            m.imp_end_time = pd.Timestamp.now(tz="UTC")
+            console.print(f"📈 [{m.symbol}] [MAJOR] Новый максимум ${new_peak}! Уровень 0.382 скорректирован до ${m.p_0382:.4f}.")
+
+        # 2. Проверка тайм-аута свежести:
+        if cfg.timeout_hours > 0 and m.imp_end_time is not None:
+            now_ts = pd.Timestamp.now(tz="UTC")
+            imp_ts = pd.to_datetime(m.imp_end_time, utc=True)
+            elapsed_hours = (now_ts - imp_ts).total_seconds() / 3600.0
+            if elapsed_hours > cfg.timeout_hours:
+                console.print(f"\n[bold yellow]⏰ [{m.symbol}] [MAJOR] Истек тайм-аут свежести ({elapsed_hours:.1f}ч > {cfg.timeout_hours}ч без отката к 0.382). Переход в IDLE.[/bold yellow]")
+                m.state = "IDLE"
+                return
+
+        # 3. Проверка пробоя уровня 0.382 (Long: low <= p_0382)
+        if m.p_0382 is not None and latest_l <= m.p_0382:
+            console.print(f"\n[bold green]🎯 [{m.symbol}] [MAJOR] Цена (${latest_l}) пробила/коснулась уровня 0.382 (${m.p_0382:.4f})![/bold green]")
+            console.print(f"  ➜ Большая фиба АКТИВИРОВАНА. Выставляем тройную сетку в стакан Bybit...")
+            m.touched_0382 = True
+
+            sym_short = m.symbol.replace("USDT.P", "").replace("USDT", "")
+            layer_tag = "MAJ"
+            setup_risk = cfg.major_risk_usd
+
+            if m.cur_e3 and m.cur_e2:
+                q1, q2, q3, _, _, _ = client.calc_triple_grid_order_sizes(m.cur_e1, m.cur_e2, m.cur_e3, m.sl, total_risk_usd=setup_risk, symbol=m.symbol, equal_weight=True)
+            elif m.cur_e2:
+                q1, q2, _, _ = client.calc_dual_grid_order_sizes(m.cur_e1, m.cur_e2, m.sl, total_risk_usd=setup_risk, symbol=m.symbol, equal_weight=True)
+                q3 = 0.0
+            else:
+                dist1 = abs(m.cur_e1 - m.sl)
+                specs = client.get_specs(m.symbol)
+                q1 = client.round_qty(setup_risk / dist1 if dist1 > 0 else specs.min_qty, m.symbol)
+                q2 = 0.0
+                q3 = 0.0
+
+            m.q1, m.q2, m.q3 = q1, q2, q3
+            m.has_o2 = (m.cur_e2 is not None and q2 > 0)
+            m.has_o3 = (m.cur_e3 is not None and q3 > 0)
+
+            o1_id, o2_id, o3_id = None, None, None
+            if is_live:
+                try:
+                    r1 = client.place_order(symbol=m.symbol, side="Buy", order_type="Limit", qty=q1, price=m.cur_e1, take_profit=m.cur_tp1, stop_loss=m.sl, order_link_id=f"FIB-{sym_short}-{layer_tag}-B-O1")
+                    o1_id = r1.get("orderId")
+                    if m.cur_e2 and q2 > 0 and m.cur_tp2:
+                        r2 = client.place_order(symbol=m.symbol, side="Buy", order_type="Limit", qty=q2, price=m.cur_e2, take_profit=m.cur_tp2, stop_loss=m.sl, order_link_id=f"FIB-{sym_short}-{layer_tag}-B-O2")
+                        o2_id = r2.get("orderId")
+                    if m.cur_e3 and q3 > 0 and m.cur_tp3:
+                        r3 = client.place_order(symbol=m.symbol, side="Buy", order_type="Limit", qty=q3, price=m.cur_e3, take_profit=m.cur_tp3, stop_loss=m.sl, order_link_id=f"FIB-{sym_short}-{layer_tag}-B-O3")
+                        o3_id = r3.get("orderId")
+                    console.print(f"  ✓ [{m.symbol}] [MAJOR] Размещена сетка: Вход 1 ${m.cur_e1}, Вход 2 ${m.cur_e2 or '-'}, Вход 3 ${m.cur_e3 or '-'}")
+                except Exception as err:
+                    console.print(f"[red]❌ [{m.symbol}] [MAJOR] Ошибка размещения сетки: {err}[/red]")
+                    return
+
+            m.o1_id = o1_id
+            m.o2_id = o2_id
+            m.o3_id = o3_id
+            m.state = "TRAILING"
+            return
+
     # ─── 2. Состояние: НАЛИТ ОРДЕР 1 (Ожидание Ордера 2/3 или TP 0.236) ────────
     elif m.state == "O1_FILLED":
         pos = client.get_position(m.symbol, "Buy") if is_live else None
@@ -774,7 +982,7 @@ def process_monitor_step(
         if latest_h >= m.cur_tp1 * 0.999:
             console.print(f"\n[bold green]💰 [{m.symbol}] ТЕЙК-ПРОФИТ 0.236 ДОСТИГНУТ! Позиция закрыта в прибыль.[/bold green]")
             if is_live:
-                cancelled = client.cancel_all_orders(m.symbol)
+                cancelled = cancel_monitor_orders(client, m)
                 console.print(f"[dim][{m.symbol}] Сняты висящие ордера 2 и 3 [отменено: {len(cancelled)}]. Сделка успешно завершена.[/dim]")
             if m.close_only:
                 m.state = "FINISHED"
@@ -787,7 +995,7 @@ def process_monitor_step(
         else:
             console.print(f"\n[bold red]🛑 [{m.symbol}] Стоп-лосс на уровне 1.000 (${m.sl}) сработал![/bold red]")
             if is_live:
-                client.cancel_all_orders(m.symbol)
+                cancel_monitor_orders(client, m)
             if m.close_only:
                 m.state = "FINISHED"
                 m.done = True
@@ -828,7 +1036,7 @@ def process_monitor_step(
         if latest_h >= m.cur_tp2 * 0.999:
             console.print(f"\n[bold green]💰 [{m.symbol}] КОРЗИННЫЙ ТЕЙК-ПРОФИТ 0.382 ДОСТИГНУТ! Ордера 1 и 2 закрыты в плюс.[/bold green]")
             if is_live:
-                cancelled = client.cancel_all_orders(m.symbol)
+                cancelled = cancel_monitor_orders(client, m)
                 console.print(f"[dim][{m.symbol}] Снят висящий Ордер 3 (0.786) [отменено: {len(cancelled)}].[/dim]")
             if m.close_only:
                 m.state = "FINISHED"
@@ -841,7 +1049,7 @@ def process_monitor_step(
         else:
             console.print(f"\n[bold red]🛑 [{m.symbol}] Стоп-лосс на уровне 1.000 (${m.sl}) сработал![/bold red]")
             if is_live:
-                client.cancel_all_orders(m.symbol)
+                cancel_monitor_orders(client, m)
             if m.close_only:
                 m.state = "FINISHED"
                 m.done = True
@@ -877,7 +1085,7 @@ def process_monitor_step(
         if latest_h >= m.cur_tp3 * 0.999:
             console.print(f"\n[bold green]💰 [{m.symbol}] СУПЕР-ТЕЙК-ПРОФИТ 0.500 ДОСТИГНУТ! Все 3 ордера закрыты (Ордер 3 в макси-плюс, Ордер 2 в плюс, Ордер 1 в БУ).[/bold green]")
             if is_live:
-                client.cancel_all_orders(m.symbol)
+                cancel_monitor_orders(client, m)
             if m.close_only:
                 m.state = "FINISHED"
                 m.done = True
@@ -889,7 +1097,7 @@ def process_monitor_step(
         else:
             console.print(f"\n[bold red]🛑 [{m.symbol}] Стоп-лосс на уровне 1.000 (${m.sl}) сработал![/bold red]")
             if is_live:
-                client.cancel_all_orders(m.symbol)
+                cancel_monitor_orders(client, m)
             if m.close_only:
                 m.state = "FINISHED"
                 m.done = True
@@ -946,7 +1154,8 @@ def process_monitor_step(
             be_price = client.round_price(reclaim_entry * (1.0 + cfg.reclaim_be_offset_pct / 100.0), m.symbol)
             dist = abs(reclaim_entry - reclaim_sl)
             specs = client.get_specs(m.symbol)
-            q_reclaim = client.round_qty(cfg.total_risk_usd / dist if dist > 0 else specs.min_qty, m.symbol)
+            setup_risk = cfg.major_risk_usd if m.layer == "major" else cfg.minor_risk_usd
+            q_reclaim = client.round_qty(setup_risk / dist if dist > 0 else specs.min_qty, m.symbol)
             if q_reclaim < specs.min_qty:
                 q_reclaim = specs.min_qty
 
@@ -978,46 +1187,48 @@ def process_monitor_step(
         else:
             # Сетка Манипуляции (Вариант 3)
             reason = f"закрытие свечи ниже 1.000 (${bar_close} < ${p_1000})" if bar_close < p_1000 else f"глубокий свип ({swp_pct:.2f}% > {cfg.reclaim_max_sweep_pct}%)"
-            console.print(f"\n[bold magenta]🟣 [{m.symbol}] МАНИПУЛЯЦИЯ ({reason}). ВЫСТАВЛЯЕМ СЕТКУ 1.618 & 2.000...[/bold magenta]")
+            console.print(f"\n[bold magenta]🟣 [{m.symbol}] МАНИПУЛЯЦИЯ ({reason}). ВЫСТАВЛЯЕМ СЕТКУ 1.414 & 1.618...[/bold magenta]")
 
-            p_0500 = calc_fib(m.cur_peak, m.imp_start_price, 0.500, is_long=True, scale=cfg.scale)
+            p_1414 = calc_fib(m.cur_peak, m.imp_start_price, 1.414, is_long=True, scale=cfg.scale)
             p_1618 = calc_fib(m.cur_peak, m.imp_start_price, 1.618, is_long=True, scale=cfg.scale)
-            p_2000 = calc_fib(m.cur_peak, m.imp_start_price, 2.000, is_long=True, scale=cfg.scale)
             p_2414 = calc_fib(m.cur_peak, m.imp_start_price, 2.414, is_long=True, scale=cfg.scale)
 
+            e_1414 = client.round_price(p_1414 * (1.0 + cfg.entry_buffer_pct / 100.0), m.symbol)
             e_1618 = client.round_price(p_1618 * (1.0 + cfg.entry_buffer_pct / 100.0), m.symbol)
-            e_2000 = client.round_price(p_2000 * (1.0 + cfg.entry_buffer_pct / 100.0), m.symbol)
-            tp_0500 = client.round_price(p_0500 * (1.0 - cfg.tp_buffer_pct / 100.0), m.symbol)
             tp_1000 = client.round_price(p_1000 * (1.0 - cfg.tp_buffer_pct / 100.0), m.symbol)
             sl_2414 = client.round_price(p_2414, m.symbol)
 
+            # На каждый ордер выделяется cfg.manipulation_risk_usd ($2.0), на корзину 2 * manipulation_risk_usd ($4.0)
             q1_m, q2_m, l1, l2 = client.calc_dual_grid_order_sizes(
-                e_1618, e_2000, sl_2414, total_risk_usd=cfg.total_risk_usd, symbol=m.symbol
+                e_1414, e_1618, sl_2414, total_risk_usd=cfg.manipulation_risk_usd * 2.0, symbol=m.symbol, equal_weight=True
             )
 
             if is_live:
                 try:
-                    client.cancel_all_orders(m.symbol)
-                    r1 = client.place_order(symbol=m.symbol, side="Buy", order_type="Limit", qty=q1_m, price=e_1618, take_profit=tp_0500, stop_loss=sl_2414)
-                    r2 = client.place_order(symbol=m.symbol, side="Buy", order_type="Limit", qty=q2_m, price=e_2000, take_profit=tp_1000, stop_loss=sl_2414)
+                    cancel_monitor_orders(client, m)
+                    layer_tag = "MAJ" if m.layer == "major" else "MIN"
+                    sym_short = m.symbol.replace("USDT.P", "").replace("USDT", "")
+                    r1 = client.place_order(symbol=m.symbol, side="Buy", order_type="Limit", qty=q1_m, price=e_1414, take_profit=tp_1000, stop_loss=sl_2414, order_link_id=f"FIB-{sym_short}-{layer_tag}-M-O1")
+                    r2 = client.place_order(symbol=m.symbol, side="Buy", order_type="Limit", qty=q2_m, price=e_1618, take_profit=e_1414, stop_loss=sl_2414, order_link_id=f"FIB-{sym_short}-{layer_tag}-M-O2")
                     m.o1_id = r1.get("orderId")
                     m.o2_id = r2.get("orderId")
-                    console.print(f"  ✓ Ордер 1: Limit Buy {q1_m} @ ${e_1618}, TP: ${tp_0500}, SL: ${sl_2414}")
-                    console.print(f"  ✓ Ордер 2: Limit Buy {q2_m} @ ${e_2000}, TP: ${tp_1000}, SL: ${sl_2414}")
+                    console.print(f"  ✓ Ордер 1: Limit Buy {q1_m} @ ${e_1414}, TP: ${tp_1000}, SL: ${sl_2414}")
+                    console.print(f"  ✓ Ордер 2: Limit Buy {q2_m} @ ${e_1618}, TP: ${e_1414}, SL: ${sl_2414}")
                 except Exception as err:
                     console.print(f"  ❌ Ошибка выставления сетки манипуляции: {err}")
                     m.state = "IDLE"
                     return
 
             m.state = "MANIPULATION_ACTIVE"
-            m.cur_e1 = e_1618
-            m.cur_tp1 = tp_0500
-            m.cur_e2 = e_2000
-            m.cur_tp2 = tp_1000
+            m.cur_e1 = e_1414
+            m.cur_tp1 = tp_1000
+            m.cur_e2 = e_1618
+            m.cur_tp2 = e_1414
             m.sl = sl_2414
             m.q1 = q1_m
             m.q2 = q2_m
             m.has_o2 = True
+            m.tp_basket_applied = False
             m.position_was_open = False
 
     # ─── 6. Состояние: АКТИВНЫЙ ЛОЖНЫЙ ПРОБОЙ (Следим за БУ и выходом) ─────────
@@ -1044,7 +1255,7 @@ def process_monitor_step(
         if m.position_was_open and pos_size == 0:
             console.print(f"\n[bold green]🏁 [{m.symbol}] Сделка по Ложному пробою закрыта (TP или SL). Фибоначчи завершена.[/bold green]")
             if is_live:
-                client.cancel_all_orders(m.symbol)
+                cancel_monitor_orders(client, m)
             if m.close_only:
                 m.state = "FINISHED"
                 m.done = True
@@ -1061,12 +1272,25 @@ def process_monitor_step(
 
         if pos_size > 0:
             m.position_was_open = True
+            # Проверяем налитие 2-го ордера (1.618 Fib) для переноса корзины в TP = 1.414
+            if m.has_o2 and m.q2 > 0 and pos_size >= (m.q1 + 0.5 * m.q2):
+                if not m.tp_basket_applied:
+                    console.print(f"\n[bold green]⚡ [{m.symbol}] Налиты оба ордера манипуляции (1.414 и 1.618)! Позиция: {pos_size}.[/bold green]")
+                    console.print(f"  ➜ Переносим общий Take-Profit корзины на уровень 1.414 Fib (${m.cur_e1})...")
+                    if is_live:
+                        try:
+                            client.set_position_tp_sl(m.symbol, take_profit=m.cur_e1, stop_loss=m.sl)
+                            m.tp_basket_applied = True
+                        except Exception as err:
+                            console.print(f"  ⚠️ [{m.symbol}] Ошибка переноса TP корзины на 1.414: {err}")
+                    else:
+                        m.tp_basket_applied = True
             return
 
         if m.position_was_open and pos_size == 0:
             console.print(f"\n[bold green]🏁 [{m.symbol}] Сетка Манипуляции закрыта (TP или SL). Работа с данной Фибоначчи полностью завершена.[/bold green]")
             if is_live:
-                client.cancel_all_orders(m.symbol)
+                cancel_monitor_orders(client, m)
             if m.close_only:
                 m.state = "FINISHED"
                 m.done = True
@@ -1082,7 +1306,7 @@ def process_monitor_step(
             m.state = "FINISHED"
             m.done = True
             return
-        df_now = client.fetch_klines(m.symbol, interval=interval, limit=80)
+        df_now = client.fetch_klines(m.symbol, interval=interval, limit=max(140, cfg.lookback_bars + 20))
         if len(df_now) < 15:
             return
         latest_time = df_now["timestamp"].iloc[-1]
@@ -1090,6 +1314,10 @@ def process_monitor_step(
             return  # Новая свеча еще не появилась
 
         m.last_candle_time = latest_time
+        is_major = (m.layer == "major")
+        min_bars = (cfg.minor_max_impulse_bars + 1) if is_major else None
+        max_bars = cfg.major_max_impulse_bars if is_major else cfg.minor_max_impulse_bars
+
         setup = find_active_setup(
             df_now,
             min_pct=cfg.min_impulse_pct,
@@ -1105,11 +1333,34 @@ def process_monitor_step(
             reclaim_be_offset_pct=cfg.reclaim_be_offset_pct,
             atr_multiplier=cfg.atr_multiplier,
             timeout_hours=cfg.timeout_hours,
-            max_impulse_bars=cfg.max_impulse_bars,
+            min_impulse_bars=min_bars,
+            max_impulse_bars=max_bars,
+            layer=m.layer,
         )
 
         if setup is not None:
-            console.print(f"\n[bold green]✨ [{m.symbol}] На закрытии свечи обнаружен новый импульс:[/bold green] {setup.description}")
+            layer_tag_log = "[MAJOR]" if is_major else "[MINOR]"
+            console.print(f"\n[bold green]✨ [{m.symbol}] {layer_tag_log} На закрытии свечи обнаружен импульс:[/bold green] {setup.description}")
+
+            # Если это большая фиба и цена еще выше 0.382 — не выставляем лимитки, ждем 0.382
+            if is_major and not setup.touched_0382:
+                console.print(f"  ➜ Переход в режим ожидания 0.382 (AWAITING_MAJOR_0382). Лимитки не выставляются, маржа свободна.")
+                m.setup_type = setup.setup_type
+                m.state = "AWAITING_MAJOR_0382"
+                m.cur_peak = setup.imp_peak_price
+                m.p_0382 = setup.p_0382
+                m.cur_e1 = client.round_price(setup.entry_1, m.symbol)
+                m.cur_tp1 = client.round_price(setup.tp_1, m.symbol)
+                m.cur_e2 = client.round_price(setup.entry_2, m.symbol) if setup.entry_2 else None
+                m.cur_tp2 = client.round_price(setup.tp_2, m.symbol) if setup.tp_2 else None
+                m.cur_e3 = client.round_price(setup.entry_3, m.symbol) if setup.entry_3 else None
+                m.cur_tp3 = client.round_price(setup.tp_3, m.symbol) if setup.tp_3 else None
+                m.sl = client.round_price(setup.stop_loss, m.symbol)
+                m.imp_start_price = setup.imp_start_price
+                m.imp_end_time = setup.imp_end_time
+                m.touched_0382 = False
+                return
+
             e1 = client.round_price(setup.entry_1, m.symbol)
             tp1 = client.round_price(setup.tp_1, m.symbol)
             sl = client.round_price(setup.stop_loss, m.symbol)
@@ -1118,18 +1369,25 @@ def process_monitor_step(
             e3 = client.round_price(setup.entry_3, m.symbol) if setup.entry_3 else None
             tp3 = client.round_price(setup.tp_3, m.symbol) if setup.tp_3 else None
 
+            if setup.setup_type == "MANIPULATION":
+                setup_risk = cfg.manipulation_risk_usd * 2.0
+            else:
+                setup_risk = cfg.major_risk_usd if is_major else cfg.minor_risk_usd
+
             if e3 is not None and e2 is not None:
-                q1, q2, q3, _, _, _ = client.calc_triple_grid_order_sizes(e1, e2, e3, sl, total_risk_usd=cfg.total_risk_usd, symbol=m.symbol)
+                q1, q2, q3, _, _, _ = client.calc_triple_grid_order_sizes(e1, e2, e3, sl, total_risk_usd=setup_risk, symbol=m.symbol)
             elif e2 is not None:
-                q1, q2, _, _ = client.calc_dual_grid_order_sizes(e1, e2, sl, total_risk_usd=cfg.total_risk_usd, symbol=m.symbol)
+                q1, q2, _, _ = client.calc_dual_grid_order_sizes(e1, e2, sl, total_risk_usd=setup_risk, symbol=m.symbol, equal_weight=True)
                 q3 = 0.0
             else:
                 dist1 = abs(e1 - sl)
                 specs = client.get_specs(m.symbol)
-                q1 = client.round_qty(cfg.total_risk_usd / dist1 if dist1 > 0 else specs.min_qty, m.symbol)
+                q1 = client.round_qty(setup_risk / dist1 if dist1 > 0 else specs.min_qty, m.symbol)
                 q2 = 0.0
                 q3 = 0.0
 
+            layer_tag = "MAJ" if is_major else "MIN"
+            sym_short = m.symbol.replace("USDT.P", "").replace("USDT", "")
             o1_id, o2_id, o3_id = None, None, None
             if is_live:
                 # Проверяем, нет ли уже открытой позиции перед выставлением новой сетки
@@ -1141,18 +1399,17 @@ def process_monitor_step(
                     m.position_was_open = True
                     return
                 try:
-                    sym_short = m.symbol.replace("USDT.P", "").replace("USDT", "")
-                    r1 = client.place_order(symbol=m.symbol, side="Buy", order_type="Limit", qty=q1, price=e1, take_profit=tp1, stop_loss=sl, order_link_id=f"FIB-{sym_short}-B-O1")
+                    r1 = client.place_order(symbol=m.symbol, side="Buy", order_type="Limit", qty=q1, price=e1, take_profit=tp1, stop_loss=sl, order_link_id=f"FIB-{sym_short}-{layer_tag}-B-O1")
                     o1_id = r1.get("orderId")
                     if e2 and q2 > 0 and tp2:
-                        r2 = client.place_order(symbol=m.symbol, side="Buy", order_type="Limit", qty=q2, price=e2, take_profit=tp2, stop_loss=sl, order_link_id=f"FIB-{sym_short}-B-O2")
+                        r2 = client.place_order(symbol=m.symbol, side="Buy", order_type="Limit", qty=q2, price=e2, take_profit=tp2, stop_loss=sl, order_link_id=f"FIB-{sym_short}-{layer_tag}-B-O2")
                         o2_id = r2.get("orderId")
                     if e3 and q3 > 0 and tp3:
-                        r3 = client.place_order(symbol=m.symbol, side="Buy", order_type="Limit", qty=q3, price=e3, take_profit=tp3, stop_loss=sl, order_link_id=f"FIB-{sym_short}-B-O3")
+                        r3 = client.place_order(symbol=m.symbol, side="Buy", order_type="Limit", qty=q3, price=e3, take_profit=tp3, stop_loss=sl, order_link_id=f"FIB-{sym_short}-{layer_tag}-B-O3")
                         o3_id = r3.get("orderId")
-                    console.print(f"  ✓ [{m.symbol}] Размещена новая тройная сетка: Вход 1 ${e1}, Вход 2 ${e2 or '-'}, Вход 3 ${e3 or '-'}")
+                    console.print(f"  ✓ [{m.symbol}] [{layer_tag}] Размещена новая тройная сетка: Вход 1 ${e1}, Вход 2 ${e2 or '-'}, Вход 3 ${e3 or '-'}")
                 except Exception as err:
-                    console.print(f"[red]❌ [{m.symbol}] Ошибка выставления новой сетки: {err}[/red]")
+                    console.print(f"[red]❌ [{m.symbol}] [{layer_tag}] Ошибка выставления новой сетки: {err}[/red]")
                     return
 
             m.setup_type = setup.setup_type
@@ -1178,6 +1435,7 @@ def process_monitor_step(
             m.position_was_open = False
             m.be_applied = False
             m.tp_basket_applied = False
+            m.touched_0382 = True
 
 
 def main():
@@ -1214,7 +1472,7 @@ def main():
     to_desc = f"{cfg.timeout_hours}ч" if cfg.timeout_hours > 0 else "выкл"
     console.print(Panel.fit(
         "[bold cyan]🤖 Bybit Fibonacci Dual Grid & Trailing Trader[/bold cyan]\n"
-        f"[dim]Конфиг: {Path(cfg.config_path).name if cfg.config_path else 'default'} | Стоп: ${cfg.total_risk_usd:.2f} | Вход: +{cfg.entry_buffer_pct:.2f}% | Тейк: -{cfg.tp_buffer_pct:.2f}% | ATR: {atr_desc} | Таймаут: {to_desc}[/dim]",
+        f"[dim]Конфиг: {Path(cfg.config_path).name if cfg.config_path else 'default'} | Стоп сетки: ${cfg.total_risk_usd:.2f} | Стоп манипуляции: ${cfg.manipulation_risk_usd:.2f}/ордер | Вход: +{cfg.entry_buffer_pct:.2f}% | Тейк: -{cfg.tp_buffer_pct:.2f}% | ATR: {atr_desc} | Таймаут: {to_desc}[/dim]",
         border_style="cyan",
     ))
 
@@ -1283,8 +1541,14 @@ def main():
         console.print(f"[bold red]❌ Ошибка инициализации Bybit клиента:[/bold red] {e}")
         return
 
-    # Сканирование монет
+    # Сканирование монет по двум независимым слоям: Minor (локальная) и Major (старшая)
     actionable_setups = []
+    awaiting_major_setups = []
+
+    layers = [
+        ("minor", None, cfg.minor_max_impulse_bars, cfg.minor_risk_usd),
+        ("major", cfg.minor_max_impulse_bars + 1, cfg.major_max_impulse_bars, cfg.major_risk_usd),
+    ]
 
     for symbol in symbols:
         console.print(f"\n[bold cyan]─── Анализ {symbol} ───[/bold cyan]")
@@ -1295,7 +1559,7 @@ def main():
             continue
 
         try:
-            df = client.fetch_klines(symbol, interval=interval, limit=80)
+            df = client.fetch_klines(symbol, interval=interval, limit=max(140, cfg.lookback_bars + 20))
         except Exception as e:
             console.print(f"[red]❌ Ошибка загрузки свечей {symbol}: {e}. Пропускаем.[/red]")
             continue
@@ -1307,143 +1571,161 @@ def main():
         cur_price = df["close"].iloc[-1]
         console.print(f"[dim]{symbol}: Tick: {specs.tick_size}, Step: {specs.qty_step}, MinQty: {specs.min_qty}, MinNotional: ${specs.min_notional}, Цена: {cur_price}[/dim]")
 
-        setup = find_active_setup(
-            df,
-            min_pct=cfg.min_impulse_pct,
-            lookback_bars=cfg.lookback_bars,
-            preferred_side=cfg.preferred_side,
-            scale=cfg.scale,
-            max_sweep_pct=cfg.reclaim_max_sweep_pct,
-            allow_close_below=cfg.reclaim_allow_close_below,
-            entry_buffer_pct=cfg.entry_buffer_pct,
-            tp_buffer_pct=cfg.tp_buffer_pct,
-            reclaim_tp_buffer_pct=cfg.reclaim_tp_buffer_pct,
-            reclaim_be_trigger_fib=cfg.reclaim_be_trigger_fib,
-            reclaim_be_offset_pct=cfg.reclaim_be_offset_pct,
-            atr_multiplier=cfg.atr_multiplier,
-            timeout_hours=cfg.timeout_hours,
-            max_impulse_bars=cfg.max_impulse_bars,
-        )
+        for layer_name, min_bars, max_bars, layer_risk in layers:
+            is_major = (layer_name == "major")
+            layer_tag_title = f"[MAJOR FIB {min_bars}-{max_bars} свечей]" if is_major else f"[MINOR FIB <= {max_bars} свечей]"
 
-        if not setup:
-            console.print(Panel(
-                f"[yellow]На монете {symbol} в последних {cfg.lookback_bars} свечах не найдено активного LONG-импульса (от {cfg.min_impulse_pct:.1f}%).[/yellow]\n"
-                "Все предыдущие сетки либо отработали тейк, либо выбиты по стопу.",
-                title=f"🔍 {symbol}: Сетап не найден",
-                border_style="yellow",
-            ))
-            continue
+            setup = find_active_setup(
+                df,
+                min_pct=cfg.min_impulse_pct,
+                lookback_bars=cfg.lookback_bars,
+                preferred_side=cfg.preferred_side,
+                scale=cfg.scale,
+                max_sweep_pct=cfg.reclaim_max_sweep_pct,
+                allow_close_below=cfg.reclaim_allow_close_below,
+                entry_buffer_pct=cfg.entry_buffer_pct,
+                tp_buffer_pct=cfg.tp_buffer_pct,
+                reclaim_tp_buffer_pct=cfg.reclaim_tp_buffer_pct,
+                reclaim_be_trigger_fib=cfg.reclaim_be_trigger_fib,
+                reclaim_be_offset_pct=cfg.reclaim_be_offset_pct,
+                atr_multiplier=cfg.atr_multiplier,
+                timeout_hours=cfg.timeout_hours,
+                min_impulse_bars=min_bars,
+                max_impulse_bars=max_bars,
+                layer=layer_name,
+            )
 
-        # Расчет позиций
-        e1 = client.round_price(setup.entry_1, symbol)
-        tp1 = client.round_price(setup.tp_1, symbol)
-        sl = client.round_price(setup.stop_loss, symbol)
+            if not setup:
+                console.print(f"[dim]{symbol} {layer_tag_title}: активный импульс не найден.[/dim]")
+                continue
 
-        e2 = client.round_price(setup.entry_2, symbol) if setup.entry_2 else None
-        tp2 = client.round_price(setup.tp_2, symbol) if setup.tp_2 else None
+            # Расчет позиций
+            e1 = client.round_price(setup.entry_1, symbol)
+            tp1 = client.round_price(setup.tp_1, symbol)
+            sl = client.round_price(setup.stop_loss, symbol)
 
-        e3 = client.round_price(setup.entry_3, symbol) if setup.entry_3 else None
-        tp3 = client.round_price(setup.tp_3, symbol) if setup.tp_3 else None
+            e2 = client.round_price(setup.entry_2, symbol) if setup.entry_2 else None
+            tp2 = client.round_price(setup.tp_2, symbol) if setup.tp_2 else None
 
-        # Расчет лотов
-        if e3 is not None and e2 is not None:
-            q1, q2, q3, loss1, loss2, loss3 = client.calc_triple_grid_order_sizes(e1, e2, e3, sl, total_risk_usd=total_risk, symbol=symbol, equal_weight=True)
-            tot_loss = loss1 + loss2 + loss3
-        elif e2 is not None:
-            q1, q2, loss1, loss2 = client.calc_dual_grid_order_sizes(e1, e2, sl, total_risk_usd=total_risk, symbol=symbol, equal_weight=True)
-            q3 = 0.0
-            loss3 = 0.0
-            tot_loss = loss1 + loss2
-        else:
-            dist1 = abs(e1 - sl)
-            q1 = client.round_qty(total_risk / dist1 if dist1 > 0 else specs.min_qty, symbol)
-            if q1 < specs.min_qty:
-                q1 = specs.min_qty
-            loss1 = q1 * dist1
-            q2 = 0.0
-            loss2 = 0.0
-            q3 = 0.0
-            loss3 = 0.0
-            tot_loss = loss1
+            e3 = client.round_price(setup.entry_3, symbol) if setup.entry_3 else None
+            tp3 = client.round_price(setup.tp_3, symbol) if setup.tp_3 else None
 
-        # Отображение информации
-        title_map = {
-            "TRIPLE_GRID_TRAILING": "🚀 ТРОЙНАЯ СЕТКА (РЕЖИМ ТРЕЙЛИНГА)",
-            "TRIPLE_GRID_CORRECTION": "🎯 ТРОЙНАЯ СЕТКА (АКТИВНАЯ КОРРЕКЦИЯ)",
-            "DUAL_GRID_TRAILING": "🚀 ТРОЙНАЯ СЕТКА (РЕЖИМ ТРЕЙЛИНГА)",
-            "DUAL_GRID_CORRECTION": "🎯 ТРОЙНАЯ СЕТКА (АКТИВНАЯ КОРРЕКЦИЯ)",
-            "SWEEP_RECLAIM": "🟢 ЛОЖНЫЙ ПРОБОЙ (SWEEP RECLAIM + MACD)",
-            "MANIPULATION": "🟣 СЕТКА МАНИПУЛЯЦИИ (1.618 & 2.000)",
-        }
+            # Расчет лотов
+            if setup.setup_type == "MANIPULATION":
+                setup_risk = cfg.manipulation_risk_usd * 2.0
+            else:
+                setup_risk = layer_risk
 
-        t = Table(title=f"{title_map.get(setup.setup_type, setup.setup_type)} — {symbol} [LONG ONLY]", show_header=True, header_style="bold magenta")
-        t.add_column("Параметр", style="cyan")
-        t.add_column("Значение", style="bold white")
+            if e3 is not None and e2 is not None:
+                q1, q2, q3, loss1, loss2, loss3 = client.calc_triple_grid_order_sizes(e1, e2, e3, sl, total_risk_usd=setup_risk, symbol=symbol, equal_weight=True)
+                tot_loss = loss1 + loss2 + loss3
+            elif e2 is not None:
+                q1, q2, loss1, loss2 = client.calc_dual_grid_order_sizes(e1, e2, sl, total_risk_usd=setup_risk, symbol=symbol, equal_weight=True)
+                q3 = 0.0
+                loss3 = 0.0
+                tot_loss = loss1 + loss2
+            else:
+                dist1 = abs(e1 - sl)
+                q1 = client.round_qty(setup_risk / dist1 if dist1 > 0 else specs.min_qty, symbol)
+                if q1 < specs.min_qty:
+                    q1 = specs.min_qty
+                loss1 = q1 * dist1
+                q2 = 0.0
+                loss2 = 0.0
+                q3 = 0.0
+                loss3 = 0.0
+                tot_loss = loss1
 
-        t.add_row("Конфиг", f"{Path(cfg.config_path).name if cfg.config_path else 'по умолчанию'}")
-        t.add_row("Импульс старт", f"{setup.imp_start_time.strftime('%Y-%m-%d %H:%M')} (${setup.imp_start_price})")
-        t.add_row("Импульс вершина", f"{setup.imp_end_time.strftime('%Y-%m-%d %H:%M')} (${setup.imp_peak_price}) [{setup.imp_pct:+.2f}%]")
-        t.add_row("Текущая цена", f"${cur_price}")
-        if cfg.atr_multiplier > 0:
-            t.add_row("ATR волатильность", f"Множитель {cfg.atr_multiplier:.1f}x ATR(14) (фильтр шума)")
-        if cfg.timeout_hours > 0:
-            t.add_row("Тайм-аут свежести", f"{cfg.timeout_hours} часов (отмена при зависании без отката к 0.500)")
-        t.add_row("Буфер входа", f"+{cfg.entry_buffer_pct:.2f}% перед уровнем (вход чуть выше Фибы)")
-        t.add_row("Буфер тейка", f"-{cfg.tp_buffer_pct:.2f}% от уровня (раннее закрытие перед Фибой)")
-        t.add_row("─" * 20, "─" * 30)
+            title_map = {
+                "TRIPLE_GRID_TRAILING": "🚀 ТРОЙНАЯ СЕТКА (РЕЖИМ ТРЕЙЛИНГА)",
+                "TRIPLE_GRID_CORRECTION": "🎯 ТРОЙНАЯ СЕТКА (АКТИВНАЯ КОРРЕКЦИЯ)",
+                "DUAL_GRID_TRAILING": "🚀 ТРОЙНАЯ СЕТКА (РЕЖИМ ТРЕЙЛИНГА)",
+                "DUAL_GRID_CORRECTION": "🎯 ТРОЙНАЯ СЕТКА (АКТИВНАЯ КОРРЕКЦИЯ)",
+                "SWEEP_RECLAIM": "🟢 ЛОЖНЫЙ ПРОБОЙ (SWEEP RECLAIM + MACD)",
+                "MANIPULATION": "🟣 СЕТКА МАНИПУЛЯЦИИ (1.414 & 1.618)",
+            }
 
-        t.add_row("Ордер 1 (Вход / Тейк)", f"Вход: ${e1}  |  TP: ${tp1}")
-        t.add_row("Объем Ордера 1", f"{q1} шт. (${q1 * e1:.2f} notional, риск ${loss1:.2f})")
+            t = Table(title=f"{layer_tag_title} {title_map.get(setup.setup_type, setup.setup_type)} — {symbol} [LONG ONLY]", show_header=True, header_style="bold magenta")
+            t.add_column("Параметр", style="cyan")
+            t.add_column("Значение", style="bold white")
 
-        if e2 is not None and tp2 is not None:
-            lbl_o2 = "Ордер 2 (Вход 0.618 / Тейк 0.382)" if e3 is not None else "Ордер 2 (Вход / Тейк)"
-            t.add_row(lbl_o2, f"Вход: ${e2}  |  TP: ${tp2}")
-            t.add_row("Объем Ордера 2", f"{q2} шт. (${q2 * e2:.2f} notional, риск ${loss2:.2f})")
+            t.add_row("Конфиг", f"{Path(cfg.config_path).name if cfg.config_path else 'по умолчанию'}")
+            t.add_row("Слой / Риск", f"{layer_name.upper()} (лимит ${setup_risk:.2f})")
+            t.add_row("Импульс старт", f"{setup.imp_start_time.strftime('%Y-%m-%d %H:%M')} (${setup.imp_start_price})")
+            t.add_row("Импульс вершина", f"{setup.imp_end_time.strftime('%Y-%m-%d %H:%M')} (${setup.imp_peak_price}) [{setup.imp_pct:+.2f}%]")
+            t.add_row("Текущая цена", f"${cur_price}")
+            if is_major:
+                p_0382_str = f"${setup.p_0382:.4f}" if setup.p_0382 else "-"
+                status_0382 = "[bold green]Пробит (готов к выставлению сетки)[/bold green]" if setup.touched_0382 else f"[bold yellow]Выше 0.382 ({p_0382_str}) — ожидание отката (маржа свободна)[/bold yellow]"
+                t.add_row("Уровень 0.382 Фибы", status_0382)
+            if cfg.atr_multiplier > 0:
+                t.add_row("ATR волатильность", f"Множитель {cfg.atr_multiplier:.1f}x ATR(14)")
+            if cfg.timeout_hours > 0:
+                t.add_row("Тайм-аут свежести", f"{cfg.timeout_hours} часов")
+            t.add_row("Буфер входа", f"+{cfg.entry_buffer_pct:.2f}% перед уровнем")
+            t.add_row("Буфер тейка", f"-{cfg.tp_buffer_pct:.2f}% от уровня")
+            t.add_row("─" * 20, "─" * 30)
 
-        if e3 is not None and tp3 is not None:
-            t.add_row("Ордер 3 (Вход 0.786 / Тейк 0.500)", f"Вход: ${e3}  |  TP: ${tp3}")
-            t.add_row("Объем Ордера 3", f"{q3} шт. (${q3 * e3:.2f} notional, риск ${loss3:.2f})")
+            t.add_row("Ордер 1 (Вход / Тейк)", f"Вход: ${e1}  |  TP: ${tp1}")
+            t.add_row("Объем Ордера 1", f"{q1} шт. (${q1 * e1:.2f} notional, риск ${loss1:.2f})")
 
-        t.add_row("Стоп-Лосс (SL)", f"${sl} (расчетный суммарный убыток: ${tot_loss:.2f} / лимит ${total_risk:.2f})")
-        if setup.be_trigger is not None and setup.be_price is not None:
-            be_trig_str = f"${client.round_price(setup.be_trigger, symbol)}"
-            be_price_str = f"${client.round_price(setup.be_price, symbol)}"
-            t.add_row("Безубыток (БУ)", f"Триггер: {be_trig_str} ({cfg.reclaim_be_trigger_fib} Fib)  ->  Перенос SL в: {be_price_str}")
-        t.add_row("Статус стратегии", f"[green]{setup.description}[/green]")
+            if e2 is not None and tp2 is not None:
+                lbl_o2 = "Ордер 2 (Вход 0.618 / Тейк 0.382)" if e3 is not None else "Ордер 2 (Вход / Тейк)"
+                t.add_row(lbl_o2, f"Вход: ${e2}  |  TP: ${tp2}")
+                t.add_row("Объем Ордера 2", f"{q2} шт. (${q2 * e2:.2f} notional, риск ${loss2:.2f})")
 
-        console.print(t)
+            if e3 is not None and tp3 is not None:
+                t.add_row("Ордер 3 (Вход 0.786 / Тейк 0.500)", f"Вход: ${e3}  |  TP: ${tp3}")
+                t.add_row("Объем Ордера 3", f"{q3} шт. (${q3 * e3:.2f} notional, риск ${loss3:.2f})")
 
-        if q1 * e1 < specs.min_notional:
-            console.print(f"[yellow]⚠️ Внимание: Notional Ордера 1 (${q1 * e1:.2f}) меньше биржевого минимума ${specs.min_notional}![/yellow]")
+            risk_label = f"лимит ${setup_risk:.2f} ($4.00 на корзину манипуляции)" if setup.setup_type == "MANIPULATION" else f"лимит ${setup_risk:.2f}"
+            t.add_row("Стоп-Лосс (SL)", f"${sl} (расчетный суммарный убыток: ${tot_loss:.2f} / {risk_label})")
+            if setup.be_trigger is not None and setup.be_price is not None:
+                be_trig_str = f"${client.round_price(setup.be_trigger, symbol)}"
+                be_price_str = f"${client.round_price(setup.be_price, symbol)}"
+                t.add_row("Безубыток (БУ)", f"Триггер: {be_trig_str} ({cfg.reclaim_be_trigger_fib} Fib)  ->  Перенос SL в: {be_price_str}")
+            t.add_row("Статус стратегии", f"[green]{setup.description}[/green]")
 
-        actionable_setups.append({
-            "symbol": symbol,
-            "setup": setup,
-            "specs": specs,
-            "e1": e1,
-            "tp1": tp1,
-            "e2": e2,
-            "tp2": tp2,
-            "e3": e3,
-            "tp3": tp3,
-            "sl": sl,
-            "q1": q1,
-            "q2": q2,
-            "q3": q3,
-        })
+            console.print(t)
+
+            if q1 * e1 < specs.min_notional:
+                console.print(f"[yellow]⚠️ Внимание: Notional Ордера 1 (${q1 * e1:.2f}) меньше биржевого минимума ${specs.min_notional}![/yellow]")
+
+            setup_item = {
+                "symbol": symbol,
+                "layer": layer_name,
+                "setup": setup,
+                "specs": specs,
+                "e1": e1,
+                "tp1": tp1,
+                "e2": e2,
+                "tp2": tp2,
+                "e3": e3,
+                "tp3": tp3,
+                "sl": sl,
+                "q1": q1,
+                "q2": q2,
+                "q3": q3,
+                "setup_risk": setup_risk,
+            }
+
+            if is_major and not setup.touched_0382:
+                awaiting_major_setups.append(setup_item)
+            else:
+                actionable_setups.append(setup_item)
 
     # Если режим Dry-Run — завершаем после отображения всех сетапов
     if not is_live:
-        console.print(f"\n[bold green]Режим Dry-Run завершен.[/bold green] Найдено активных сетапов: [bold cyan]{len(actionable_setups)} из {len(symbols)}[/bold cyan] монет.")
+        console.print(f"\n[bold green]Режим Dry-Run завершен.[/bold green] Найдено: [bold cyan]{len(actionable_setups)} активных сетапов, {len(awaiting_major_setups)} в ожидании 0.382[/bold cyan].")
         return
 
-    # В Live режиме — если нет активных сетапов и запрошен одиночный проход
-    if not actionable_setups and args.once:
+    # В Live режиме — если нет активных сетапов и нет ожидающих сетапов и запрошен одиночный проход
+    if not actionable_setups and not awaiting_major_setups and args.once:
         console.print(f"\n[yellow]Нет активных сетапов для выставления ордеров среди монет: {', '.join(symbols)}.[/yellow]")
         return
 
     if actionable_setups:
-        symbols_to_trade_str = ", ".join(item["symbol"] for item in actionable_setups)
+        symbols_to_trade_str = ", ".join(f"{item['symbol']} ({item['layer'].upper()})" for item in actionable_setups)
         if not args.yes:
             confirm = console.input(f"\n[bold red]ВЫСТАВИТЬ ОРДЕРА НА BYBIT ДЛЯ {symbols_to_trade_str}?[/bold red] (y/N): ").strip().lower()
             if confirm != "y":
@@ -1457,11 +1739,13 @@ def main():
 
     for item in actionable_setups:
         sym = item["symbol"]
+        layer_name = item["layer"]
         setup = item["setup"]
         e1, tp1, e2, tp2, e3, tp3, sl = item["e1"], item["tp1"], item["e2"], item["tp2"], item["e3"], item["tp3"], item["sl"]
         q1, q2, q3 = item["q1"], item["q2"], item["q3"]
+        layer_tag = "MAJ" if layer_name == "major" else "MIN"
 
-        console.print(f"\n[bold cyan]Проверка/выставление ордеров для {sym}...[/bold cyan]")
+        console.print(f"\n[bold cyan]Проверка/выставление ордеров для {sym} [{layer_name.upper()}]...[/bold cyan]")
         o1_id = None
         o2_id = None
         o3_id = None
@@ -1476,36 +1760,43 @@ def main():
             if pos_sz > 0:
                 pos_open_initially = True
 
-            # Проверяем, есть ли уже активные лимитные ордера на Bybit
+            # 2. Ищем существующие ордера ТОЛЬКО для своего слоя
+            all_open = client.get_open_orders(sym)
             existing_orders = [
-                o for o in client.get_open_orders(sym)
-                if o.get("side") == side_str and o.get("orderType") == "Limit"
+                o for o in all_open
+                if o.get("side") == side_str and o.get("orderType") == "Limit" and (
+                    layer_tag in str(o.get("orderLinkId", "")) or (layer_name == "minor" and "-MAJ-" not in str(o.get("orderLinkId", "")))
+                )
             ]
             existing_orders.sort(key=lambda x: float(x.get("price", 0.0)), reverse=(setup.side == "long"))
 
             sym_short = sym.replace("USDT.P", "").replace("USDT", "")
-            link_id_1 = f"FIB-{sym_short}-B-O1" if side_str == "Buy" else f"FIB-{sym_short}-S-O1"
-            link_id_2 = f"FIB-{sym_short}-B-O2" if side_str == "Buy" else f"FIB-{sym_short}-S-O2"
-            link_id_3 = f"FIB-{sym_short}-B-O3" if side_str == "Buy" else f"FIB-{sym_short}-S-O3"
+            link_id_1 = f"FIB-{sym_short}-{layer_tag}-B-O1" if side_str == "Buy" else f"FIB-{sym_short}-{layer_tag}-S-O1"
+            link_id_2 = f"FIB-{sym_short}-{layer_tag}-B-O2" if side_str == "Buy" else f"FIB-{sym_short}-{layer_tag}-S-O2"
+            link_id_3 = f"FIB-{sym_short}-{layer_tag}-B-O3" if side_str == "Buy" else f"FIB-{sym_short}-{layer_tag}-S-O3"
+
+            setup_risk = item["setup_risk"]
 
             if pos_open_initially:
                 # ─── СИТУАЦИЯ 1: Позиция уже открыта на Bybit ───────────
                 avg_p = float(curr_pos.get("avgPrice", 0.0))
                 current_risk = pos_sz * abs(avg_p - sl)
-                remaining_risk = max(0.0, total_risk - current_risk)
-                console.print(f"ℹ️ [{sym}] Открыта позиция: {pos_sz} шт. @ {avg_p}. Задействованный риск: ${current_risk:.2f} из лимита ${total_risk:.2f}.")
+                remaining_risk = max(0.0, setup_risk - current_risk)
+                console.print(f"ℹ️ [{sym}] [{layer_tag}] Открыта позиция: {pos_sz} шт. @ {avg_p}. Задействованный риск: ${current_risk:.2f} из лимита ${setup_risk:.2f}.")
 
                 if remaining_risk <= 0.05:
-                    console.print(f"🛡️ [{sym}] Лимит риска ${total_risk:.2f} уже исчерпан открытой позицией (${current_risk:.2f}). Новые ордера блокируются!")
+                    console.print(f"🛡️ [{sym}] [{layer_tag}] Лимит риска ${setup_risk:.2f} уже исчерпан открытой позицией (${current_risk:.2f}). Новые ордера блокируются!")
                     if existing_orders:
-                        console.print(f"  ➜ Снимаем {len(existing_orders)} лишних лимитных ордеров...")
-                        client.cancel_all_orders(sym)
+                        console.print(f"  ➜ Снимаем {len(existing_orders)} лишних лимитных ордеров своего слоя...")
+                        for o in existing_orders:
+                            if o.get("orderId"):
+                                client.cancel_order(sym, o.get("orderId"))
                         existing_orders = []
                     initial_state = "O1_FILLED"
                 else:
-                    console.print(f"ℹ️ [{sym}] Остаточный бюджет риска на добор: ${remaining_risk:.2f}.")
+                    console.print(f"ℹ️ [{sym}] [{layer_tag}] Остаточный бюджет риска на добор: ${remaining_risk:.2f}.")
                     q2_res, q3_res, _, _, _ = client.calc_residual_order_sizes(
-                        pos_sz, avg_p, e2, e3, sl, total_risk_usd=total_risk, symbol=sym
+                        pos_sz, avg_p, e2, e3, sl, total_risk_usd=setup_risk, symbol=sym
                     )
                     # Проверяем, есть ли уже лимитные ордера добора в стакане
                     if len(existing_orders) >= 2:
@@ -1519,28 +1810,28 @@ def main():
                         e3 = float(o3_info.get("price", e3 or 0.0))
                         tp3 = float(o3_info.get("takeProfit") or (tp3 or 0.0))
                         initial_state = "O1_FILLED"
-                        console.print(f"  ✓ Подключены существующие ордера добора: Ордер 2 ID {o2_id} @ {e2}, Ордер 3 ID {o3_id} @ {e3}")
+                        console.print(f"  ✓ [{layer_tag}] Подключены существующие ордера добора: Ордер 2 ID {o2_id} @ {e2}, Ордер 3 ID {o3_id} @ {e3}")
                     elif len(existing_orders) == 1:
                         o2_info = existing_orders[0]
                         o2_id = o2_info.get("orderId")
                         e2 = float(o2_info.get("price", e2 or 0.0))
                         tp2 = float(o2_info.get("takeProfit") or (tp2 or 0.0))
                         initial_state = "O1_FILLED"
-                        console.print(f"  ✓ Подключен существующий ордер: Ордер 2 ID {o2_id} @ {e2}")
+                        console.print(f"  ✓ [{layer_tag}] Подключен существующий ордер: Ордер 2 ID {o2_id} @ {e2}")
                         if e3 is not None and q3_res > 0 and tp3 is not None:
                             resp3 = client.place_order(symbol=sym, side=side_str, order_type="Limit", qty=q3_res, price=e3, take_profit=tp3, stop_loss=sl, order_link_id=link_id_3)
                             o3_id = resp3.get("orderId")
-                            console.print(f"  ✅ [Остаточный риск] Ордер 3 размещен: ID {o3_id} (Limit {side_str} {q3_res} @ {e3})")
+                            console.print(f"  ✅ [{layer_tag}] [Остаточный риск] Ордер 3 размещен: ID {o3_id} (Limit {side_str} {q3_res} @ {e3})")
                     else:
                         initial_state = "O1_FILLED"
                         if e2 is not None and q2_res > 0 and tp2 is not None:
                             resp2 = client.place_order(symbol=sym, side=side_str, order_type="Limit", qty=q2_res, price=e2, take_profit=tp2, stop_loss=sl, order_link_id=link_id_2)
                             o2_id = resp2.get("orderId")
-                            console.print(f"  ✅ [Остаточный риск] Ордер 2 размещен: ID {o2_id} (Limit {side_str} {q2_res} @ {e2})")
+                            console.print(f"  ✅ [{layer_tag}] [Остаточный риск] Ордер 2 размещен: ID {o2_id} (Limit {side_str} {q2_res} @ {e2})")
                         if e3 is not None and q3_res > 0 and tp3 is not None:
                             resp3 = client.place_order(symbol=sym, side=side_str, order_type="Limit", qty=q3_res, price=e3, take_profit=tp3, stop_loss=sl, order_link_id=link_id_3)
                             o3_id = resp3.get("orderId")
-                            console.print(f"  ✅ [Остаточный риск] Ордер 3 размещен: ID {o3_id} (Limit {side_str} {q3_res} @ {e3})")
+                            console.print(f"  ✅ [{layer_tag}] [Остаточный риск] Ордер 3 размещен: ID {o3_id} (Limit {side_str} {q3_res} @ {e3})")
             else:
                 # ─── СИТУАЦИЯ 2: Позиции нет (размещение или синхронизация сетки) ─
                 match_existing = False
@@ -1554,33 +1845,35 @@ def main():
                         o2_id = existing_orders[1].get("orderId")
                         o3_id = existing_orders[2].get("orderId")
                         initial_state = "TRAILING" if setup.setup_type in ("TRIPLE_GRID_TRAILING", "TRIPLE_GRID_CORRECTION", "DUAL_GRID_TRAILING", "DUAL_GRID_CORRECTION") else setup.setup_type
-                        console.print(f"ℹ️ [{sym}] Найдена готовая сетка из 3 ордеров на Bybit (e1={p1}, e2={p2}, e3={p3}). Подключаем к мониторингу без перевыставления!")
+                        console.print(f"ℹ️ [{sym}] [{layer_tag}] Найдена готовая сетка из 3 ордеров на Bybit (e1={p1}, e2={p2}, e3={p3}). Подключаем к мониторингу без перевыставления!")
 
                 if not match_existing:
                     if existing_orders:
-                        console.print(f"🔄 [{sym}] Найдено {len(existing_orders)} старых ордеров без открытой позиции. Снимаем их для обновления до актуальной тройной сетки...")
-                        client.cancel_all_orders(sym)
+                        console.print(f"🔄 [{sym}] [{layer_tag}] Найдено {len(existing_orders)} старых ордеров своего слоя. Снимаем их для актуализации сетки...")
+                        for o in existing_orders:
+                            if o.get("orderId"):
+                                client.cancel_order(sym, o.get("orderId"))
                         existing_orders = []
 
                     resp1 = client.place_order(
                         symbol=sym, side=side_str, order_type="Limit", qty=q1, price=e1, take_profit=tp1, stop_loss=sl, order_link_id=link_id_1
                     )
                     o1_id = resp1.get("orderId")
-                    console.print(f"✅ [{sym}] Ордер 1 размещен: ID {o1_id} (Limit {side_str} {q1} @ {e1}, TP {tp1}, SL {sl})")
+                    console.print(f"✅ [{sym}] [{layer_tag}] Ордер 1 размещен: ID {o1_id} (Limit {side_str} {q1} @ {e1}, TP {tp1}, SL {sl})")
 
                     if e2 is not None and q2 > 0 and tp2 is not None:
                         resp2 = client.place_order(
                             symbol=sym, side=side_str, order_type="Limit", qty=q2, price=e2, take_profit=tp2, stop_loss=sl, order_link_id=link_id_2
                         )
                         o2_id = resp2.get("orderId")
-                        console.print(f"✅ [{sym}] Ордер 2 размещен: ID {o2_id} (Limit {side_str} {q2} @ {e2}, TP {tp2}, SL {sl})")
+                        console.print(f"✅ [{sym}] [{layer_tag}] Ордер 2 размещен: ID {o2_id} (Limit {side_str} {q2} @ {e2}, TP {tp2}, SL {sl})")
 
                     if e3 is not None and q3 > 0 and tp3 is not None:
                         resp3 = client.place_order(
                             symbol=sym, side=side_str, order_type="Limit", qty=q3, price=e3, take_profit=tp3, stop_loss=sl, order_link_id=link_id_3
                         )
                         o3_id = resp3.get("orderId")
-                        console.print(f"✅ [{sym}] Ордер 3 размещен: ID {o3_id} (Limit {side_str} {q3} @ {e3}, TP {tp3}, SL {sl})")
+                        console.print(f"✅ [{sym}] [{layer_tag}] Ордер 3 размещен: ID {o3_id} (Limit {side_str} {q3} @ {e3}, TP {tp3}, SL {sl})")
 
                     initial_state = "TRAILING" if setup.setup_type in ("TRIPLE_GRID_TRAILING", "TRIPLE_GRID_CORRECTION", "DUAL_GRID_TRAILING", "DUAL_GRID_CORRECTION") else setup.setup_type
 
@@ -1588,10 +1881,12 @@ def main():
                 symbol=sym,
                 setup_type=setup.setup_type,
                 state=initial_state,
+                layer=layer_name,
                 o1_id=o1_id,
                 o2_id=o2_id,
                 o3_id=o3_id,
                 cur_peak=setup.imp_peak_price,
+                p_0382=setup.p_0382,
                 cur_e1=e1,
                 cur_tp1=tp1,
                 cur_e2=e2 if e2 else 0.0,
@@ -1609,51 +1904,80 @@ def main():
                 be_price=client.round_price(setup.be_price, sym) if setup.be_price is not None else None,
                 position_was_open=pos_open_initially,
                 imp_end_time=setup.imp_end_time,
+                touched_0382=True,
             ))
 
         except Exception as e:
-            console.print(f"[bold red]❌ [{sym}] Ошибка выставления ордеров:[/bold red] {e}")
+            console.print(f"[bold red]❌ [{sym}] [{layer_tag}] Ошибка выставления ордеров:[/bold red] {e}")
             if o1_id:
                 try:
                     client.cancel_order(sym, o1_id)
-                    console.print(f"[yellow][{sym}] Ордер 1 {o1_id} отменен.[/yellow]")
+                    console.print(f"[yellow][{sym}] [{layer_tag}] Ордер 1 {o1_id} отменен.[/yellow]")
                 except Exception:
                     pass
 
-    # Для монет без начального сетапа создаем мониторы в режиме IDLE для поиска новых импульсов
-    seen_symbols = {item["symbol"] for item in actionable_setups}
-    for sym in symbols:
-        if sym not in seen_symbols:
-            if is_live:
-                try:
-                    pos_info = client.get_position(sym)
-                    pos_size = float(pos_info.get("size", 0)) if pos_info else 0.0
-                    if pos_size > 0:
-                        tp_val = float(pos_info.get("takeProfit", 0)) if pos_info.get("takeProfit") else None
-                        sl_val = float(pos_info.get("stopLoss", 0)) if pos_info.get("stopLoss") else None
-                        console.print(f"ℹ️ [{sym}] Обнаружена открытая позиция {pos_size} шт. (TP: {tp_val}, SL: {sl_val}). Подключаем к мониторингу!")
-                        active_monitors.append(ActiveTradeMonitor(
-                            symbol=sym,
-                            setup_type="TRIPLE_GRID_TRAILING",
-                            state="O1_FILLED",
-                            position_was_open=True,
-                            cur_e1=float(pos_info.get("avgPrice", 0)),
-                            cur_tp1=tp_val or 0.0,
-                            sl=sl_val or 0.0,
-                        ))
-                        continue
+    # 2. Подключаем мониторы AWAITING_MAJOR_0382 (Большие фибы выше 0.382 — без выставления ордеров)
+    for item in awaiting_major_setups:
+        active_monitors.append(ActiveTradeMonitor(
+            symbol=item["symbol"],
+            setup_type=item["setup"].setup_type,
+            state="AWAITING_MAJOR_0382",
+            layer="major",
+            cur_peak=item["setup"].imp_peak_price,
+            p_0382=item["setup"].p_0382,
+            cur_e1=item["e1"],
+            cur_tp1=item["tp1"],
+            cur_e2=item["e2"] if item["e2"] else 0.0,
+            cur_tp2=item["tp2"] if item["tp2"] else 0.0,
+            cur_e3=item["e3"] if item["e3"] else 0.0,
+            cur_tp3=item["tp3"] if item["tp3"] else 0.0,
+            sl=item["sl"],
+            q1=item["q1"],
+            q2=item["q2"],
+            q3=item["q3"],
+            has_o2=(item["e2"] is not None and item["q2"] > 0),
+            has_o3=(item["e3"] is not None and item["q3"] > 0),
+            imp_start_price=item["setup"].imp_start_price,
+            imp_end_time=item["setup"].imp_end_time,
+            touched_0382=False,
+        ))
+        p_0382_val = f"${item['setup'].p_0382:.4f}" if item['setup'].p_0382 else "-"
+        console.print(f"⏳ [{item['symbol']}] [MAJOR] Добавлен монитор в режиме AWAITING_MAJOR_0382 (ожидание касания 0.382: {p_0382_val}). Маржа свободна.")
 
-                    lingering = client.get_open_orders(sym)
-                    if lingering:
-                        console.print(f"🔄 [{sym}] Сетап не активен (IDLE / таймаут). Снимаем {len(lingering)} висящих ордеров с биржи...")
-                        client.cancel_all_orders(sym)
-                except Exception as err:
-                    console.print(f"⚠️ [{sym}] Ошибка проверки позиции/ордеров для неактивной монеты: {err}")
-            active_monitors.append(ActiveTradeMonitor(
-                symbol=sym,
-                setup_type="IDLE",
-                state="IDLE",
-            ))
+    # 3. Для монет без сетапа на определенном слое создаем IDLE-монитор для автопоиска
+    monitored_pairs = {(m.symbol, m.layer) for m in active_monitors}
+    for sym in symbols:
+        sym_has_monitor = any(m.symbol == sym for m in active_monitors)
+        if is_live and not sym_has_monitor:
+            try:
+                pos_info = client.get_position(sym)
+                pos_size = float(pos_info.get("size", 0)) if pos_info else 0.0
+                if pos_size > 0:
+                    tp_val = float(pos_info.get("takeProfit", 0)) if pos_info.get("takeProfit") else None
+                    sl_val = float(pos_info.get("stopLoss", 0)) if pos_info.get("stopLoss") else None
+                    console.print(f"ℹ️ [{sym}] Обнаружена открытая позиция {pos_size} шт. (TP: {tp_val}, SL: {sl_val}). Подключаем к мониторингу!")
+                    active_monitors.append(ActiveTradeMonitor(
+                        symbol=sym,
+                        setup_type="TRIPLE_GRID_TRAILING",
+                        state="O1_FILLED",
+                        layer="minor",
+                        position_was_open=True,
+                        cur_e1=float(pos_info.get("avgPrice", 0)),
+                        cur_tp1=tp_val or 0.0,
+                        sl=sl_val or 0.0,
+                    ))
+                    monitored_pairs.add((sym, "minor"))
+            except Exception as err:
+                console.print(f"⚠️ [{sym}] Ошибка проверки позиции для неактивной монеты: {err}")
+
+        for layer_name in ("minor", "major"):
+            if (sym, layer_name) not in monitored_pairs:
+                active_monitors.append(ActiveTradeMonitor(
+                    symbol=sym,
+                    setup_type="IDLE",
+                    state="IDLE",
+                    layer=layer_name,
+                ))
 
     # Проверяем наличие открытых позиций на Bybit по монетам вне списка торговли (Close-Only режим)
     if is_live:
@@ -1673,6 +1997,7 @@ def main():
                         symbol=p_sym,
                         setup_type="TRIPLE_GRID_TRAILING",
                         state="O1_FILLED",
+                        layer="minor",
                         position_was_open=True,
                         cur_e1=avg_p,
                         cur_tp1=tp_val or 0.0,
@@ -1688,9 +2013,10 @@ def main():
 
     # Единый цикл мониторинга для всех монет
     mode_desc = "Одиночный (--once)" if args.once else "Непрерывный фоновый (Daemon / автопоиск новых импульсов)"
+    monitor_items_str = ", ".join(f"{m.symbol} [{m.layer.upper()}:{m.state}]" + (" [Close-Only]" if m.close_only else "") for m in active_monitors)
     console.print(Panel(
-        f"[bold yellow]Запущен автоматический мониторинг {len(active_monitors)} монет:[/bold yellow]\n"
-        f"[green]{', '.join(m.symbol + (' [Close-Only]' if m.close_only else '') for m in active_monitors)}[/green]\n"
+        f"[bold yellow]Запущен автоматический мониторинг {len(active_monitors)} слоев по монетам:[/bold yellow]\n"
+        f"[green]{monitor_items_str}[/green]\n"
         "Бот отслеживает трейлинг, налив ордеров, закрытие по SL/TP, ложный пробой и сетку манипуляции.\n"
         f"Режим: [cyan]{mode_desc}[/cyan].\n"
         "[dim]Для остановки нажмите Ctrl+C.[/dim]",
