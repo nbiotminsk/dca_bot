@@ -55,6 +55,7 @@ class TradeConfig:
     atr_multiplier: float = 2.5
     timeout_hours: int = 24
     lookback_bars: int = 60
+    max_impulse_bars: int = 10
     timeframe: str = "1h"
     scale: Literal["log", "linear"] = "log"
     symbols: list[str] = field(default_factory=list)
@@ -111,6 +112,8 @@ def load_trade_config(config_path: Optional[str | Path] = None) -> TradeConfig:
             cfg.timeout_hours = int(val_to) if val_to is not None else 0
         if "lookback_bars" in strat_data:
             cfg.lookback_bars = int(strat_data["lookback_bars"])
+        if "max_impulse_bars" in strat_data:
+            cfg.max_impulse_bars = int(strat_data["max_impulse_bars"])
         if "timeframe" in strat_data:
             cfg.timeframe = str(strat_data["timeframe"])
         if "scale" in strat_data:
@@ -184,6 +187,7 @@ def find_active_setup(
     reclaim_be_offset_pct: float = 0.05,
     atr_multiplier: Optional[float] = None,
     timeout_hours: Optional[int] = None,
+    max_impulse_bars: Optional[int] = None,
 ) -> Optional[SetupSignal]:
     """
     Анализирует свечи на наличие активного не отработанного торгового сетапа (ТОЛЬКО В LONG):
@@ -220,8 +224,21 @@ def find_active_setup(
 
     for side in sides_to_check:
         is_long = (side == "long")
-        # Ищем импульсы по нашей стратегии с фильтром ATR
-        imps = detect_impulses(df, min_pct=effective_min_pct, side=side, scale=scale)
+        # Ищем импульсы по нашей стратегии с фильтром ATR, учетом буфера входа (0.10%) и скользящим поиском
+        imps = detect_impulses(
+            df,
+            min_pct=effective_min_pct,
+            side=side,
+            scale=scale,
+            tolerance_pct=entry_buffer_pct,
+            allow_internal=True,
+        )
+        if not imps:
+            continue
+
+        # Ограничение по макс. длительности импульса (как в TradingView Minor Grid: <= max_impulse_bars свечей)
+        if max_impulse_bars is not None and max_impulse_bars > 0:
+            imps = [imp for imp in imps if (imp.end_idx - imp.start_idx + 1) <= max_impulse_bars]
         if not imps:
             continue
 
@@ -507,11 +524,15 @@ def find_active_setup(
                 ))
 
         # Приоритет: живые несломанные импульсы > ложный пробой (свип) > манипуляция
+        # Внутри каждой категории берем самый свежий пик, а при одинаковом пике — наибольший размах (best_pct)
         if unbroken_setups:
+            unbroken_setups.sort(key=lambda s: (s.imp_end_time, s.imp_pct), reverse=True)
             return unbroken_setups[0]
         if reclaim_setups:
+            reclaim_setups.sort(key=lambda s: (s.imp_end_time, s.imp_pct), reverse=True)
             return reclaim_setups[0]
         if manipulation_setups:
+            manipulation_setups.sort(key=lambda s: (s.imp_end_time, s.imp_pct), reverse=True)
             return manipulation_setups[0]
 
     return None
@@ -561,6 +582,7 @@ class ActiveTradeMonitor:
     stop_sweep_low: float = 0.0
     last_candle_time: Optional[pd.Timestamp] = None
     imp_end_time: Optional[pd.Timestamp] = None
+    close_only: bool = False
     done: bool = False
 
 
@@ -587,6 +609,11 @@ def process_monitor_step(
                 console.print(f"  ➜ Снимаем ордера сетки и переводим {m.symbol} в режим ожидания нового импульса (IDLE).")
                 if is_live:
                     client.cancel_all_orders(m.symbol)
+                if m.close_only:
+                    m.state = "FINISHED"
+                    m.done = True
+                    console.print(f"🏁 [{m.symbol}] Тайм-аут сетки в режиме Close-Only. Монета завершает работу.")
+                    return
                 m.state = "IDLE"
                 m.o1_id = None
                 m.o2_id = None
@@ -749,12 +776,24 @@ def process_monitor_step(
             if is_live:
                 cancelled = client.cancel_all_orders(m.symbol)
                 console.print(f"[dim][{m.symbol}] Сняты висящие ордера 2 и 3 [отменено: {len(cancelled)}]. Сделка успешно завершена.[/dim]")
+            if m.close_only:
+                m.state = "FINISHED"
+                m.done = True
+                m.position_was_open = False
+                console.print(f"[bold green]🏁 [{m.symbol}] Позиция закрыта. Монета находилась в режиме Close-Only и завершает работу.[/bold green]")
+                return
             m.state = "IDLE"
             m.position_was_open = False
         else:
             console.print(f"\n[bold red]🛑 [{m.symbol}] Стоп-лосс на уровне 1.000 (${m.sl}) сработал![/bold red]")
             if is_live:
                 client.cancel_all_orders(m.symbol)
+            if m.close_only:
+                m.state = "FINISHED"
+                m.done = True
+                m.position_was_open = False
+                console.print(f"[bold red]🏁 [{m.symbol}] Сделка закрыта по стоп-лоссу. Монета находилась в режиме Close-Only и завершает работу.[/bold red]")
+                return
             m.stop_bar_time = df_now["timestamp"].iloc[-1]
             m.stop_sweep_low = min(latest_l, m.sl)
             m.state = "AWAITING_SWEEP_CLOSE"
@@ -791,12 +830,24 @@ def process_monitor_step(
             if is_live:
                 cancelled = client.cancel_all_orders(m.symbol)
                 console.print(f"[dim][{m.symbol}] Снят висящий Ордер 3 (0.786) [отменено: {len(cancelled)}].[/dim]")
+            if m.close_only:
+                m.state = "FINISHED"
+                m.done = True
+                m.position_was_open = False
+                console.print(f"[bold green]🏁 [{m.symbol}] Позиция закрыта. Монета находилась в режиме Close-Only и завершает работу.[/bold green]")
+                return
             m.state = "IDLE"
             m.position_was_open = False
         else:
             console.print(f"\n[bold red]🛑 [{m.symbol}] Стоп-лосс на уровне 1.000 (${m.sl}) сработал![/bold red]")
             if is_live:
                 client.cancel_all_orders(m.symbol)
+            if m.close_only:
+                m.state = "FINISHED"
+                m.done = True
+                m.position_was_open = False
+                console.print(f"[bold red]🏁 [{m.symbol}] Сделка закрыта по стоп-лоссу. Монета находилась в режиме Close-Only и завершает работу.[/bold red]")
+                return
             m.stop_bar_time = df_now["timestamp"].iloc[-1]
             m.stop_sweep_low = min(latest_l, m.sl)
             m.state = "AWAITING_SWEEP_CLOSE"
@@ -827,12 +878,24 @@ def process_monitor_step(
             console.print(f"\n[bold green]💰 [{m.symbol}] СУПЕР-ТЕЙК-ПРОФИТ 0.500 ДОСТИГНУТ! Все 3 ордера закрыты (Ордер 3 в макси-плюс, Ордер 2 в плюс, Ордер 1 в БУ).[/bold green]")
             if is_live:
                 client.cancel_all_orders(m.symbol)
+            if m.close_only:
+                m.state = "FINISHED"
+                m.done = True
+                m.position_was_open = False
+                console.print(f"[bold green]🏁 [{m.symbol}] Позиция закрыта. Монета находилась в режиме Close-Only и завершает работу.[/bold green]")
+                return
             m.state = "IDLE"
             m.position_was_open = False
         else:
             console.print(f"\n[bold red]🛑 [{m.symbol}] Стоп-лосс на уровне 1.000 (${m.sl}) сработал![/bold red]")
             if is_live:
                 client.cancel_all_orders(m.symbol)
+            if m.close_only:
+                m.state = "FINISHED"
+                m.done = True
+                m.position_was_open = False
+                console.print(f"[bold red]🏁 [{m.symbol}] Сделка закрыта по стоп-лоссу. Монета находилась в режиме Close-Only и завершает работу.[/bold red]")
+                return
             m.stop_bar_time = df_now["timestamp"].iloc[-1]
             m.stop_sweep_low = min(latest_l, m.sl)
             m.state = "AWAITING_SWEEP_CLOSE"
@@ -982,6 +1045,12 @@ def process_monitor_step(
             console.print(f"\n[bold green]🏁 [{m.symbol}] Сделка по Ложному пробою закрыта (TP или SL). Фибоначчи завершена.[/bold green]")
             if is_live:
                 client.cancel_all_orders(m.symbol)
+            if m.close_only:
+                m.state = "FINISHED"
+                m.done = True
+                m.position_was_open = False
+                console.print(f"[bold green]🏁 [{m.symbol}] Позиция закрыта. Монета находилась в режиме Close-Only и завершает работу.[/bold green]")
+                return
             m.state = "IDLE"
             m.position_was_open = False
 
@@ -998,11 +1067,21 @@ def process_monitor_step(
             console.print(f"\n[bold green]🏁 [{m.symbol}] Сетка Манипуляции закрыта (TP или SL). Работа с данной Фибоначчи полностью завершена.[/bold green]")
             if is_live:
                 client.cancel_all_orders(m.symbol)
+            if m.close_only:
+                m.state = "FINISHED"
+                m.done = True
+                m.position_was_open = False
+                console.print(f"[bold green]🏁 [{m.symbol}] Позиция закрыта. Монета находилась в режиме Close-Only и завершает работу.[/bold green]")
+                return
             m.state = "IDLE"
             m.position_was_open = False
 
     # ─── 8. Состояние: IDLE (Поиск новых импульсов на закрытии свечи) ───────────
     elif m.state == "IDLE":
+        if m.close_only:
+            m.state = "FINISHED"
+            m.done = True
+            return
         df_now = client.fetch_klines(m.symbol, interval=interval, limit=80)
         if len(df_now) < 15:
             return
@@ -1026,6 +1105,7 @@ def process_monitor_step(
             reclaim_be_offset_pct=cfg.reclaim_be_offset_pct,
             atr_multiplier=cfg.atr_multiplier,
             timeout_hours=cfg.timeout_hours,
+            max_impulse_bars=cfg.max_impulse_bars,
         )
 
         if setup is not None:
@@ -1148,7 +1228,7 @@ def main():
     symbols = list(dict.fromkeys([format_symbol(c) for c in raw_coins]))
 
     # 2. Запрос таймфрейма
-    tf_map = {"15m": "15", "1h": "60", "4h": "240", "1d": "D"}
+    tf_map = {"5m": "5", "15m": "15", "30m": "30", "1h": "60", "4h": "240", "1d": "D"}
     if args.interval:
         interval = tf_map.get(args.interval.lower(), args.interval)
         console.print(f"[bold yellow]Таймфрейм свечей:[/bold yellow] [green]{args.interval}[/green]")
@@ -1230,6 +1310,7 @@ def main():
             reclaim_be_offset_pct=cfg.reclaim_be_offset_pct,
             atr_multiplier=cfg.atr_multiplier,
             timeout_hours=cfg.timeout_hours,
+            max_impulse_bars=cfg.max_impulse_bars,
         )
 
         if not setup:
@@ -1552,6 +1633,33 @@ def main():
                 state="IDLE",
             ))
 
+    # Проверяем наличие открытых позиций на Bybit по монетам вне списка торговли (Close-Only режим)
+    if is_live:
+        try:
+            resp_all = client.session.get_positions(category="linear", settleCoin="USDT")
+            pos_list = resp_all.get("result", {}).get("list", [])
+            monitored_symbols = {m.symbol for m in active_monitors}
+            for p in pos_list:
+                p_sym = p.get("symbol", "")
+                p_size = float(p.get("size", 0.0))
+                if p_size > 0 and p_sym not in monitored_symbols:
+                    tp_val = float(p.get("takeProfit", 0)) if p.get("takeProfit") else None
+                    sl_val = float(p.get("stopLoss", 0)) if p.get("stopLoss") else None
+                    avg_p = float(p.get("avgPrice", 0))
+                    console.print(f"ℹ️ [{p_sym}] Обнаружена открытая позиция {p_size} шт. вне списка торговли (TP: {tp_val}, SL: {sl_val}). Подключаем в режиме Close-Only (сопровождение до закрытия без новых сделок)!")
+                    active_monitors.append(ActiveTradeMonitor(
+                        symbol=p_sym,
+                        setup_type="TRIPLE_GRID_TRAILING",
+                        state="O1_FILLED",
+                        position_was_open=True,
+                        cur_e1=avg_p,
+                        cur_tp1=tp_val or 0.0,
+                        sl=sl_val or 0.0,
+                        close_only=True,
+                    ))
+        except Exception as err:
+            console.print(f"⚠️ Ошибка проверки открытых позиций вне списка торговли: {err}")
+
     if not active_monitors:
         console.print("[yellow]Нет монет для мониторинга. Завершение.[/yellow]")
         return
@@ -1560,7 +1668,7 @@ def main():
     mode_desc = "Одиночный (--once)" if args.once else "Непрерывный фоновый (Daemon / автопоиск новых импульсов)"
     console.print(Panel(
         f"[bold yellow]Запущен автоматический мониторинг {len(active_monitors)} монет:[/bold yellow]\n"
-        f"[green]{', '.join(m.symbol for m in active_monitors)}[/green]\n"
+        f"[green]{', '.join(m.symbol + (' [Close-Only]' if m.close_only else '') for m in active_monitors)}[/green]\n"
         "Бот отслеживает трейлинг, налив ордеров, закрытие по SL/TP, ложный пробой и сетку манипуляции.\n"
         f"Режим: [cyan]{mode_desc}[/cyan].\n"
         "[dim]Для остановки нажмите Ctrl+C.[/dim]",

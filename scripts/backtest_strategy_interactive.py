@@ -737,8 +737,12 @@ def run_interactive_wizard() -> dict:
     print("  🎯 МАСТЕР БЭКТЕСТА: СТРАТЕГИЯ «МАНИПУЛЯЦИЯ НА ЧАСЕ»")
     print("═" * 65)
 
-    # 1. Монета
-    popular_coins = ["HYPEUSDT", "UNIUSDT", "NEARUSDT", "CAKEUSDT", "XRPUSDT", "SUIUSDT", "DOGEUSDT", "BTCUSDT", "ETHUSDT"]
+    popular_coins = [
+        "HYPEUSDT", "UNIUSDT", "NEARUSDT",
+        "CAKEUSDT", "XRPUSDT", "SUIUSDT",
+        "BNBUSDT", "ICPUSDT", "STRKUSDT",
+        "DOGEUSDT", "BTCUSDT", "ETHUSDT"
+    ]
     print("\n1. Введите тикер монеты:")
     for idx, c in enumerate(popular_coins, 1):
         print(f"   [{idx}] {c}", end="  " if idx % 3 != 0 else "\n")

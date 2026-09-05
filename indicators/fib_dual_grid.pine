@@ -60,7 +60,7 @@ w_maj_200   = input.int(1, "Толщина 2.000", minval=1, maxval=4, group=grp
 grp_min_set = "⚡ Младшая Фиба: Поиск (Основная)"
 show_min    = input.bool(true, "Показывать Младшую Фибу (Локальную)", group=grp_min_set)
 min_min_p   = input.float(2.0, "Мин. размах Младшей (%)", minval=0.5, step=0.5, tooltip="Минимальный процент движения от старта до текущей вершины", group=grp_min_set)
-min_bars    = input.int(6, "Макс. длительность импульса (свечей)", minval=2, maxval=20, tooltip="Сколько свечей развивался сам импульс до вершины", group=grp_min_set)
+min_bars    = input.int(10, "Макс. длительность импульса (свечей)", minval=2, maxval=20, tooltip="Сколько свечей развивался сам импульс до вершины", group=grp_min_set)
 min_lookb   = input.int(60, "Глубина поиска Младшей (свечей)", minval=10, maxval=300, group=grp_min_set)
 min_tol_p   = input.float(0.05, "Допуск касания 0.500 (%)", minval=0.0, maxval=0.5, step=0.01, tooltip="Погрешность в % цены при проверке касания уровня 0.500 (напр. 0.05%)", group=grp_min_set)
 
@@ -279,10 +279,6 @@ find_minor_long(int lookback, float min_pct, int max_duration) =>
 
     if max_s >= 3
         for s = max_s - 1 to 2
-            // 🛡️ Фильтр: импульс не может начинаться с внутренней продолжающей свечи ралли (предыдущая свеча уже была бычьей и ниже)
-            if s + 1 <= max_s and (low[s] > low[s + 1] and close[s + 1] > open[s + 1])
-                continue
-
             float l_s = low[s]
             float h_s = high[s]
             float cur_h = h_s
@@ -301,8 +297,7 @@ find_minor_long(int lookback, float min_pct, int max_duration) =>
                         broken := true
                         break
                     float fib_05_first = calc_fib_long(h_s, l_s, 0.500, use_log)
-                    float tol_05 = fib_05_first * (min_tol_p / 100.0)
-                    if low[k] <= (fib_05_first + tol_05)
+                    if low[k] <= fib_05_first
                         broken := true
                         break
                     // Импульс подтверждается бычьей свечой (зеленой, close >= open), обновившей High (тело не обязательно выше)
@@ -408,14 +403,16 @@ find_minor_long(int lookback, float min_pct, int max_duration) =>
                             broken := true
 
             if is_impulse and not broken
-                float pct = (cur_h - l_s) / l_s * 100.0
-                if pct >= min_pct
-                    if pct > best_pct
-                        best_pct   := pct
-                        best_start := bar_index - s
-                        best_low   := l_s
-                        best_high  := cur_h
-                        best_bars  := s - end_idx + 1
+                int dur = s - end_idx + 1
+                if dur <= max_duration
+                    float pct = (cur_h - l_s) / l_s * 100.0
+                    if pct >= min_pct
+                        if pct > best_pct
+                            best_pct   := pct
+                            best_start := bar_index - s
+                            best_low   := l_s
+                            best_high  := cur_h
+                            best_bars  := dur
 
     [best_start, best_low, best_high, best_pct, best_bars]
 
@@ -429,10 +426,6 @@ find_minor_short(int lookback, float min_pct, int max_duration) =>
 
     if max_s >= 3
         for s = max_s - 1 to 2
-            // 🛡️ Фильтр: дамп не может начинаться с внутренней продолжающей медвежьей свечи (предыдущая свеча уже была красной и выше)
-            if s + 1 <= max_s and (high[s] < high[s + 1] and close[s + 1] < open[s + 1])
-                continue
-
             float h_s = high[s]
             float l_s = low[s]
             float cur_l = l_s
@@ -450,8 +443,7 @@ find_minor_short(int lookback, float min_pct, int max_duration) =>
                         broken := true
                         break
                     float fib_05_first = calc_fib_short(h_s, l_s, 0.500, use_log)
-                    float tol_05 = fib_05_first * (min_tol_p / 100.0)
-                    if high[k] >= (fib_05_first - tol_05)
+                    if high[k] >= fib_05_first
                         broken := true
                         break
                     // Дамп подтверждается медвежьей свечой (красной, close <= open), обновившей Low (тело не обязательно ниже)
@@ -553,14 +545,16 @@ find_minor_short(int lookback, float min_pct, int max_duration) =>
                             broken := true
 
             if is_dump and not broken
-                float pct = (h_s - cur_l) / h_s * 100.0
-                if pct >= min_pct
-                    if pct > best_pct
-                        best_pct   := pct
-                        best_start := bar_index - s
-                        best_high  := h_s
-                        best_low   := cur_l
-                        best_bars  := s - end_idx + 1
+                int dur = s - end_idx + 1
+                if dur <= max_duration
+                    float pct = (h_s - cur_l) / h_s * 100.0
+                    if pct >= min_pct
+                        if pct > best_pct
+                            best_pct   := pct
+                            best_start := bar_index - s
+                            best_high  := h_s
+                            best_low   := cur_l
+                            best_bars  := dur
 
     [best_start, best_high, best_low, best_pct, best_bars]
 

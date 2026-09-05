@@ -663,4 +663,44 @@ def test_process_monitor_step_o3_tp_closes_all():
     assert "TESTUSDT" in client.cancel_all_calls
 
 
+def test_tolerance_and_minor_impulse_sui_case():
+    """Тест реального кейса SUI:
+    Свеча 1 (0.7501), Свеча 2 (0.7675) -> 0.500 = 0.7588.
+    Свеча 3 опускается до 0.7590 (касание 0.500 с буфером +0.10% [0.7595]).
+    Первый импульс фиксируется на 0.7675, а активным становится свежий импульс от 0.7631 до 0.7937.
+    """
+    from scripts.bybit_trader import find_active_setup
+    rows = [
+        {"timestamp": pd.Timestamp("2026-09-04 17:00"), "open": 0.750, "high": 0.752, "low": 0.749, "close": 0.751, "volume": 100},
+        {"timestamp": pd.Timestamp("2026-09-04 18:00"), "open": 0.751, "high": 0.752, "low": 0.749, "close": 0.750, "volume": 100},
+        {"timestamp": pd.Timestamp("2026-09-04 19:00"), "open": 0.750, "high": 0.752, "low": 0.749, "close": 0.751, "volume": 100},
+        {"timestamp": pd.Timestamp("2026-09-04 20:00"), "open": 0.751, "high": 0.752, "low": 0.749, "close": 0.750, "volume": 100},
+        {"timestamp": pd.Timestamp("2026-09-04 21:00"), "open": 0.750, "high": 0.752, "low": 0.749, "close": 0.751, "volume": 100},
+        {"timestamp": pd.Timestamp("2026-09-04 22:00"), "open": 0.751, "high": 0.752, "low": 0.749, "close": 0.750, "volume": 100},
+        # 1. База
+        {"timestamp": pd.Timestamp("2026-09-04 23:00"), "open": 0.7512, "high": 0.7553, "low": 0.7501, "close": 0.755, "volume": 100},
+        # 2. Рост до вершины
+        {"timestamp": pd.Timestamp("2026-09-05 00:00"), "open": 0.755, "high": 0.7675, "low": 0.7543, "close": 0.7614, "volume": 100},
+        # 3. Откат к 0.7590 (касание 0.500 + 0.10% буфер)
+        {"timestamp": pd.Timestamp("2026-09-05 01:00"), "open": 0.7614, "high": 0.7707, "low": 0.7590, "close": 0.7632, "volume": 100},
+        # 4. Боковик
+        {"timestamp": pd.Timestamp("2026-09-05 02:00"), "open": 0.7632, "high": 0.7691, "low": 0.7607, "close": 0.7649, "volume": 100},
+        {"timestamp": pd.Timestamp("2026-09-05 03:00"), "open": 0.7649, "high": 0.7682, "low": 0.7611, "close": 0.7653, "volume": 100},
+        {"timestamp": pd.Timestamp("2026-09-05 04:00"), "open": 0.7653, "high": 0.7690, "low": 0.7616, "close": 0.7656, "volume": 100},
+        # 5. Новая база 0.7631
+        {"timestamp": pd.Timestamp("2026-09-05 05:00"), "open": 0.7656, "high": 0.7725, "low": 0.7631, "close": 0.7696, "volume": 100},
+        # 6-8. Взлет к вершине 0.7937
+        {"timestamp": pd.Timestamp("2026-09-05 06:00"), "open": 0.7696, "high": 0.7836, "low": 0.7696, "close": 0.7812, "volume": 100},
+        {"timestamp": pd.Timestamp("2026-09-05 07:00"), "open": 0.7812, "high": 0.7936, "low": 0.7773, "close": 0.7932, "volume": 100},
+        {"timestamp": pd.Timestamp("2026-09-05 08:00"), "open": 0.7932, "high": 0.7937, "low": 0.7831, "close": 0.7867, "volume": 100},
+    ]
+    df = pd.DataFrame(rows)
+
+    setup = find_active_setup(df, min_pct=2.0, entry_buffer_pct=0.10, max_impulse_bars=6)
+    assert setup is not None
+    # База должна быть 0.7631 (свежий импульс), а НЕ 0.7501 (отработавший откат)
+    assert setup.imp_start_price == pytest.approx(0.7631, rel=1e-3)
+    assert setup.imp_peak_price == pytest.approx(0.7937, rel=1e-3)
+
+
 

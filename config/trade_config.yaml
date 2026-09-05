@@ -73,6 +73,9 @@ strategy:
   # Глубина анализа (количество свечей) для поиска импульса
   lookback_bars: 60
 
+  # Максимальная длительность развития импульса в свечах (соответствует Младшей сетке TradingView)
+  max_impulse_bars: 10
+
   # Таймфрейм свечей по умолчанию (15m, 1h, 4h, 1d)
   timeframe: "1h"
 
@@ -84,5 +87,9 @@ strategy:
   symbols:
     - "NEARUSDT.P"
     - "ZECUSDT.P"
-    - "ARBUSDT.P"
+    - "ICPUSDT.P"
+    - "CAKEUSDT.P"
+    - "STRKUSDT.P"
+    - "SUIUSDT.P"
+    - "BNBUSDT.P"
 
