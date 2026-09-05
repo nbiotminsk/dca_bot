@@ -232,7 +232,14 @@ def test_trade_config_defaults():
     from scripts.bybit_trader import load_trade_config
     cfg = load_trade_config()
     assert cfg.total_risk_usd == 2.0
+    assert cfg.minor_risk_usd == 2.0
+    assert cfg.major_risk_usd == 2.0
     assert cfg.entry_buffer_pct == 0.10
+    assert cfg.entry_buffer_0500_pct == 0.10
+    assert cfg.entry_buffer_0618_pct == 0.15
+    assert cfg.entry_buffer_0786_pct == 0.15
+    assert cfg.entry_buffer_1414_pct == 0.10
+    assert cfg.entry_buffer_1618_pct == 0.10
     assert cfg.tp_buffer_pct == 0.10
     assert cfg.reclaim_tp_buffer_pct == 2.0
     assert cfg.reclaim_be_trigger_fib == 0.786
@@ -249,8 +256,14 @@ def test_trade_config_custom(tmp_path):
     custom_yaml = tmp_path / "custom_config.yaml"
     custom_yaml.write_text("""
 risk:
-  total_risk_usd: 5.0
+  minor_risk_usd: 5.0
+  major_risk_usd: 6.0
 buffers:
+  entry_buffer_0500_pct: 0.12
+  entry_buffer_0618_pct: 0.18
+  entry_buffer_0786_pct: 0.22
+  entry_buffer_1414_pct: 0.14
+  entry_buffer_1618_pct: 0.16
   entry_buffer_pct: 0.15
   tp_buffer_pct: 0.20
   reclaim_tp_buffer_pct: 3.0
@@ -266,7 +279,14 @@ strategy:
   scale: "linear"
 """)
     cfg = load_trade_config(custom_yaml)
+    assert cfg.minor_risk_usd == 5.0
     assert cfg.total_risk_usd == 5.0
+    assert cfg.major_risk_usd == 6.0
+    assert cfg.entry_buffer_0500_pct == 0.12
+    assert cfg.entry_buffer_0618_pct == 0.18
+    assert cfg.entry_buffer_0786_pct == 0.22
+    assert cfg.entry_buffer_1414_pct == 0.14
+    assert cfg.entry_buffer_1618_pct == 0.16
     assert cfg.entry_buffer_pct == 0.15
     assert cfg.tp_buffer_pct == 0.20
     assert cfg.reclaim_tp_buffer_pct == 3.0
@@ -278,6 +298,82 @@ strategy:
     assert cfg.min_impulse_pct == 3.5
     assert cfg.lookback_bars == 100
     assert cfg.scale == "linear"
+
+
+def test_individual_entry_buffers_calculation():
+    """Проверка, что для 0.500 применяется буфер +0.10%, а для 0.618 и 0.786 - буфер +0.15%."""
+    from scripts.bybit_trader import find_active_setup
+    # Формируем свечи: импульс со 100 до 130 на 20 свечах
+    dates = pd.date_range("2026-09-01", periods=25, freq="1h")
+    bars = []
+    for i in range(20):
+        p = 100.0 + (30.0 / 19.0) * i
+        bars.append({"timestamp": dates[i], "open": p, "high": p + 0.2, "low": p - 0.2, "close": p + 0.1, "volume": 100})
+    # Добавляем 5 свечей боковика чуть ниже вершины (на уровне 128), не касаясь 0.500
+    for i in range(20, 25):
+        bars.append({"timestamp": dates[i], "open": 128.0, "high": 128.5, "low": 127.5, "close": 128.0, "volume": 100})
+
+    df = pd.DataFrame(bars)
+    setup = find_active_setup(
+        df,
+        min_pct=2.0,
+        entry_buffer_0500_pct=0.10,
+        entry_buffer_0618_pct=0.15,
+        entry_buffer_0786_pct=0.15,
+        layer="minor",
+    )
+    assert setup is not None
+    assert setup.setup_type in ("TRIPLE_GRID_TRAILING", "TRIPLE_GRID_CORRECTION")
+
+    p_0500 = calc_fib(setup.imp_peak_price, setup.imp_start_price, 0.500, is_long=True, scale="log")
+    p_0618 = calc_fib(setup.imp_peak_price, setup.imp_start_price, 0.618, is_long=True, scale="log")
+    p_0786 = calc_fib(setup.imp_peak_price, setup.imp_start_price, 0.786, is_long=True, scale="log")
+
+    # Проверяем, что e1 смещен ровно на +0.10%
+    expected_e1 = p_0500 * (1.0 + 0.10 / 100.0)
+    assert setup.entry_1 == pytest.approx(expected_e1, rel=1e-4)
+
+    # Проверяем, что e2 смещен ровно на +0.15%
+    expected_e2 = p_0618 * (1.0 + 0.15 / 100.0)
+    assert setup.entry_2 == pytest.approx(expected_e2, rel=1e-4)
+
+    # Проверяем, что e3 смещен ровно на +0.15%
+    expected_e3 = p_0786 * (1.0 + 0.15 / 100.0)
+    assert setup.entry_3 == pytest.approx(expected_e3, rel=1e-4)
+
+
+def test_manipulation_entry_buffers_calculation():
+    """Проверка, что для 1.414 и 1.618 применяются индивидуальные буферы (+0.10%)."""
+    from scripts.bybit_trader import find_active_setup
+    data = [
+        {"timestamp": pd.Timestamp("2026-09-01 00:00"), "open": 100, "high": 101, "low": 100, "close": 101, "volume": 100},
+        {"timestamp": pd.Timestamp("2026-09-01 01:00"), "open": 101, "high": 115, "low": 101, "close": 115, "volume": 100},
+        {"timestamp": pd.Timestamp("2026-09-01 02:00"), "open": 115, "high": 130, "low": 114, "close": 130, "volume": 100},
+        {"timestamp": pd.Timestamp("2026-09-01 03:00"), "open": 130, "high": 130, "low": 98, "close": 98, "volume": 100},
+        {"timestamp": pd.Timestamp("2026-09-01 04:00"), "open": 98, "high": 98, "low": 92, "close": 93, "volume": 100},
+    ]
+    front = []
+    for k in range(25):
+        t = pd.Timestamp("2026-08-31 00:00") + pd.Timedelta(hours=k)
+        front.append({"timestamp": t, "open": 100, "high": 100.5, "low": 99.5, "close": 100, "volume": 50})
+
+    df = pd.DataFrame(front + data)
+    setup = find_active_setup(
+        df,
+        min_pct=2.0,
+        entry_buffer_1414_pct=0.10,
+        entry_buffer_1618_pct=0.10,
+    )
+    assert setup is not None
+    assert setup.setup_type == "MANIPULATION"
+
+    p_1414 = calc_fib(setup.imp_peak_price, setup.imp_start_price, 1.414, is_long=True, scale="log")
+    p_1618 = calc_fib(setup.imp_peak_price, setup.imp_start_price, 1.618, is_long=True, scale="log")
+
+    expected_e1414 = p_1414 * (1.0 + 0.10 / 100.0)
+    expected_e1618 = p_1618 * (1.0 + 0.10 / 100.0)
+    assert setup.entry_1 == pytest.approx(expected_e1414, rel=1e-4)
+    assert setup.entry_2 == pytest.approx(expected_e1618, rel=1e-4)
 
 
 def test_manipulation_risk_2_usd():

@@ -49,6 +49,11 @@ class TradeConfig:
     manipulation_risk_usd: float = 2.0
     grid_weights: list[float] = field(default_factory=lambda: [0.50, 0.30, 0.20])
     entry_buffer_pct: float = 0.10
+    entry_buffer_0500_pct: float = 0.10
+    entry_buffer_0618_pct: float = 0.15
+    entry_buffer_0786_pct: float = 0.15
+    entry_buffer_1414_pct: float = 0.10
+    entry_buffer_1618_pct: float = 0.10
     tp_buffer_pct: float = 0.10
     reclaim_tp_buffer_pct: float = 2.0
     reclaim_be_trigger_fib: float = 0.786
@@ -92,6 +97,7 @@ def load_trade_config(config_path: Optional[str | Path] = None) -> TradeConfig:
             cfg.minor_risk_usd = float(risk_data["total_risk_usd"])
         if "minor_risk_usd" in risk_data:
             cfg.minor_risk_usd = float(risk_data["minor_risk_usd"])
+            cfg.total_risk_usd = float(risk_data["minor_risk_usd"])
         if "major_risk_usd" in risk_data:
             cfg.major_risk_usd = float(risk_data["major_risk_usd"])
         if "manipulation_risk_usd" in risk_data:
@@ -104,6 +110,30 @@ def load_trade_config(config_path: Optional[str | Path] = None) -> TradeConfig:
         buffer_data = data.get("buffers", {})
         if "entry_buffer_pct" in buffer_data:
             cfg.entry_buffer_pct = float(buffer_data["entry_buffer_pct"])
+        if "entry_buffer_0500_pct" in buffer_data:
+            cfg.entry_buffer_0500_pct = float(buffer_data["entry_buffer_0500_pct"])
+        elif "entry_buffer_pct" in buffer_data:
+            cfg.entry_buffer_0500_pct = cfg.entry_buffer_pct
+        if "entry_buffer_0618_pct" in buffer_data:
+            cfg.entry_buffer_0618_pct = float(buffer_data["entry_buffer_0618_pct"])
+        elif "entry_buffer_pct" in buffer_data:
+            cfg.entry_buffer_0618_pct = cfg.entry_buffer_pct
+        if "entry_buffer_0786_pct" in buffer_data:
+            cfg.entry_buffer_0786_pct = float(buffer_data["entry_buffer_0786_pct"])
+        elif "entry_buffer_0718_pct" in buffer_data:
+            cfg.entry_buffer_0786_pct = float(buffer_data["entry_buffer_0718_pct"])
+        elif "entry_buffer_pct" in buffer_data:
+            cfg.entry_buffer_0786_pct = cfg.entry_buffer_pct
+
+        if "entry_buffer_1414_pct" in buffer_data:
+            cfg.entry_buffer_1414_pct = float(buffer_data["entry_buffer_1414_pct"])
+        elif "entry_buffer_pct" in buffer_data:
+            cfg.entry_buffer_1414_pct = cfg.entry_buffer_pct
+        if "entry_buffer_1618_pct" in buffer_data:
+            cfg.entry_buffer_1618_pct = float(buffer_data["entry_buffer_1618_pct"])
+        elif "entry_buffer_pct" in buffer_data:
+            cfg.entry_buffer_1618_pct = cfg.entry_buffer_pct
+
         if "tp_buffer_pct" in buffer_data:
             cfg.tp_buffer_pct = float(buffer_data["tp_buffer_pct"])
         if "reclaim_tp_buffer_pct" in buffer_data:
@@ -220,6 +250,11 @@ def find_active_setup(
     max_sweep_pct: float = 0.5,
     allow_close_below: bool = False,
     entry_buffer_pct: float = 0.10,
+    entry_buffer_0500_pct: Optional[float] = None,
+    entry_buffer_0618_pct: Optional[float] = None,
+    entry_buffer_0786_pct: Optional[float] = None,
+    entry_buffer_1414_pct: Optional[float] = None,
+    entry_buffer_1618_pct: Optional[float] = None,
     tp_buffer_pct: float = 0.1,
     reclaim_tp_buffer_pct: float = 2.0,
     reclaim_be_trigger_fib: float = 0.786,
@@ -232,9 +267,9 @@ def find_active_setup(
 ) -> Optional[SetupSignal]:
     """
     Анализирует свечи на наличие активного не отработанного торгового сетапа (ТОЛЬКО В LONG):
-    1. Трейлинг / Активная тройная сетка (0.500, 0.618, 0.786) с буфером +0.10% перед входом и -0.1% перед тейком.
+    1. Трейлинг / Активная тройная сетка (0.500, 0.618, 0.786) с буфером входа перед каждым уровнем и -0.1% перед тейком.
     2. Свип ликвидности + MACD Reclaim.
-    3. Манипуляция (1.618 / 2.000) с отступом +0.10% и тейками -0.1%.
+    3. Манипуляция (1.414 / 1.618) с индивидуальными отступами и тейками -0.1%.
     """
     if len(df) < 15:
         return None
@@ -259,19 +294,25 @@ def find_active_setup(
 
     from scripts.backtest_strategy_interactive import detect_impulses
 
+    buf_0500 = entry_buffer_0500_pct if entry_buffer_0500_pct is not None else entry_buffer_pct
+    buf_0618 = entry_buffer_0618_pct if entry_buffer_0618_pct is not None else entry_buffer_pct
+    buf_0786 = entry_buffer_0786_pct if entry_buffer_0786_pct is not None else entry_buffer_pct
+    buf_1414 = entry_buffer_1414_pct if entry_buffer_1414_pct is not None else entry_buffer_pct
+    buf_1618 = entry_buffer_1618_pct if entry_buffer_1618_pct is not None else entry_buffer_pct
+
     sides_to_check: list[Literal["long", "short"]] = (
         ["long"] if preferred_side == "long" else (["short"] if preferred_side == "short" else ["long", "short"])
     )
 
     for side in sides_to_check:
         is_long = (side == "long")
-        # Ищем импульсы по нашей стратегии с фильтром ATR, учетом буфера входа (0.10%) и скользящим поиском
+        # Ищем импульсы по нашей стратегии с фильтром ATR, учетом буфера входа (buf_0500) и скользящим поиском
         imps = detect_impulses(
             df,
             min_pct=effective_min_pct,
             side=side,
             scale=scale,
-            tolerance_pct=entry_buffer_pct,
+            tolerance_pct=buf_0500,
             allow_internal=True,
         )
         if not imps:
@@ -288,6 +329,7 @@ def find_active_setup(
         unbroken_setups: list[SetupSignal] = []
         reclaim_setups: list[SetupSignal] = []
         manipulation_setups: list[SetupSignal] = []
+        buf_desc = f"+{buf_0500:.2f}%/+{buf_0618:.2f}%/+{buf_0786:.2f}%" if (buf_0500 != buf_0618 or buf_0618 != buf_0786) else f"+{buf_0500:.2f}%"
 
         # Перебираем от самых свежих к старым в поиске неотработанного
         for imp in reversed(imps):
@@ -303,14 +345,20 @@ def find_active_setup(
             p_2000 = calc_fib(imp.high, imp.low, 2.000, is_long=is_long, scale=scale)
             p_2414 = calc_fib(imp.high, imp.low, 2.414, is_long=is_long, scale=scale)
 
-            # Буфер перед входом (+0.10% для Лонга)
-            buf_mult = 1.0 + (entry_buffer_pct / 100.0) if is_long else 1.0 - (entry_buffer_pct / 100.0)
-            e_0500 = p_0500 * buf_mult
-            e_0618 = p_0618 * buf_mult
-            e_0786 = p_0786 * buf_mult
-            e_1414 = p_1414 * buf_mult
-            e_1618 = p_1618 * buf_mult
-            p_2000 * buf_mult
+            # Буферы перед входом (для Лонга сдвиг вверх перед уровнем)
+            buf_mult_0500 = 1.0 + (buf_0500 / 100.0) if is_long else 1.0 - (buf_0500 / 100.0)
+            buf_mult_0618 = 1.0 + (buf_0618 / 100.0) if is_long else 1.0 - (buf_0618 / 100.0)
+            buf_mult_0786 = 1.0 + (buf_0786 / 100.0) if is_long else 1.0 - (buf_0786 / 100.0)
+            buf_mult_1414 = 1.0 + (buf_1414 / 100.0) if is_long else 1.0 - (buf_1414 / 100.0)
+            buf_mult_1618 = 1.0 + (buf_1618 / 100.0) if is_long else 1.0 - (buf_1618 / 100.0)
+            buf_mult_default = 1.0 + (entry_buffer_pct / 100.0) if is_long else 1.0 - (entry_buffer_pct / 100.0)
+
+            e_0500 = p_0500 * buf_mult_0500
+            e_0618 = p_0618 * buf_mult_0618
+            e_0786 = p_0786 * buf_mult_0786
+            e_1414 = p_1414 * buf_mult_1414
+            e_1618 = p_1618 * buf_mult_1618
+            p_2000 * buf_mult_default
 
             # Буфер перед тейком (-0.1% для Лонга для гарантированного раннего закрытия)
             tp_mult = 1.0 - (tp_buffer_pct / 100.0) if is_long else 1.0 + (tp_buffer_pct / 100.0)
@@ -349,7 +397,7 @@ def find_active_setup(
                 desc = (
                     f"Большая фиба (+{imp.pct:.2f}%): цена на вершине выше 0.382 (${p_0382:.4f}). Ожидание отката к 0.382, лимитки не выставляются, маржа свободна."
                     if (layer == "major" and not touched_0382)
-                    else f"Растущий импульс (+{imp.pct:.2f}%) на текущей свече [ATR {atr_pct:.2f}%]. Трейлинг тройной сетки (вход +{entry_buffer_pct}%, тейк -{tp_buffer_pct}%)."
+                    else f"Растущий импульс (+{imp.pct:.2f}%) на текущей свече [ATR {atr_pct:.2f}%]. Трейлинг тройной сетки (вход {buf_desc}, тейк -{tp_buffer_pct}%)."
                 )
                 unbroken_setups.append(SetupSignal(
                     setup_type="TRIPLE_GRID_TRAILING",
@@ -558,7 +606,7 @@ def find_active_setup(
                 desc = (
                     f"Большая фиба (+{imp.pct:.2f}%): цена выше 0.382 (${p_0382:.4f}). Ожидание отката к 0.382, лимитки не выставляются, маржа свободна."
                     if (layer == "major" and not touched_0382)
-                    else f"Растущий импульс (+{imp.pct:.2f}%) без коррекции к 0.500. Режим трейлинга тройной сетки (вход +{entry_buffer_pct}%, тейк -{tp_buffer_pct}%)."
+                    else f"Растущий импульс (+{imp.pct:.2f}%) без коррекции к 0.500. Режим трейлинга тройной сетки (вход {buf_desc}, тейк -{tp_buffer_pct}%)."
                 )
                 unbroken_setups.append(SetupSignal(
                     setup_type="TRIPLE_GRID_TRAILING",
@@ -886,7 +934,7 @@ def process_monitor_step(
 
             new_e1 = client.round_price(
                 calc_fib(new_peak, m.imp_start_price, 0.500, is_long=True, scale=cfg.scale)
-                * (1.0 + cfg.entry_buffer_pct / 100.0), m.symbol
+                * (1.0 + cfg.entry_buffer_0500_pct / 100.0), m.symbol
             )
             new_tp1 = client.round_price(
                 calc_fib(new_peak, m.imp_start_price, 0.236, is_long=True, scale=cfg.scale)
@@ -894,7 +942,7 @@ def process_monitor_step(
             )
             new_e2 = client.round_price(
                 calc_fib(new_peak, m.imp_start_price, 0.618, is_long=True, scale=cfg.scale)
-                * (1.0 + cfg.entry_buffer_pct / 100.0), m.symbol
+                * (1.0 + cfg.entry_buffer_0618_pct / 100.0), m.symbol
             ) if m.has_o2 else None
             new_tp2 = client.round_price(
                 calc_fib(new_peak, m.imp_start_price, 0.382, is_long=True, scale=cfg.scale)
@@ -903,7 +951,7 @@ def process_monitor_step(
 
             new_e3 = client.round_price(
                 calc_fib(new_peak, m.imp_start_price, 0.786, is_long=True, scale=cfg.scale)
-                * (1.0 + cfg.entry_buffer_pct / 100.0), m.symbol
+                * (1.0 + cfg.entry_buffer_0786_pct / 100.0), m.symbol
             ) if m.has_o3 else None
             new_tp3 = client.round_price(
                 calc_fib(new_peak, m.imp_start_price, 0.500, is_long=True, scale=cfg.scale)
@@ -978,11 +1026,11 @@ def process_monitor_step(
             new_peak = latest_h
             m.cur_peak = new_peak
             m.p_0382 = calc_fib(new_peak, m.imp_start_price, 0.382, is_long=True, scale=cfg.scale)
-            m.cur_e1 = client.round_price(calc_fib(new_peak, m.imp_start_price, 0.500, is_long=True, scale=cfg.scale) * (1.0 + cfg.entry_buffer_pct / 100.0), m.symbol)
+            m.cur_e1 = client.round_price(calc_fib(new_peak, m.imp_start_price, 0.500, is_long=True, scale=cfg.scale) * (1.0 + cfg.entry_buffer_0500_pct / 100.0), m.symbol)
             m.cur_tp1 = client.round_price(calc_fib(new_peak, m.imp_start_price, 0.236, is_long=True, scale=cfg.scale) * (1.0 - cfg.tp_buffer_pct / 100.0), m.symbol)
-            m.cur_e2 = client.round_price(calc_fib(new_peak, m.imp_start_price, 0.618, is_long=True, scale=cfg.scale) * (1.0 + cfg.entry_buffer_pct / 100.0), m.symbol) if m.has_o2 else None
+            m.cur_e2 = client.round_price(calc_fib(new_peak, m.imp_start_price, 0.618, is_long=True, scale=cfg.scale) * (1.0 + cfg.entry_buffer_0618_pct / 100.0), m.symbol) if m.has_o2 else None
             m.cur_tp2 = client.round_price(calc_fib(new_peak, m.imp_start_price, 0.382, is_long=True, scale=cfg.scale) * (1.0 - cfg.tp_buffer_pct / 100.0), m.symbol) if m.has_o2 else None
-            m.cur_e3 = client.round_price(calc_fib(new_peak, m.imp_start_price, 0.786, is_long=True, scale=cfg.scale) * (1.0 + cfg.entry_buffer_pct / 100.0), m.symbol) if m.has_o3 else None
+            m.cur_e3 = client.round_price(calc_fib(new_peak, m.imp_start_price, 0.786, is_long=True, scale=cfg.scale) * (1.0 + cfg.entry_buffer_0786_pct / 100.0), m.symbol) if m.has_o3 else None
             m.cur_tp3 = client.round_price(calc_fib(new_peak, m.imp_start_price, 0.500, is_long=True, scale=cfg.scale) * (1.0 - cfg.tp_buffer_pct / 100.0), m.symbol) if m.has_o3 else None
             m.imp_end_time = pd.Timestamp.now(tz="UTC")
             console.print(f"📈 [{m.symbol}] [MAJOR] Новый максимум ${new_peak}! Уровень 0.382 скорректирован до ${m.p_0382:.4f}.")
@@ -1374,8 +1422,8 @@ def process_monitor_step(
             p_1618 = calc_fib(m.cur_peak, m.imp_start_price, 1.618, is_long=True, scale=cfg.scale)
             p_2414 = calc_fib(m.cur_peak, m.imp_start_price, 2.414, is_long=True, scale=cfg.scale)
 
-            e_1414 = client.round_price(p_1414 * (1.0 + cfg.entry_buffer_pct / 100.0), m.symbol)
-            e_1618 = client.round_price(p_1618 * (1.0 + cfg.entry_buffer_pct / 100.0), m.symbol)
+            e_1414 = client.round_price(p_1414 * (1.0 + cfg.entry_buffer_1414_pct / 100.0), m.symbol)
+            e_1618 = client.round_price(p_1618 * (1.0 + cfg.entry_buffer_1618_pct / 100.0), m.symbol)
             tp_1000 = client.round_price(p_1000 * (1.0 - cfg.tp_buffer_pct / 100.0), m.symbol)
             sl_2414 = client.round_price(p_2414, m.symbol)
 
@@ -1519,6 +1567,11 @@ def process_monitor_step(
             max_sweep_pct=cfg.reclaim_max_sweep_pct,
             allow_close_below=cfg.reclaim_allow_close_below,
             entry_buffer_pct=cfg.entry_buffer_pct,
+            entry_buffer_0500_pct=cfg.entry_buffer_0500_pct,
+            entry_buffer_0618_pct=cfg.entry_buffer_0618_pct,
+            entry_buffer_0786_pct=cfg.entry_buffer_0786_pct,
+            entry_buffer_1414_pct=cfg.entry_buffer_1414_pct,
+            entry_buffer_1618_pct=cfg.entry_buffer_1618_pct,
             tp_buffer_pct=cfg.tp_buffer_pct,
             reclaim_tp_buffer_pct=cfg.reclaim_tp_buffer_pct,
             reclaim_be_trigger_fib=cfg.reclaim_be_trigger_fib,
@@ -1746,8 +1799,14 @@ def main():
     cfg = load_trade_config(args.config)
     if args.risk is not None:
         cfg.total_risk_usd = args.risk
+        cfg.minor_risk_usd = args.risk
     if args.entry_buffer is not None:
         cfg.entry_buffer_pct = args.entry_buffer
+        cfg.entry_buffer_0500_pct = args.entry_buffer
+        cfg.entry_buffer_0618_pct = args.entry_buffer
+        cfg.entry_buffer_0786_pct = args.entry_buffer
+        cfg.entry_buffer_1414_pct = args.entry_buffer
+        cfg.entry_buffer_1618_pct = args.entry_buffer
     if args.tp_buffer is not None:
         cfg.tp_buffer_pct = args.tp_buffer
     if args.interval:
@@ -1759,9 +1818,14 @@ def main():
 
     atr_desc = f"{cfg.atr_multiplier:.1f}x" if cfg.atr_multiplier > 0 else "выкл"
     to_desc = f"{cfg.timeout_hours}ч" if cfg.timeout_hours > 0 else "выкл"
+    buf_desc = (
+        f"+{cfg.entry_buffer_pct:.2f}%"
+        if (cfg.entry_buffer_0500_pct == cfg.entry_buffer_0618_pct == cfg.entry_buffer_0786_pct == cfg.entry_buffer_pct)
+        else f"+{cfg.entry_buffer_0500_pct:.2f}%/+{cfg.entry_buffer_0618_pct:.2f}%/+{cfg.entry_buffer_0786_pct:.2f}%"
+    )
     console.print(Panel.fit(
         "[bold cyan]🤖 Bybit Fibonacci Dual Grid & Trailing Trader[/bold cyan]\n"
-        f"[dim]Конфиг: {Path(cfg.config_path).name if cfg.config_path else 'default'} | Стоп сетки: ${cfg.total_risk_usd:.2f} | Стоп манипуляции: ${cfg.manipulation_risk_usd:.2f}/ордер | Вход: +{cfg.entry_buffer_pct:.2f}% | Тейк: -{cfg.tp_buffer_pct:.2f}% | ATR: {atr_desc} | Таймаут: {to_desc}[/dim]",
+        f"[dim]Конфиг: {Path(cfg.config_path).name if cfg.config_path else 'default'} | Стоп Minor: ${cfg.minor_risk_usd:.2f} | Стоп Major: ${cfg.major_risk_usd:.2f} | Стоп манипуляции: ${cfg.manipulation_risk_usd:.2f}/ордер | Вход: {buf_desc} | Тейк: -{cfg.tp_buffer_pct:.2f}% | ATR: {atr_desc} | Таймаут: {to_desc}[/dim]",
         border_style="cyan",
     ))
 
@@ -1875,6 +1939,11 @@ def main():
                 max_sweep_pct=cfg.reclaim_max_sweep_pct,
                 allow_close_below=cfg.reclaim_allow_close_below,
                 entry_buffer_pct=cfg.entry_buffer_pct,
+                entry_buffer_0500_pct=cfg.entry_buffer_0500_pct,
+                entry_buffer_0618_pct=cfg.entry_buffer_0618_pct,
+                entry_buffer_0786_pct=cfg.entry_buffer_0786_pct,
+                entry_buffer_1414_pct=cfg.entry_buffer_1414_pct,
+                entry_buffer_1618_pct=cfg.entry_buffer_1618_pct,
                 tp_buffer_pct=cfg.tp_buffer_pct,
                 reclaim_tp_buffer_pct=cfg.reclaim_tp_buffer_pct,
                 reclaim_be_trigger_fib=cfg.reclaim_be_trigger_fib,
@@ -2001,7 +2070,16 @@ def main():
                 t.add_row("Тайм-аут свежести", f"{setup_timeout} часов")
             if e3 is not None and e2 is not None and cfg.grid_weights:
                 t.add_row("Пропорция входа", f"{int(cfg.grid_weights[0]*100)}% / {int(cfg.grid_weights[1]*100)}% / {int(cfg.grid_weights[2]*100)}% (0.500/0.618/0.786)")
-            t.add_row("Буфер входа", f"+{cfg.entry_buffer_pct:.2f}% перед уровнем")
+            if setup.setup_type == "MANIPULATION":
+                if cfg.entry_buffer_1414_pct == cfg.entry_buffer_1618_pct:
+                    t.add_row("Буфер входа", f"+{cfg.entry_buffer_1414_pct:.2f}% перед уровнем")
+                else:
+                    t.add_row("Буфер входа", f"+{cfg.entry_buffer_1414_pct:.2f}% (1.414) / +{cfg.entry_buffer_1618_pct:.2f}% (1.618)")
+            else:
+                if cfg.entry_buffer_0500_pct == cfg.entry_buffer_0618_pct == cfg.entry_buffer_0786_pct:
+                    t.add_row("Буфер входа", f"+{cfg.entry_buffer_0500_pct:.2f}% перед уровнем")
+                else:
+                    t.add_row("Буфер входа", f"+{cfg.entry_buffer_0500_pct:.2f}% (0.500) / +{cfg.entry_buffer_0618_pct:.2f}% (0.618) / +{cfg.entry_buffer_0786_pct:.2f}% (0.786)")
             t.add_row("Буфер тейка", f"-{cfg.tp_buffer_pct:.2f}% от уровня")
             t.add_row("─" * 20, "─" * 30)
 
