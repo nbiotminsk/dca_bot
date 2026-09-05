@@ -1121,9 +1121,9 @@ def test_is_entry_missed():
 
 def test_missed_0500_skips_setup_completely_in_idle():
     """
-    Проверка: если на закрытии свечи обнаружен сетап, но текущая цена уже ниже 0.500 (e1),
-    сетап ПОЛНОСТЬЮ пропускается (не выставляются ни O1, ни O2, ни O3),
-    а монитор остается в IDLE и запоминает last_skipped_imp_time.
+    Проверка: если на закрытии свечи обнаружен сетап, но вход на 0.500 уже упущен
+    (и 0.382 не протестирован), сетка НЕ выставляется (маржа свободна),
+    а монитор переходит в AWAITING_BREAK_BELOW для отслеживания пробоя 1.000.
     """
     from scripts.bybit_trader import ActiveTradeMonitor, TradeConfig, process_monitor_step
     cfg = TradeConfig(minor_risk_usd=2.0)
@@ -1151,14 +1151,18 @@ def test_missed_0500_skips_setup_completely_in_idle():
 
     process_monitor_step(m, client, cfg, "60", is_live=True)
 
-    # Проверяем: сетап пропущен, ни один ордер не выставлен!
-    assert m.state == "IDLE"
+    # Проверяем: сетка НЕ выставлена (0 ордеров), перешли в AWAITING_BREAK_BELOW
+    assert m.state == "AWAITING_BREAK_BELOW"
     assert len(client.placed_orders) == 0
-    assert m.last_skipped_imp_time is not None
 
-    # Повторный шаг с теми же свечами: импульс уже в last_skipped_imp_time, не пытается перевыставлять
+    # Если цена возвращается и тестирует 0.382 (high >= 112.0) -> переходим в IDLE
+    klines_bounce = pd.DataFrame([
+        {"timestamp": t0 + pd.Timedelta(hours=27), "open": 106.0, "high": 113.0, "low": 106.0, "close": 112.5, "volume": 200}
+    ])
+    client.klines_df = klines_bounce
     process_monitor_step(m, client, cfg, "60", is_live=True)
     assert m.state == "IDLE"
+    assert m.last_skipped_imp_time is not None
     assert len(client.placed_orders) == 0
 
 
@@ -1201,30 +1205,95 @@ def test_awaiting_major_0382_skips_if_price_below_0500():
     assert m.last_skipped_imp_time is not None
 
 
-def test_missed_0500_detected_on_correction():
+def test_awaiting_break_below_transitions_to_sweep_close():
     """
-    Проверка: если сетап типа TRIPLE_GRID_CORRECTION (уже касался 0.500 в истории),
-    он квалифицируется как упущенный, если нет открытой позиции.
+    Проверка: из состояния AWAITING_BREAK_BELOW при падении цены ниже 1.000 (m.sl)
+    без возврата к 0.382 монитор переходит в AWAITING_SWEEP_CLOSE.
     """
-    from scripts.bybit_trader import SetupSignal, is_entry_missed
-    setup = SetupSignal(
-        setup_type="TRIPLE_GRID_CORRECTION",
-        side="long",
-        imp_start_time=pd.Timestamp("2026-09-01 00:00"),
-        imp_end_time=pd.Timestamp("2026-09-01 10:00"),
-        imp_start_price=100.0,
-        imp_peak_price=120.0,
-        imp_pct=20.0,
-        entry_1=110.0,
-        tp_1=115.0,
-        stop_loss=100.0,
-        description="тест",
+    from scripts.bybit_trader import ActiveTradeMonitor, TradeConfig, process_monitor_step
+    cfg = TradeConfig(minor_risk_usd=2.0)
+    m = ActiveTradeMonitor(
+        symbol="ALGOUSDT",
+        setup_type="AWAITING_BREAK_BELOW",
+        state="AWAITING_BREAK_BELOW",
         layer="minor",
+        side="long",
+        cur_peak=0.1000,
+        p_0382=0.0960,
+        sl=0.0900,
+        imp_start_price=0.0900,
     )
-    is_fib_grid = setup.setup_type in ("TRIPLE_GRID_TRAILING", "TRIPLE_GRID_CORRECTION")
-    assert is_fib_grid is True
-    # Сетап уже в активной коррекции (0.500 коснулось ранее) -> вход 0.500 упущен
-    assert setup.setup_type == "TRIPLE_GRID_CORRECTION"
+
+    # Свеча пробоя 1.000 (low 0.0895 <= sl 0.0900), при этом high 0.0950 < p_0382 0.0960
+    klines_dump = pd.DataFrame([
+        {"timestamp": pd.Timestamp("2026-09-05 18:00"), "open": 0.0940, "high": 0.0950, "low": 0.0895, "close": 0.0898, "volume": 500}
+    ])
+    client = MockBybitClient(pos_size=0.0, klines_df=klines_dump)
+    process_monitor_step(m, client, cfg, "15", is_live=True)
+
+    assert m.state == "AWAITING_SWEEP_CLOSE"
+    assert m.stop_sweep_low == 0.0895
+    assert m.stop_bar_time == pd.Timestamp("2026-09-05 18:00")
+
+
+def test_cleanup_orphan_orders_for_layer():
+    """
+    Проверка: cleanup_orphan_orders_for_layer отменяет только ордера своего слоя,
+    не трогая чужие слои и сохраненные active_order_ids.
+    """
+    from scripts.bybit_trader import cleanup_orphan_orders_for_layer
+    client = MockBybitClient()
+    client.placed_orders = [
+        {"orderId": "o_min_1", "orderLinkId": "FIB-ALGO-MIN-B-O1-aaa", "symbol": "ALGOUSDT"},
+        {"orderId": "o_min_2", "orderLinkId": "FIB-ALGO-MIN-B-O2-bbb", "symbol": "ALGOUSDT"},
+        {"orderId": "o_maj_1", "orderLinkId": "FIB-ALGO-MAJ-B-O1-ccc", "symbol": "ALGOUSDT"},
+        {"orderId": "o_btc_1", "orderLinkId": "FIB-BTC-MIN-B-O1-ddd", "symbol": "BTCUSDT"},
+    ]
+
+    # Отменяем ордера слоя minor для ALGO, кроме o_min_1
+    cancelled = cleanup_orphan_orders_for_layer(client, "ALGOUSDT", "minor", active_order_ids=["o_min_1"])
+    cancelled_ids = [c.get("orderId") for c in cancelled]
+
+    assert "o_min_2" in cancelled_ids
+    assert "o_min_1" not in cancelled_ids  # защищен active_order_ids
+    assert "o_maj_1" not in cancelled_ids  # чужой слой (MAJ)
+    assert "o_btc_1" not in cancelled_ids  # чужой символ
+
+
+def test_find_active_setup_awaiting_break_below_vs_skipped():
+    """
+    Проверка:
+    1. Если 0.500 коснулись, но 0.382 не тестировали -> AWAITING_BREAK_BELOW
+    2. Если 0.500 коснулись, а затем протестировали 0.382 -> сетап пропускается (None)
+    """
+    from scripts.bybit_trader import find_active_setup
+    # Импульс 100 -> 120
+    base = [
+        {"timestamp": pd.Timestamp("2026-09-01 00:00") + pd.Timedelta(hours=i), "open": 100, "high": 100.5, "low": 99.5, "close": 100, "volume": 10}
+        for i in range(20)
+    ]
+    imp = [
+        {"timestamp": pd.Timestamp("2026-09-01 20:00") + pd.Timedelta(hours=i), "open": 100 + i*4, "high": 104 + i*4, "low": 100 + i*4, "close": 104 + i*4, "volume": 20}
+        for i in range(5)  # 100 -> 120
+    ]
+    # 1. Откат до 108 (касание 0.500 ~ 109.5), но high не достигает 0.382 (111.7)
+    pullback_no_bounce = [
+        {"timestamp": pd.Timestamp("2026-09-02 01:00"), "open": 115, "high": 115, "low": 108, "close": 108.5, "volume": 30},
+        {"timestamp": pd.Timestamp("2026-09-02 02:00"), "open": 108.5, "high": 110, "low": 108, "close": 109.0, "volume": 30},
+    ]
+    df1 = pd.DataFrame(base + imp + pullback_no_bounce)
+    setup1 = find_active_setup(df1, min_pct=2.0, layer="minor")
+    assert setup1 is not None
+    assert setup1.setup_type == "AWAITING_BREAK_BELOW"
+
+    # 2. Добавляем свечу отскока с тестом 0.382 (high 116 >= 113.6)
+    pullback_with_bounce = pullback_no_bounce + [
+        {"timestamp": pd.Timestamp("2026-09-02 03:00"), "open": 109, "high": 116, "low": 109, "close": 115, "volume": 30},
+    ]
+    df2 = pd.DataFrame(base + imp + pullback_with_bounce)
+    setup2 = find_active_setup(df2, min_pct=2.0, layer="minor")
+    # Т.к. 0.382 для импульса 100->120 протестирован после 0.500, он больше не возвращается
+    assert setup2 is None or setup2.imp_start_price > 100.0
 
 
 
