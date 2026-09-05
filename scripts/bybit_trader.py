@@ -17,6 +17,7 @@
 import argparse
 import sys
 import time
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal, Optional
@@ -483,6 +484,11 @@ def find_active_setup(
                 macd_div = (hist[-1] > hist[swp_bar_idx] or hist[-1] > -0.01) if is_long else (hist[-1] < hist[swp_bar_idx] or hist[-1] < 0.01)
 
                 if swp_pct <= max_sweep_pct and is_reclaimed and not has_consolidated and macd_div:
+                    # Валидация: вход должен быть строго до тейка (для Long: latest_c < TP; для Short: latest_c > TP)
+                    if is_long and latest_c >= tp_reclaim_0618:
+                        continue
+                    if not is_long and latest_c <= tp_reclaim_0618:
+                        continue
                     sl_target = sweep_val * (0.998 if is_long else 1.002)
                     p_0786_f = calc_fib(imp.high, imp.low, reclaim_be_trigger_fib, is_long=is_long, scale=scale)
                     be_mult = 1.0 + (reclaim_be_offset_pct / 100.0) if is_long else 1.0 - (reclaim_be_offset_pct / 100.0)
@@ -663,6 +669,16 @@ class ActiveTradeMonitor:
     layer: Literal["minor", "major"] = "minor"
     p_0382: Optional[float] = None
     touched_0382: bool = True
+
+
+def make_order_link_id(sym_short: str, layer_tag: str, side_str: str, order_tag: str) -> str:
+    """
+    Генерирует уникальный orderLinkId (до 36 символов), устойчивый к ошибке 110072 на Bybit.
+    Формат: FIB-{SYM}-{LAYER}-{SIDE}-{ORDER}-{HEX} (например, FIB-BTC-MIN-B-O1-8f3a1b).
+    """
+    side_code = "B" if str(side_str).lower() in ("buy", "long") else "S"
+    uid = uuid.uuid4().hex[:6]
+    return f"FIB-{sym_short}-{layer_tag}-{side_code}-{order_tag}-{uid}"
 
 
 def cancel_monitor_orders(client: Any, m: ActiveTradeMonitor) -> list[dict[str, Any]]:
@@ -944,14 +960,26 @@ def process_monitor_step(
 
             o1_id, o2_id, o3_id = None, None, None
             if is_live:
+                # Проверка маржи перед размещением сетки
+                if hasattr(client, "get_available_balance") and hasattr(client, "calc_required_margin"):
+                    avail_m = client.get_available_balance()
+                    req_m = client.calc_required_margin(m.symbol, q1, m.cur_e1)
+                    if m.cur_e2 and q2 > 0:
+                        req_m += client.calc_required_margin(m.symbol, q2, m.cur_e2)
+                    if m.cur_e3 and q3 > 0:
+                        req_m += client.calc_required_margin(m.symbol, q3, m.cur_e3)
+                    if avail_m < req_m * 1.05:
+                        console.print(f"[yellow]⏸️ [{m.symbol}] [MAJOR] Недостаточно свободной маржи (${avail_m:.2f} < ${req_m * 1.05:.2f}). Откладываем выставление сетки.[/yellow]")
+                        return
+
                 try:
-                    r1 = client.place_order(symbol=m.symbol, side="Buy", order_type="Limit", qty=q1, price=m.cur_e1, take_profit=m.cur_tp1, stop_loss=m.sl, order_link_id=f"FIB-{sym_short}-{layer_tag}-B-O1")
+                    r1 = client.place_order(symbol=m.symbol, side="Buy", order_type="Limit", qty=q1, price=m.cur_e1, take_profit=m.cur_tp1, stop_loss=m.sl, order_link_id=make_order_link_id(sym_short, layer_tag, "Buy", "O1"))
                     o1_id = r1.get("orderId")
                     if m.cur_e2 and q2 > 0 and m.cur_tp2:
-                        r2 = client.place_order(symbol=m.symbol, side="Buy", order_type="Limit", qty=q2, price=m.cur_e2, take_profit=m.cur_tp2, stop_loss=m.sl, order_link_id=f"FIB-{sym_short}-{layer_tag}-B-O2")
+                        r2 = client.place_order(symbol=m.symbol, side="Buy", order_type="Limit", qty=q2, price=m.cur_e2, take_profit=m.cur_tp2, stop_loss=m.sl, order_link_id=make_order_link_id(sym_short, layer_tag, "Buy", "O2"))
                         o2_id = r2.get("orderId")
                     if m.cur_e3 and q3 > 0 and m.cur_tp3:
-                        r3 = client.place_order(symbol=m.symbol, side="Buy", order_type="Limit", qty=q3, price=m.cur_e3, take_profit=m.cur_tp3, stop_loss=m.sl, order_link_id=f"FIB-{sym_short}-{layer_tag}-B-O3")
+                        r3 = client.place_order(symbol=m.symbol, side="Buy", order_type="Limit", qty=q3, price=m.cur_e3, take_profit=m.cur_tp3, stop_loss=m.sl, order_link_id=make_order_link_id(sym_short, layer_tag, "Buy", "O3"))
                         o3_id = r3.get("orderId")
                     console.print(f"  ✓ [{m.symbol}] [MAJOR] Размещена сетка: Вход 1 ${m.cur_e1}, Вход 2 ${m.cur_e2 or '-'}, Вход 3 ${m.cur_e3 or '-'}")
                 except Exception as err:
@@ -1224,12 +1252,20 @@ def process_monitor_step(
             )
 
             if is_live:
+                if hasattr(client, "get_available_balance") and hasattr(client, "calc_required_margin"):
+                    avail_m = client.get_available_balance()
+                    req_m = (client.calc_required_margin(m.symbol, q1_m, e_1414) + client.calc_required_margin(m.symbol, q2_m, e_1618)) * 1.05
+                    if avail_m < req_m:
+                        console.print(f"  [yellow]⏸️ [{m.symbol}] Недостаточно свободной маржи (${avail_m:.2f} < ${req_m:.2f}). Откладываем выставление сетки манипуляции.[/yellow]")
+                        m.state = "IDLE"
+                        return
+
                 try:
                     cancel_monitor_orders(client, m)
                     layer_tag = "MAJ" if m.layer == "major" else "MIN"
                     sym_short = m.symbol.replace("USDT.P", "").replace("USDT", "")
-                    r1 = client.place_order(symbol=m.symbol, side="Buy", order_type="Limit", qty=q1_m, price=e_1414, take_profit=tp_1000, stop_loss=sl_2414, order_link_id=f"FIB-{sym_short}-{layer_tag}-M-O1")
-                    r2 = client.place_order(symbol=m.symbol, side="Buy", order_type="Limit", qty=q2_m, price=e_1618, take_profit=e_1414, stop_loss=sl_2414, order_link_id=f"FIB-{sym_short}-{layer_tag}-M-O2")
+                    r1 = client.place_order(symbol=m.symbol, side="Buy", order_type="Limit", qty=q1_m, price=e_1414, take_profit=tp_1000, stop_loss=sl_2414, order_link_id=make_order_link_id(sym_short, layer_tag, "Buy", "M1"))
+                    r2 = client.place_order(symbol=m.symbol, side="Buy", order_type="Limit", qty=q2_m, price=e_1618, take_profit=e_1414, stop_loss=sl_2414, order_link_id=make_order_link_id(sym_short, layer_tag, "Buy", "M2"))
                     m.o1_id = r1.get("orderId")
                     m.o2_id = r2.get("orderId")
                     console.print(f"  ✓ Ордер 1: Limit Buy {q1_m} @ ${e_1414}, TP: ${tp_1000}, SL: ${sl_2414}")
@@ -1421,16 +1457,55 @@ def process_monitor_step(
                     m.state = "O1_FILLED"
                     m.position_was_open = True
                     return
+
+                # Проверка текущей цены относительно уровней входа (защита от покупок выше рынка)
+                cur_p = client.get_ticker_price(m.symbol) if hasattr(client, "get_ticker_price") else 0.0
+                if cur_p <= 0:
+                    try:
+                        cur_p = float(df_now["close"].iloc[-1])
+                    except Exception:
+                        cur_p = e1
+
+                place_o1 = (e1 < cur_p * 0.9995)
+                place_o2 = bool(e2 and q2 > 0 and tp2 and (e2 < cur_p * 0.9995))
+                place_o3 = bool(e3 and q3 > 0 and tp3 and (e3 < cur_p * 0.9995))
+
+                if not place_o1:
+                    console.print(f"  [yellow]ℹ️ [{m.symbol}] [{layer_tag}] Текущая цена (${cur_p}) ниже Ордера 1 (${e1}). Ордер 1 пропущен.[/yellow]")
+                if not place_o2 and e2 and q2 > 0:
+                    console.print(f"  [yellow]ℹ️ [{m.symbol}] [{layer_tag}] Текущая цена (${cur_p}) ниже Ордера 2 (${e2}). Ордер 2 пропущен.[/yellow]")
+                if not place_o3 and e3 and q3 > 0:
+                    console.print(f"  [yellow]ℹ️ [{m.symbol}] [{layer_tag}] Текущая цена (${cur_p}) ниже Ордера 3 (${e3}). Ордер 3 пропущен.[/yellow]")
+
+                if not (place_o1 or place_o2 or place_o3):
+                    console.print(f"  [yellow]⚠️ [{m.symbol}] [{layer_tag}] Все уровни сетки выше текущей цены (${cur_p}). Пропуск выставления.[/yellow]")
+                    return
+
+                # Проверка свободной маржи
+                if hasattr(client, "get_available_balance") and hasattr(client, "calc_required_margin"):
+                    avail_m = client.get_available_balance()
+                    req_m = 0.0
+                    if place_o1:
+                        req_m += client.calc_required_margin(m.symbol, q1, e1)
+                    if place_o2:
+                        req_m += client.calc_required_margin(m.symbol, q2, e2)
+                    if place_o3:
+                        req_m += client.calc_required_margin(m.symbol, q3, e3)
+                    if avail_m < req_m * 1.05:
+                        console.print(f"[yellow]⏸️ [{m.symbol}] [{layer_tag}] Недостаточно свободной маржи (${avail_m:.2f} < ${req_m * 1.05:.2f}). Откладываем выставление новой сетки.[/yellow]")
+                        return
+
                 try:
-                    r1 = client.place_order(symbol=m.symbol, side="Buy", order_type="Limit", qty=q1, price=e1, take_profit=tp1, stop_loss=sl, order_link_id=f"FIB-{sym_short}-{layer_tag}-B-O1")
-                    o1_id = r1.get("orderId")
-                    if e2 and q2 > 0 and tp2:
-                        r2 = client.place_order(symbol=m.symbol, side="Buy", order_type="Limit", qty=q2, price=e2, take_profit=tp2, stop_loss=sl, order_link_id=f"FIB-{sym_short}-{layer_tag}-B-O2")
+                    if place_o1:
+                        r1 = client.place_order(symbol=m.symbol, side="Buy", order_type="Limit", qty=q1, price=e1, take_profit=tp1, stop_loss=sl, order_link_id=make_order_link_id(sym_short, layer_tag, "Buy", "O1"))
+                        o1_id = r1.get("orderId")
+                    if place_o2:
+                        r2 = client.place_order(symbol=m.symbol, side="Buy", order_type="Limit", qty=q2, price=e2, take_profit=tp2, stop_loss=sl, order_link_id=make_order_link_id(sym_short, layer_tag, "Buy", "O2"))
                         o2_id = r2.get("orderId")
-                    if e3 and q3 > 0 and tp3:
-                        r3 = client.place_order(symbol=m.symbol, side="Buy", order_type="Limit", qty=q3, price=e3, take_profit=tp3, stop_loss=sl, order_link_id=f"FIB-{sym_short}-{layer_tag}-B-O3")
+                    if place_o3:
+                        r3 = client.place_order(symbol=m.symbol, side="Buy", order_type="Limit", qty=q3, price=e3, take_profit=tp3, stop_loss=sl, order_link_id=make_order_link_id(sym_short, layer_tag, "Buy", "O3"))
                         o3_id = r3.get("orderId")
-                    console.print(f"  ✓ [{m.symbol}] [{layer_tag}] Размещена новая тройная сетка: Вход 1 ${e1}, Вход 2 ${e2 or '-'}, Вход 3 ${e3 or '-'}")
+                    console.print(f"  ✓ [{m.symbol}] [{layer_tag}] Размещена новая сетка: Вход 1 ${e1 if place_o1 else '(пропущен)'}, Вход 2 ${e2 if place_o2 else '(пропущен)'}, Вход 3 ${e3 if place_o3 else '(пропущен)'}")
                 except Exception as err:
                     console.print(f"[red]❌ [{m.symbol}] [{layer_tag}] Ошибка выставления новой сетки: {err}[/red]")
                     return
@@ -1765,6 +1840,11 @@ def main():
     # Выставляем ордера для всех подтвержденных сетапов
     active_monitors: list[ActiveTradeMonitor] = []
 
+    # Проверяем доступную свободную маржу на аккаунте Bybit перед выставлением ордеров
+    available_margin = client.get_available_balance() if (is_live and hasattr(client, "get_available_balance")) else 999999.0
+    if is_live:
+        console.print(f"\n[cyan]💰 Свободная маржа на Unified аккаунте: ${available_margin:.2f}[/cyan]")
+
     for item in actionable_setups:
         sym = item["symbol"]
         layer_name = item["layer"]
@@ -1774,11 +1854,16 @@ def main():
         layer_tag = "MAJ" if layer_name == "major" else "MIN"
 
         console.print(f"\n[bold cyan]Проверка/выставление ордеров для {sym} [{layer_name.upper()}]...[/bold cyan]")
+        if is_live and hasattr(client, "get_available_balance"):
+            available_margin = client.get_available_balance()
         o1_id = None
         o2_id = None
         o3_id = None
         pos_open_initially = False
         initial_state = "TRAILING"
+        place_o1 = True
+        place_o2 = bool(e2 is not None and q2 > 0)
+        place_o3 = bool(e3 is not None and q3 > 0)
         try:
             side_str = "Buy" if setup.side == "long" else "Sell"
 
@@ -1799,11 +1884,12 @@ def main():
             existing_orders.sort(key=lambda x: float(x.get("price", 0.0)), reverse=(setup.side == "long"))
 
             sym_short = sym.replace("USDT.P", "").replace("USDT", "")
-            link_id_1 = f"FIB-{sym_short}-{layer_tag}-B-O1" if side_str == "Buy" else f"FIB-{sym_short}-{layer_tag}-S-O1"
-            link_id_2 = f"FIB-{sym_short}-{layer_tag}-B-O2" if side_str == "Buy" else f"FIB-{sym_short}-{layer_tag}-S-O2"
-            link_id_3 = f"FIB-{sym_short}-{layer_tag}-B-O3" if side_str == "Buy" else f"FIB-{sym_short}-{layer_tag}-S-O3"
+            link_id_1 = make_order_link_id(sym_short, layer_tag, side_str, "O1")
+            link_id_2 = make_order_link_id(sym_short, layer_tag, side_str, "O2")
+            link_id_3 = make_order_link_id(sym_short, layer_tag, side_str, "O3")
 
             setup_risk = item["setup_risk"]
+            specs = client.get_specs(sym)
 
             if pos_open_initially:
                 # ─── СИТУАЦИЯ 1: Позиция уже открыта на Bybit ───────────
@@ -1826,54 +1912,127 @@ def main():
                     q2_res, q3_res, _, _, _ = client.calc_residual_order_sizes(
                         pos_sz, avg_p, e2, e3, sl, total_risk_usd=setup_risk, symbol=sym, weights=cfg.grid_weights
                     )
-                    # Проверяем, есть ли уже лимитные ордера добора в стакане
-                    if len(existing_orders) >= 2:
-                        o2_info = existing_orders[0]
-                        o2_id = o2_info.get("orderId")
-                        e2 = float(o2_info.get("price", e2 or 0.0))
-                        tp2 = float(o2_info.get("takeProfit") or (tp2 or 0.0))
+                    
+                    # Проверяем, соответствуют ли существующие ордера добора новому расчету риска
+                    res_match = False
+                    tol2 = max(specs.qty_step, 0.05 * q2_res) if q2_res > 0 else specs.qty_step
+                    tol3 = max(specs.qty_step, 0.05 * q3_res) if q3_res > 0 else specs.qty_step
 
-                        o3_info = existing_orders[1]
-                        o3_id = o3_info.get("orderId")
-                        e3 = float(o3_info.get("price", e3 or 0.0))
-                        tp3 = float(o3_info.get("takeProfit") or (tp3 or 0.0))
-                        initial_state = "O1_FILLED"
-                        console.print(f"  ✓ [{layer_tag}] Подключены существующие ордера добора: Ордер 2 ID {o2_id} @ {e2}, Ордер 3 ID {o3_id} @ {e3}")
-                    elif len(existing_orders) == 1:
-                        o2_info = existing_orders[0]
-                        o2_id = o2_info.get("orderId")
-                        e2 = float(o2_info.get("price", e2 or 0.0))
-                        tp2 = float(o2_info.get("takeProfit") or (tp2 or 0.0))
-                        initial_state = "O1_FILLED"
-                        console.print(f"  ✓ [{layer_tag}] Подключен существующий ордер: Ордер 2 ID {o2_id} @ {e2}")
-                        if e3 is not None and q3_res > 0 and tp3 is not None:
-                            resp3 = client.place_order(symbol=sym, side=side_str, order_type="Limit", qty=q3_res, price=e3, take_profit=tp3, stop_loss=sl, order_link_id=link_id_3)
-                            o3_id = resp3.get("orderId")
-                            console.print(f"  ✅ [{layer_tag}] [Остаточный риск] Ордер 3 размещен: ID {o3_id} (Limit {side_str} {q3_res} @ {e3})")
-                    else:
-                        initial_state = "O1_FILLED"
-                        if e2 is not None and q2_res > 0 and tp2 is not None:
-                            resp2 = client.place_order(symbol=sym, side=side_str, order_type="Limit", qty=q2_res, price=e2, take_profit=tp2, stop_loss=sl, order_link_id=link_id_2)
-                            o2_id = resp2.get("orderId")
-                            console.print(f"  ✅ [{layer_tag}] [Остаточный риск] Ордер 2 размещен: ID {o2_id} (Limit {side_str} {q2_res} @ {e2})")
-                        if e3 is not None and q3_res > 0 and tp3 is not None:
-                            resp3 = client.place_order(symbol=sym, side=side_str, order_type="Limit", qty=q3_res, price=e3, take_profit=tp3, stop_loss=sl, order_link_id=link_id_3)
-                            o3_id = resp3.get("orderId")
-                            console.print(f"  ✅ [{layer_tag}] [Остаточный риск] Ордер 3 размещен: ID {o3_id} (Limit {side_str} {q3_res} @ {e3})")
+                    if len(existing_orders) >= 2 and e2 is not None and e3 is not None:
+                        eq2 = float(existing_orders[0].get("qty", 0.0))
+                        eq3 = float(existing_orders[1].get("qty", 0.0))
+                        ep2 = float(existing_orders[0].get("price", 0.0))
+                        ep3 = float(existing_orders[1].get("price", 0.0))
+                        if abs(eq2 - q2_res) <= tol2 and abs(eq3 - q3_res) <= tol3 and abs(ep2 - e2) / e2 < 0.002 and abs(ep3 - e3) / e3 < 0.002:
+                            res_match = True
+                            o2_id = existing_orders[0].get("orderId")
+                            o3_id = existing_orders[1].get("orderId")
+                            console.print(f"  ✓ [{layer_tag}] Подключены существующие ордера добора: Ордер 2 ID {o2_id} @ {e2} (qty {eq2}), Ордер 3 ID {o3_id} @ {e3} (qty {eq3})")
+                    elif len(existing_orders) == 1 and e2 is not None and (e3 is None or q3_res <= 0):
+                        eq2 = float(existing_orders[0].get("qty", 0.0))
+                        ep2 = float(existing_orders[0].get("price", 0.0))
+                        if abs(eq2 - q2_res) <= tol2 and abs(ep2 - e2) / e2 < 0.002:
+                            res_match = True
+                            o2_id = existing_orders[0].get("orderId")
+                            console.print(f"  ✓ [{layer_tag}] Подключен существующий ордер: Ордер 2 ID {o2_id} @ {e2} (qty {eq2})")
+
+                    if not res_match and existing_orders:
+                        console.print(f"🔄 [{sym}] [{layer_tag}] Параметры существующих ордеров добора не соответствуют новому риску. Снимаем для актуализации...")
+                        for o in existing_orders:
+                            if o.get("orderId"):
+                                client.cancel_order(sym, o.get("orderId"))
+                        existing_orders = []
+                        if is_live and hasattr(client, "get_available_balance"):
+                            available_margin = client.get_available_balance()
+
+                    initial_state = "O1_FILLED"
+
+                    if not res_match:
+                        cur_p = client.get_ticker_price(sym) if hasattr(client, "get_ticker_price") else 0.0
+                        if cur_p <= 0:
+                            cur_p = avg_p
+
+                        place_o2 = bool(e2 is not None and q2_res > 0 and tp2 is not None and (e2 < cur_p * 0.9995))
+                        place_o3 = bool(e3 is not None and q3_res > 0 and tp3 is not None and (e3 < cur_p * 0.9995))
+
+                        if e2 is not None and q2_res > 0 and not place_o2:
+                            console.print(f"  [yellow]ℹ️ [{sym}] [{layer_tag}] Текущая цена (${cur_p}) ниже Ордера 2 (${e2}). Добор 2 пропущен.[/yellow]")
+                        if e3 is not None and q3_res > 0 and not place_o3:
+                            console.print(f"  [yellow]ℹ️ [{sym}] [{layer_tag}] Текущая цена (${cur_p}) ниже Ордера 3 (${e3}). Добор 3 пропущен.[/yellow]")
+
+                        needed_margin = 0.0
+                        if place_o2 and hasattr(client, "calc_required_margin"):
+                            needed_margin += client.calc_required_margin(sym, q2_res, e2)
+                        if place_o3 and hasattr(client, "calc_required_margin"):
+                            needed_margin += client.calc_required_margin(sym, q3_res, e3)
+                        needed_margin *= 1.05
+
+                        if is_live and available_margin < needed_margin:
+                            console.print(f"[yellow]⏸️ [{sym}] [{layer_tag}] Недостаточно свободной маржи для добора (${available_margin:.2f} < ${needed_margin:.2f}). Ордера добора пропущены.[/yellow]")
+                        else:
+                            if place_o2 and e2 is not None and tp2 is not None:
+                                resp2 = client.place_order(symbol=sym, side=side_str, order_type="Limit", qty=q2_res, price=e2, take_profit=tp2, stop_loss=sl, order_link_id=link_id_2)
+                                o2_id = resp2.get("orderId")
+                                console.print(f"  ✅ [{layer_tag}] [Остаточный риск] Ордер 2 размещен: ID {o2_id} (Limit {side_str} {q2_res} @ {e2})")
+                            if place_o3 and e3 is not None and tp3 is not None:
+                                resp3 = client.place_order(symbol=sym, side=side_str, order_type="Limit", qty=q3_res, price=e3, take_profit=tp3, stop_loss=sl, order_link_id=link_id_3)
+                                o3_id = resp3.get("orderId")
+                                console.print(f"  ✅ [{layer_tag}] [Остаточный риск] Ордер 3 размещен: ID {o3_id} (Limit {side_str} {q3_res} @ {e3})")
+                            if is_live:
+                                available_margin = max(0.0, available_margin - needed_margin)
             else:
                 # ─── СИТУАЦИЯ 2: Позиции нет (размещение или синхронизация сетки) ─
                 match_existing = False
+                cur_p = client.get_ticker_price(sym) if hasattr(client, "get_ticker_price") else 0.0
+                if cur_p <= 0:
+                    try:
+                        df_tmp = client.fetch_klines(sym, interval=interval, limit=2)
+                        cur_p = float(df_tmp["close"].iloc[-1])
+                    except Exception:
+                        cur_p = e1
+
+                tol1 = max(specs.qty_step, 0.05 * q1) if q1 > 0 else specs.qty_step
+                tol2 = max(specs.qty_step, 0.05 * q2) if q2 > 0 else specs.qty_step
+                tol3 = max(specs.qty_step, 0.05 * q3) if q3 > 0 else specs.qty_step
+
                 if len(existing_orders) == 3 and e2 is not None and e3 is not None:
                     p1 = float(existing_orders[0].get("price", 0.0))
                     p2 = float(existing_orders[1].get("price", 0.0))
                     p3 = float(existing_orders[2].get("price", 0.0))
-                    if abs(p1 - e1) / e1 < 0.002 and abs(p2 - e2) / e2 < 0.002 and abs(p3 - e3) / e3 < 0.002:
+                    qty1 = float(existing_orders[0].get("qty", 0.0))
+                    qty2 = float(existing_orders[1].get("qty", 0.0))
+                    qty3 = float(existing_orders[2].get("qty", 0.0))
+                    sl1 = float(existing_orders[0].get("stopLoss") or 0.0)
+
+                    price_ok = (abs(p1 - e1) / e1 < 0.002 and abs(p2 - e2) / e2 < 0.002 and abs(p3 - e3) / e3 < 0.002)
+                    qty_ok = (abs(qty1 - q1) <= tol1 and abs(qty2 - q2) <= tol2 and abs(qty3 - q3) <= tol3)
+                    sl_ok = (sl <= 0 or sl1 <= 0 or abs(sl1 - sl) / sl < 0.002)
+
+                    if price_ok and qty_ok and sl_ok:
                         match_existing = True
                         o1_id = existing_orders[0].get("orderId")
                         o2_id = existing_orders[1].get("orderId")
                         o3_id = existing_orders[2].get("orderId")
                         initial_state = "TRAILING" if setup.setup_type in ("TRIPLE_GRID_TRAILING", "TRIPLE_GRID_CORRECTION", "DUAL_GRID_TRAILING", "DUAL_GRID_CORRECTION") else setup.setup_type
-                        console.print(f"ℹ️ [{sym}] [{layer_tag}] Найдена готовая сетка из 3 ордеров на Bybit (e1={p1}, e2={p2}, e3={p3}). Подключаем к мониторингу без перевыставления!")
+                        console.print(f"ℹ️ [{sym}] [{layer_tag}] Найдена готовая сетка из 3 ордеров на Bybit (e1={p1}, e2={p2}, e3={p3} | q1={qty1}, q2={qty2}, q3={qty3}). Подключаем к мониторингу без перевыставления!")
+                    elif price_ok and not qty_ok:
+                        console.print(f"🔄 [{sym}] [{layer_tag}] Риск в конфиге изменился! Существующие объемы ({qty1}, {qty2}, {qty3}) не совпадают с новыми ({q1}, {q2}, {q3}). Перевыставляем сетку под новый риск...")
+
+                elif len(existing_orders) == 2 and e2 is not None and e3 is None and setup.setup_type == "MANIPULATION":
+                    p1 = float(existing_orders[0].get("price", 0.0))
+                    p2 = float(existing_orders[1].get("price", 0.0))
+                    qty1 = float(existing_orders[0].get("qty", 0.0))
+                    qty2 = float(existing_orders[1].get("qty", 0.0))
+                    price_ok = (abs(p1 - e1) / e1 < 0.002 and abs(p2 - e2) / e2 < 0.002)
+                    qty_ok = (abs(qty1 - q1) <= tol1 and abs(qty2 - q2) <= tol2)
+                    if price_ok and qty_ok:
+                        match_existing = True
+                        o1_id = existing_orders[0].get("orderId")
+                        o2_id = existing_orders[1].get("orderId")
+                        initial_state = "MANIPULATION_ACTIVE"
+                        console.print(f"ℹ️ [{sym}] [{layer_tag}] Найдена готовая сетка манипуляции на Bybit. Подключаем к мониторингу без перевыставления!")
+                    elif price_ok and not qty_ok:
+                        console.print(f"🔄 [{sym}] [{layer_tag}] Риск манипуляции изменился! Существующие объемы ({qty1}, {qty2}) не совпадают с новыми ({q1}, {q2}). Перевыставляем сетку...")
 
                 if not match_existing:
                     if existing_orders:
@@ -1882,26 +2041,64 @@ def main():
                             if o.get("orderId"):
                                 client.cancel_order(sym, o.get("orderId"))
                         existing_orders = []
+                        if is_live and hasattr(client, "get_available_balance"):
+                            available_margin = client.get_available_balance()
 
-                    resp1 = client.place_order(
-                        symbol=sym, side=side_str, order_type="Limit", qty=q1, price=e1, take_profit=tp1, stop_loss=sl, order_link_id=link_id_1
-                    )
-                    o1_id = resp1.get("orderId")
-                    console.print(f"✅ [{sym}] [{layer_tag}] Ордер 1 размещен: ID {o1_id} (Limit {side_str} {q1} @ {e1}, TP {tp1}, SL {sl})")
+                    # Проверка цен ордеров относительно текущей рыночной цены (защита от покупки выше рынка)
+                    place_o1 = (e1 < cur_p * 0.9995)
+                    place_o2 = bool(e2 is not None and q2 > 0 and tp2 is not None and (e2 < cur_p * 0.9995))
+                    place_o3 = bool(e3 is not None and q3 > 0 and tp3 is not None and (e3 < cur_p * 0.9995))
 
-                    if e2 is not None and q2 > 0 and tp2 is not None:
+                    if not place_o1:
+                        console.print(f"  [yellow]ℹ️ [{sym}] [{layer_tag}] Текущая цена (${cur_p}) уже ниже Ордера 1 (${e1}). Ордер 1 пропущен (опоздание на вход).[/yellow]")
+                    if not place_o2 and e2 is not None and q2 > 0:
+                        console.print(f"  [yellow]ℹ️ [{sym}] [{layer_tag}] Текущая цена (${cur_p}) уже ниже Ордера 2 (${e2}). Ордер 2 пропущен.[/yellow]")
+                    if not place_o3 and e3 is not None and q3 > 0:
+                        console.print(f"  [yellow]ℹ️ [{sym}] [{layer_tag}] Текущая цена (${cur_p}) ниже Ордера 3 (${e3}). Ордер 3 пропущен.[/yellow]")
+
+                    if not (place_o1 or place_o2 or place_o3):
+                        console.print(f"  [yellow]⚠️ [{sym}] [{layer_tag}] Все уровни сетки выше текущей цены (${cur_p}). Сетка не выставляется, монета переходит в IDLE.[/yellow]")
+                        active_monitors.append(ActiveTradeMonitor(symbol=sym, setup_type="IDLE", state="IDLE", layer=layer_name))
+                        continue
+
+                    # Проверка свободной маржи
+                    needed_margin = 0.0
+                    if place_o1 and hasattr(client, "calc_required_margin"):
+                        needed_margin += client.calc_required_margin(sym, q1, e1)
+                    if place_o2 and hasattr(client, "calc_required_margin"):
+                        needed_margin += client.calc_required_margin(sym, q2, e2)
+                    if place_o3 and hasattr(client, "calc_required_margin"):
+                        needed_margin += client.calc_required_margin(sym, q3, e3)
+                    needed_margin *= 1.05
+
+                    if is_live and available_margin < needed_margin:
+                        console.print(f"[yellow]⏸️ [{sym}] [{layer_tag}] Недостаточно свободной маржи (${available_margin:.2f} < ${needed_margin:.2f}). Пропуск выставления сетки.[/yellow]")
+                        active_monitors.append(ActiveTradeMonitor(symbol=sym, setup_type="IDLE", state="IDLE", layer=layer_name))
+                        continue
+
+                    if place_o1:
+                        resp1 = client.place_order(
+                            symbol=sym, side=side_str, order_type="Limit", qty=q1, price=e1, take_profit=tp1, stop_loss=sl, order_link_id=link_id_1
+                        )
+                        o1_id = resp1.get("orderId")
+                        console.print(f"✅ [{sym}] [{layer_tag}] Ордер 1 размещен: ID {o1_id} (Limit {side_str} {q1} @ {e1}, TP {tp1}, SL {sl})")
+
+                    if place_o2 and e2 is not None and tp2 is not None:
                         resp2 = client.place_order(
                             symbol=sym, side=side_str, order_type="Limit", qty=q2, price=e2, take_profit=tp2, stop_loss=sl, order_link_id=link_id_2
                         )
                         o2_id = resp2.get("orderId")
                         console.print(f"✅ [{sym}] [{layer_tag}] Ордер 2 размещен: ID {o2_id} (Limit {side_str} {q2} @ {e2}, TP {tp2}, SL {sl})")
 
-                    if e3 is not None and q3 > 0 and tp3 is not None:
+                    if place_o3 and e3 is not None and tp3 is not None:
                         resp3 = client.place_order(
                             symbol=sym, side=side_str, order_type="Limit", qty=q3, price=e3, take_profit=tp3, stop_loss=sl, order_link_id=link_id_3
                         )
                         o3_id = resp3.get("orderId")
                         console.print(f"✅ [{sym}] [{layer_tag}] Ордер 3 размещен: ID {o3_id} (Limit {side_str} {q3} @ {e3}, TP {tp3}, SL {sl})")
+
+                    if is_live:
+                        available_margin = max(0.0, available_margin - needed_margin)
 
                     initial_state = "TRAILING" if setup.setup_type in ("TRIPLE_GRID_TRAILING", "TRIPLE_GRID_CORRECTION", "DUAL_GRID_TRAILING", "DUAL_GRID_CORRECTION") else setup.setup_type
 
@@ -1926,8 +2123,8 @@ def main():
                 q1=q1,
                 q2=q2,
                 q3=q3,
-                has_o2=(o2_id is not None or (e2 is not None and q2 > 0)),
-                has_o3=(o3_id is not None or (e3 is not None and q3 > 0)),
+                has_o2=(o2_id is not None),
+                has_o3=(o3_id is not None),
                 be_trigger=client.round_price(setup.be_trigger, sym) if setup.be_trigger is not None else None,
                 be_price=client.round_price(setup.be_price, sym) if setup.be_price is not None else None,
                 position_was_open=pos_open_initially,
@@ -2051,9 +2248,25 @@ def main():
         border_style="yellow",
     ))
 
+    config_file = Path(cfg.config_path) if cfg.config_path else (root_dir / "config" / "trade_config.yaml")
+    last_cfg_mtime = config_file.stat().st_mtime if config_file.exists() else 0.0
+
     try:
         while True:
             time.sleep(15)
+
+            # Горячая перезагрузка параметров стратегии и риска при изменении файла конфига
+            if config_file.exists():
+                try:
+                    cur_mtime = config_file.stat().st_mtime
+                    if cur_mtime > last_cfg_mtime:
+                        last_cfg_mtime = cur_mtime
+                        old_risk = cfg.total_risk_usd
+                        cfg = load_trade_config(config_file)
+                        console.print(f"\n[bold magenta]⚡ Обнаружено изменение файла {config_file.name}![/bold magenta]")
+                        console.print(f"  ➜ Риск обновлен: ${old_risk:.2f} -> ${cfg.total_risk_usd:.2f} (Minor: ${cfg.minor_risk_usd:.2f}, Major: ${cfg.major_risk_usd:.2f}).")
+                except Exception:
+                    pass
 
             for m in active_monitors:
                 if m.done:

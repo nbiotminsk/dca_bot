@@ -569,3 +569,74 @@ class BybitClient:
             except Exception:
                 pass
         return False
+
+    def get_available_balance(self) -> float:
+        """
+        Возвращает доступную свободную маржу на Unified Trading Account (в USD/USDT).
+        """
+        try:
+            resp = self.session.get_wallet_balance(accountType="UNIFIED")
+            if resp.get("retCode", 0) == 0:
+                acc_list = resp.get("result", {}).get("list", [])
+                if acc_list:
+                    tot_avail = acc_list[0].get("totalAvailableBalance")
+                    if tot_avail is not None and str(tot_avail).strip():
+                        return float(tot_avail)
+                    # fallback к монете USDT
+                    for coin_info in acc_list[0].get("coin", []):
+                        if coin_info.get("coin") == "USDT":
+                            w_avail = coin_info.get("availableToWithdraw") or coin_info.get("walletBalance")
+                            if w_avail:
+                                return float(w_avail)
+        except Exception:
+            pass
+        return 0.0
+
+    def get_symbol_leverage(self, symbol: str) -> float:
+        """
+        Возвращает текущее кредитное плечо для символа (по умолчанию 10.0).
+        """
+        sym = symbol.upper()
+        if not hasattr(self, "_leverage_cache"):
+            self._leverage_cache: dict[str, float] = {}
+        if sym in self._leverage_cache:
+            return self._leverage_cache[sym]
+
+        try:
+            resp = self.session.get_positions(category="linear", symbol=sym)
+            if resp.get("retCode", 0) == 0:
+                p_list = resp.get("result", {}).get("list", [])
+                if p_list:
+                    lev_str = p_list[0].get("leverage", "10")
+                    lev = float(lev_str) if float(lev_str) > 0 else 10.0
+                    self._leverage_cache[sym] = lev
+                    return lev
+        except Exception:
+            pass
+        self._leverage_cache[sym] = 10.0
+        return 10.0
+
+    def calc_required_margin(self, symbol: str, qty: float, price: float) -> float:
+        """
+        Рассчитывает ориентировочную начальную маржу для ордера: (qty * price) / leverage.
+        """
+        if qty <= 0 or price <= 0:
+            return 0.0
+        leverage = self.get_symbol_leverage(symbol)
+        return (qty * price) / max(1.0, leverage)
+
+    def get_ticker_price(self, symbol: str) -> float:
+        """
+        Возвращает текущую рыночную цену (lastPrice) инструмента.
+        """
+        try:
+            resp = self.session.get_tickers(category="linear", symbol=symbol.upper())
+            if resp.get("retCode", 0) == 0:
+                t_list = resp.get("result", {}).get("list", [])
+                if t_list:
+                    p = t_list[0].get("lastPrice")
+                    if p:
+                        return float(p)
+        except Exception:
+            pass
+        return 0.0

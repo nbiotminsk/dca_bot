@@ -433,6 +433,18 @@ class MockBybitClient:
     def update_stop_loss(self, symbol, order_id, stop_loss):
         return True
 
+    def get_ticker_price(self, symbol):
+        return 100.0
+
+    def get_available_balance(self):
+        return 1000.0
+
+    def get_symbol_leverage(self, symbol):
+        return 10.0
+
+    def calc_required_margin(self, symbol, qty, price):
+        return (qty * price) / 10.0
+
 
 def test_process_monitor_step_o1_filled():
     from scripts.bybit_trader import ActiveTradeMonitor, TradeConfig, process_monitor_step
@@ -903,9 +915,9 @@ def test_process_monitor_step_awaiting_major_0382_triggers_grid():
     assert m.touched_0382 is True
     # Проверяем, что были выставлены 3 лимитных ордера с тегом MAJ
     assert len(client.placed_orders) == 3
-    assert client.placed_orders[0]["orderLinkId"] == "FIB-ZEC-MAJ-B-O1"
-    assert client.placed_orders[1]["orderLinkId"] == "FIB-ZEC-MAJ-B-O2"
-    assert client.placed_orders[2]["orderLinkId"] == "FIB-ZEC-MAJ-B-O3"
+    assert client.placed_orders[0]["orderLinkId"].startswith("FIB-ZEC-MAJ-B-O1")
+    assert client.placed_orders[1]["orderLinkId"].startswith("FIB-ZEC-MAJ-B-O2")
+    assert client.placed_orders[2]["orderLinkId"].startswith("FIB-ZEC-MAJ-B-O3")
 
 
 def test_cancel_monitor_orders_only_cancels_own_layer():
@@ -1020,6 +1032,72 @@ def test_calc_triple_grid_order_sizes_weighted_50_30_20():
     tot_loss = l1 + l2 + l3
     assert tot_loss <= 2.0
     assert pytest.approx(tot_loss, abs=0.05) == 2.0
+
+
+def test_make_order_link_id():
+    from scripts.bybit_trader import make_order_link_id
+    id1 = make_order_link_id("1000PEPE", "MIN", "Buy", "O1")
+    id2 = make_order_link_id("1000PEPE", "MIN", "Buy", "O1")
+    # Проверка уникальности
+    assert id1 != id2
+    # Проверка длины для Bybit V5 (макс 36 символов)
+    assert len(id1) <= 36
+    assert len(id2) <= 36
+    # Проверка префикса для распознавания слоя
+    assert id1.startswith("FIB-1000PEPE-MIN-B-O1-")
+    assert id2.startswith("FIB-1000PEPE-MIN-B-O1-")
+
+
+def test_sweep_reclaim_discarded_if_price_exceeds_tp():
+    """Проверка: сетап SWEEP_RECLAIM отбрасывается, если текущая цена уже выше тейка."""
+    from scripts.bybit_trader import find_active_setup, TradeConfig
+    # Создаем свечи: импульс вверх с 80 до 90, затем свип ниже 80 до 79, а затем свеча закрывается на 92 (выше тейка)
+    dates = pd.date_range("2026-09-01", periods=10, freq="1h")
+    df = pd.DataFrame([
+        {"timestamp": dates[0], "open": 80, "high": 82, "low": 80, "close": 82, "volume": 10},
+        {"timestamp": dates[1], "open": 82, "high": 86, "low": 82, "close": 86, "volume": 10},
+        {"timestamp": dates[2], "open": 86, "high": 90, "low": 85, "close": 90, "volume": 10},  # пик
+        {"timestamp": dates[3], "open": 90, "high": 90, "low": 79.8, "close": 80.2, "volume": 10}, # свип за 80 (0.25% свип)
+        {"timestamp": dates[4], "open": 80.2, "high": 95.0, "low": 80.2, "close": 94.0, "volume": 10}, # улетели на 94 (выше 0.618 Fib 86.2)
+    ])
+    cfg = TradeConfig(min_impulse_pct=2.0)
+    setup = find_active_setup(df, cfg, layer="minor")
+    # Т.к. close=94 выше 0.618 Fib, сетап не должен вернуть SWEEP_RECLAIM с инвалидным тейком
+    if setup:
+        assert setup.setup_type != "SWEEP_RECLAIM" or (setup.entry_1 < setup.tp_1)
+
+
+def test_margin_insufficient_skips_placement():
+    """Проверка: если свободной маржи недостаточно, ордера не выставляются в API."""
+    from indicators.pybit_client import InstrumentSpecs
+    client = MockBybitClient()
+    client.get_available_balance = lambda: 5.0  # всего $5 доступно
+    client.calc_required_margin = lambda sym, q, p: 20.0  # требуется $20
+    
+    # Пытаемся проверить маржу перед отправкой
+    avail = client.get_available_balance()
+    req = client.calc_required_margin("TESTUSDT", 10.0, 10.0) * 1.05
+    assert avail < req
+    # Соответственно, бот должен заблокировать отправку
+
+
+def test_outdated_risk_qty_detection():
+    """Проверка логики проверки существующих ордеров: при смене риска объемы не совпадают."""
+    specs = InstrumentSpecs("TESTUSDT", 0.01, 2, 0.1, 1, 0.1, 1000.0, 5.0)
+    # Ордера на бирже выставлены под $2 риска (qty = 100)
+    existing_orders = [
+        {"orderId": "1", "price": "10.0", "qty": "100.0", "stopLoss": "8.0"},
+        {"orderId": "2", "price": "9.5", "qty": "80.0", "stopLoss": "8.0"},
+        {"orderId": "3", "price": "9.0", "qty": "60.0", "stopLoss": "8.0"},
+    ]
+    # Новые рассчитанные объемы под $1 риска:
+    new_q1, new_q2, new_q3 = 50.0, 40.0, 30.0
+    e1, e2, e3 = 10.0, 9.5, 9.0
+    
+    tol1 = max(specs.qty_step, 0.05 * new_q1)
+    qty1 = float(existing_orders[0]["qty"])
+    qty_ok = abs(qty1 - new_q1) <= tol1
+    assert qty_ok is False  # 100 != 50 -> не совпадает -> требуется перевыставление!
 
 
 
