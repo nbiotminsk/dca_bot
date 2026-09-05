@@ -105,12 +105,31 @@ strategy:
 
   # Список монет для торговли (фьючерсы Bybit Linear, например NEARUSDT.P, ZECUSDT.P, ARBUSDT.P)
   # Если указан список, терминал анализирует и сопровождает сделки по всем указанным монетам.
+  # ТОП-25 монет по винрейту (90.2% - 96.0%):
   symbols:
-    - "NEARUSDT.P"
+    - "ATOMUSDT.P"
     - "ZECUSDT.P"
-    - "ICPUSDT.P"
+    - "LINKUSDT.P"
+    - "RENDERUSDT.P"
+    - "WLDUSDT.P"
+    - "XLMUSDT.P"
+    - "ONDOUSDT.P"
+    - "HBARUSDT.P"
+    - "TRUMPUSDT.P"
+    - "NEARUSDT.P"
+    - "LTCUSDT.P"
+    - "SOLUSDT.P"
+    - "1000PEPEUSDT.P"
     - "CAKEUSDT.P"
-    - "STRKUSDT.P"
+    - "HYPEUSDT.P"
     - "SUIUSDT.P"
+    - "XRPUSDT.P"
+    - "ARBUSDT.P"
     - "BNBUSDT.P"
+    - "UNIUSDT.P"
+    - "ICPUSDT.P"
+    - "ENAUSDT.P"
+    - "DOTUSDT.P"
+    - "ALGOUSDT.P"
+    - "OPUSDT.P"
 
