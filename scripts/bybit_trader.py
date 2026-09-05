@@ -52,6 +52,8 @@ class TradeConfig:
     reclaim_allow_close_below: bool = False
     preferred_side: Literal["long", "short"] = "long"
     min_impulse_pct: float = 2.0
+    atr_multiplier: float = 2.5
+    timeout_hours: int = 24
     lookback_bars: int = 60
     timeframe: str = "1h"
     scale: Literal["log", "linear"] = "log"
@@ -101,6 +103,12 @@ def load_trade_config(config_path: Optional[str | Path] = None) -> TradeConfig:
                 cfg.preferred_side = s_side  # type: ignore[assignment]
         if "min_impulse_pct" in strat_data:
             cfg.min_impulse_pct = float(strat_data["min_impulse_pct"])
+        if "atr_multiplier" in strat_data:
+            val_atr = strat_data["atr_multiplier"]
+            cfg.atr_multiplier = float(val_atr) if val_atr is not None else 0.0
+        if "timeout_hours" in strat_data:
+            val_to = strat_data["timeout_hours"]
+            cfg.timeout_hours = int(val_to) if val_to is not None else 0
         if "lookback_bars" in strat_data:
             cfg.lookback_bars = int(strat_data["lookback_bars"])
         if "timeframe" in strat_data:
@@ -174,6 +182,8 @@ def find_active_setup(
     reclaim_tp_buffer_pct: float = 2.0,
     reclaim_be_trigger_fib: float = 0.786,
     reclaim_be_offset_pct: float = 0.05,
+    atr_multiplier: Optional[float] = None,
+    timeout_hours: Optional[int] = None,
 ) -> Optional[SetupSignal]:
     """
     Анализирует свечи на наличие активного не отработанного торгового сетапа (ТОЛЬКО В LONG):
@@ -188,6 +198,16 @@ def find_active_setup(
     if len(df) > lookback_bars:
         df = df.iloc[-lookback_bars:].reset_index(drop=True)
 
+    # Рассчитываем волатильность ATR (14)
+    from indicators.atr import calculate_atr
+    atr_df = calculate_atr(df["high"], df["low"], df["close"], period=14)
+    atr_pct = float(atr_df["atr_pct"].iloc[-1]) if len(atr_df) >= 14 else 2.0
+
+    # Эффективный порог импульса с учетом динамического множителя ATR
+    effective_min_pct = min_pct
+    if atr_multiplier is not None and atr_multiplier > 0:
+        effective_min_pct = max(min_pct, atr_multiplier * atr_pct)
+
     # Рассчитываем MACD на том же окне
     macd_df = calculate_macd(df["close"])
     hist = macd_df["hist"].values
@@ -200,8 +220,8 @@ def find_active_setup(
 
     for side in sides_to_check:
         is_long = (side == "long")
-        # Ищем импульсы по нашей стратегии
-        imps = detect_impulses(df, min_pct=min_pct, side=side, scale=scale)
+        # Ищем импульсы по нашей стратегии с фильтром ATR
+        imps = detect_impulses(df, min_pct=effective_min_pct, side=side, scale=scale)
         if not imps:
             continue
 
@@ -242,6 +262,15 @@ def find_active_setup(
             tp_reclaim_0618 = p_0618 * tp_reclaim_mult
 
             post_df = df.iloc[imp.end_idx + 1:]
+
+            # Проверка тайм-аута свежести:
+            # Если от пика прошло больше timeout_hours, и цена за первые timeout_hours так и не коснулась 0.500 — остыл
+            if timeout_hours is not None and timeout_hours > 0 and len(post_df) > timeout_hours:
+                post_slice = post_df.iloc[:timeout_hours]
+                touched_early = (post_slice["low"] <= p_0500).any() if is_long else (post_slice["high"] >= p_0500).any()
+                if not touched_early:
+                    continue  # Пропускаем остывший в боковике импульс
+
             if len(post_df) == 0:
                 # Импульс находится на самой последней свече -> ТРЕЙЛИНГ
                 unbroken_setups.append(SetupSignal(
@@ -259,7 +288,7 @@ def find_active_setup(
                     entry_3=e_0786,
                     tp_3=tp_0500,
                     stop_loss=p_1000,
-                    description=f"Растущий импульс (+{imp.pct:.2f}%) на текущей свече. Трейлинг тройной сетки (вход +{entry_buffer_pct}%, тейк -{tp_buffer_pct}%).",
+                    description=f"Растущий импульс (+{imp.pct:.2f}%) на текущей свече [ATR {atr_pct:.2f}%]. Трейлинг тройной сетки (вход +{entry_buffer_pct}%, тейк -{tp_buffer_pct}%).",
                 ))
                 continue
 
@@ -531,6 +560,7 @@ class ActiveTradeMonitor:
     stop_bar_time: Optional[pd.Timestamp] = None
     stop_sweep_low: float = 0.0
     last_candle_time: Optional[pd.Timestamp] = None
+    imp_end_time: Optional[pd.Timestamp] = None
     done: bool = False
 
 
@@ -546,6 +576,24 @@ def process_monitor_step(
     if m.state == "TRAILING":
         pos = client.get_position(m.symbol, "Buy") if is_live else None
         pos_size = float(pos.get("size", 0.0)) if pos else 0.0
+
+        # Проверка тайм-аута свежести для незаполненной сетки в режиме TRAILING
+        if pos_size == 0 and cfg.timeout_hours > 0 and m.imp_end_time is not None:
+            now_ts = pd.Timestamp.now(tz="UTC")
+            imp_ts = pd.to_datetime(m.imp_end_time, utc=True)
+            elapsed_hours = (now_ts - imp_ts).total_seconds() / 3600.0
+            if elapsed_hours > cfg.timeout_hours:
+                console.print(f"\n[bold yellow]⏰ [{m.symbol}] Истек тайм-аут свежести импульса ({elapsed_hours:.1f}ч > {cfg.timeout_hours}ч без коррекции к 0.500).[/bold yellow]")
+                console.print(f"  ➜ Снимаем ордера сетки и переводим {m.symbol} в режим ожидания нового импульса (IDLE).")
+                if is_live:
+                    client.cancel_all_orders(m.symbol)
+                m.state = "IDLE"
+                m.o1_id = None
+                m.o2_id = None
+                m.o3_id = None
+                m.has_o2 = False
+                m.has_o3 = False
+                return
 
         if pos_size > 0:
             m.position_was_open = True
@@ -659,6 +707,7 @@ def process_monitor_step(
                     m.cur_tp3 = new_tp3
 
             m.cur_peak = new_peak
+            m.imp_end_time = pd.Timestamp.now(tz="UTC")
 
     # ─── 2. Состояние: НАЛИТ ОРДЕР 1 (Ожидание Ордера 2/3 или TP 0.236) ────────
     elif m.state == "O1_FILLED":
@@ -975,6 +1024,8 @@ def process_monitor_step(
             reclaim_tp_buffer_pct=cfg.reclaim_tp_buffer_pct,
             reclaim_be_trigger_fib=cfg.reclaim_be_trigger_fib,
             reclaim_be_offset_pct=cfg.reclaim_be_offset_pct,
+            atr_multiplier=cfg.atr_multiplier,
+            timeout_hours=cfg.timeout_hours,
         )
 
         if setup is not None:
@@ -1028,6 +1079,7 @@ def process_monitor_step(
             m.cur_e3 = e3 if e3 else 0.0
             m.cur_tp3 = tp3 if tp3 else 0.0
             m.imp_start_price = setup.imp_start_price
+            m.imp_end_time = setup.imp_end_time
             m.sl = sl
             m.q1 = q1
             m.q2 = q2
@@ -1051,6 +1103,8 @@ def main():
     parser.add_argument("--live", action="store_true", help="Боевой режим выставления ордеров")
     parser.add_argument("-y", "--yes", action="store_true", help="Автоматическое подтверждение выставления ордеров без интерактивного вопроса")
     parser.add_argument("--once", action="store_true", help="Одиночный проход без непрерывного фонового цикла")
+    parser.add_argument("--atr-mult", type=float, default=None, help="Множитель ATR для динамического порога импульса (например, 2.5)")
+    parser.add_argument("--timeout-hours", type=int, default=None, help="Тайм-аут свежести импульса в часах (например, 24)")
     args = parser.parse_args()
 
     cfg = load_trade_config(args.config)
@@ -1062,10 +1116,16 @@ def main():
         cfg.tp_buffer_pct = args.tp_buffer
     if args.interval:
         cfg.timeframe = args.interval
+    if args.atr_mult is not None:
+        cfg.atr_multiplier = args.atr_mult
+    if args.timeout_hours is not None:
+        cfg.timeout_hours = args.timeout_hours
 
+    atr_desc = f"{cfg.atr_multiplier:.1f}x" if cfg.atr_multiplier > 0 else "выкл"
+    to_desc = f"{cfg.timeout_hours}ч" if cfg.timeout_hours > 0 else "выкл"
     console.print(Panel.fit(
         "[bold cyan]🤖 Bybit Fibonacci Dual Grid & Trailing Trader[/bold cyan]\n"
-        f"[dim]Конфиг: {Path(cfg.config_path).name if cfg.config_path else 'default'} | Суммарный стоп: ${cfg.total_risk_usd:.2f} | Вход: +{cfg.entry_buffer_pct:.2f}% | Тейк: -{cfg.tp_buffer_pct:.2f}%[/dim]",
+        f"[dim]Конфиг: {Path(cfg.config_path).name if cfg.config_path else 'default'} | Стоп: ${cfg.total_risk_usd:.2f} | Вход: +{cfg.entry_buffer_pct:.2f}% | Тейк: -{cfg.tp_buffer_pct:.2f}% | ATR: {atr_desc} | Таймаут: {to_desc}[/dim]",
         border_style="cyan",
     ))
 
@@ -1168,6 +1228,8 @@ def main():
             reclaim_tp_buffer_pct=cfg.reclaim_tp_buffer_pct,
             reclaim_be_trigger_fib=cfg.reclaim_be_trigger_fib,
             reclaim_be_offset_pct=cfg.reclaim_be_offset_pct,
+            atr_multiplier=cfg.atr_multiplier,
+            timeout_hours=cfg.timeout_hours,
         )
 
         if not setup:
@@ -1229,6 +1291,10 @@ def main():
         t.add_row("Импульс старт", f"{setup.imp_start_time.strftime('%Y-%m-%d %H:%M')} (${setup.imp_start_price})")
         t.add_row("Импульс вершина", f"{setup.imp_end_time.strftime('%Y-%m-%d %H:%M')} (${setup.imp_peak_price}) [{setup.imp_pct:+.2f}%]")
         t.add_row("Текущая цена", f"${cur_price}")
+        if cfg.atr_multiplier > 0:
+            t.add_row("ATR волатильность", f"Множитель {cfg.atr_multiplier:.1f}x ATR(14) (фильтр шума)")
+        if cfg.timeout_hours > 0:
+            t.add_row("Тайм-аут свежести", f"{cfg.timeout_hours} часов (отмена при зависании без отката к 0.500)")
         t.add_row("Буфер входа", f"+{cfg.entry_buffer_pct:.2f}% перед уровнем (вход чуть выше Фибы)")
         t.add_row("Буфер тейка", f"-{cfg.tp_buffer_pct:.2f}% от уровня (раннее закрытие перед Фибой)")
         t.add_row("─" * 20, "─" * 30)
@@ -1439,6 +1505,7 @@ def main():
                 be_trigger=client.round_price(setup.be_trigger, sym) if setup.be_trigger is not None else None,
                 be_price=client.round_price(setup.be_price, sym) if setup.be_price is not None else None,
                 position_was_open=pos_open_initially,
+                imp_end_time=setup.imp_end_time,
             ))
 
         except Exception as e:
@@ -1454,6 +1521,14 @@ def main():
     seen_symbols = {item["symbol"] for item in actionable_setups}
     for sym in symbols:
         if sym not in seen_symbols:
+            if is_live:
+                try:
+                    lingering = client.get_open_orders(sym)
+                    if lingering:
+                        console.print(f"🔄 [{sym}] Сетап не активен (IDLE / таймаут). Снимаем {len(lingering)} висящих ордеров с биржи...")
+                        client.cancel_all_orders(sym)
+                except Exception as err:
+                    console.print(f"⚠️ [{sym}] Ошибка отмены ордеров для неактивной монеты: {err}")
             active_monitors.append(ActiveTradeMonitor(
                 symbol=sym,
                 setup_type="IDLE",
