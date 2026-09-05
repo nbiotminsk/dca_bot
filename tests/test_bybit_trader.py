@@ -1265,8 +1265,8 @@ def test_missed_0500_skips_setup_completely_in_idle():
     # Импульс вверх 100 -> 120 за 5 свечей
     for i in range(1, 6):
         candles.append({"timestamp": t0 + pd.Timedelta(hours=20+i), "open": 100.0 + (i-1)*4, "high": 100.0 + i*4, "low": 100.0 + (i-1)*4, "close": 100.0 + i*4, "volume": 200})
-    # Свеча отката вниз до 105 (ниже 0.500 Fib)
-    candles.append({"timestamp": t0 + pd.Timedelta(hours=26), "open": 120.0, "high": 120.0, "low": 105.0, "close": 105.0, "volume": 300})
+    # Свеча отката вниз до 103 (ниже всех уровней 0.500, 0.618, 0.786 Fib)
+    candles.append({"timestamp": t0 + pd.Timedelta(hours=26), "open": 120.0, "high": 120.0, "low": 103.0, "close": 103.0, "volume": 300})
 
     df = pd.DataFrame(candles)
     client = MockBybitClient(pos_size=0.0, klines_df=df)
@@ -1398,7 +1398,7 @@ def test_find_active_setup_awaiting_break_below_vs_skipped():
         {"timestamp": pd.Timestamp("2026-09-01 20:00") + pd.Timedelta(hours=i), "open": 100 + i*4, "high": 104 + i*4, "low": 100 + i*4, "close": 104 + i*4, "volume": 20}
         for i in range(5)  # 100 -> 120
     ]
-    # 1. Откат до 108 (касание 0.500 ~ 109.5), но high не достигает 0.382 (111.7)
+    # 1. Откат до 108 (касание 0.500 ~ 109.5, но 0.618 ~ 107.0 не коснулись, TP 0.236 ~ 115.3 не достигнут)
     pullback_no_bounce = [
         {"timestamp": pd.Timestamp("2026-09-02 01:00"), "open": 115, "high": 115, "low": 108, "close": 108.5, "volume": 30},
         {"timestamp": pd.Timestamp("2026-09-02 02:00"), "open": 108.5, "high": 110, "low": 108, "close": 109.0, "volume": 30},
@@ -1406,15 +1406,25 @@ def test_find_active_setup_awaiting_break_below_vs_skipped():
     df1 = pd.DataFrame(base + imp + pullback_no_bounce)
     setup1 = find_active_setup(df1, min_pct=2.0, layer="minor")
     assert setup1 is not None
-    assert setup1.setup_type == "AWAITING_BREAK_BELOW"
+    assert setup1.setup_type == "TRIPLE_GRID_CORRECTION"
+    assert setup1.o1_filled is True
+    assert setup1.o2_filled is False
 
-    # 2. Добавляем свечу отскока с тестом 0.382 (high 116 >= 113.6)
+    # 2. Если все три уровня (0.500, 0.618, 0.786) пройдены (падение до 103 < 104.3) -> AWAITING_BREAK_BELOW
+    pullback_all_missed = pullback_no_bounce + [
+        {"timestamp": pd.Timestamp("2026-09-02 02:30"), "open": 108.5, "high": 108.5, "low": 103.0, "close": 103.5, "volume": 30},
+    ]
+    df_all = pd.DataFrame(base + imp + pullback_all_missed)
+    setup_all = find_active_setup(df_all, min_pct=2.0, layer="minor")
+    assert setup_all is not None
+    assert setup_all.setup_type == "AWAITING_BREAK_BELOW"
+
+    # 3. Добавляем свечу отскока с тестом TP 0.236 (high 116 >= 115.3) -> сетап завершен (записан в историю)
     pullback_with_bounce = pullback_no_bounce + [
         {"timestamp": pd.Timestamp("2026-09-02 03:00"), "open": 109, "high": 116, "low": 109, "close": 115, "volume": 30},
     ]
     df2 = pd.DataFrame(base + imp + pullback_with_bounce)
     setup2 = find_active_setup(df2, min_pct=2.0, layer="minor")
-    # Т.к. 0.382 для импульса 100->120 протестирован после 0.500, он больше не возвращается
     assert setup2 is None or setup2.imp_start_price > 100.0
 
 
@@ -1502,6 +1512,438 @@ def test_bybit_client_position_caching_and_invalidation():
     client._positions_cache.pop("SOLUSDT", None)
     p3 = client.get_position("SOLUSDT")
     assert pos_calls == 2
+
+
+def test_completed_impulses_persistence(tmp_path):
+    """Проверка сохранения и чтения отработанных импульсов с защитой от дубликатов."""
+    from scripts.bybit_trader import load_completed_impulses, save_completed_impulse
+
+    file_path = str(tmp_path / "test_completed.json")
+    # 1. Загрузка из несуществующего файла возвращает пустой список
+    assert load_completed_impulses(file_path) == []
+
+    # 2. Сохранение записи
+    rec1 = {
+        "symbol": "LINKUSDT",
+        "peak_price": 12.229,
+        "imp_start_price": 11.719,
+        "imp_start_time": "2026-09-05 12:00:00+00:00",
+        "imp_end_time": "2026-09-05 17:00:00+00:00",
+        "exit_price": 12.02,
+        "exit_time": "2026-09-05 19:25:00+00:00",
+        "exit_reason": "TP_0236",
+        "layer": "minor",
+    }
+    save_completed_impulse(rec1, file_path)
+    loaded = load_completed_impulses(file_path)
+    assert len(loaded) == 1
+    assert loaded[0]["symbol"] == "LINKUSDT"
+    assert loaded[0]["peak_price"] == 12.229
+
+    # 3. Дубликат с той же вершиной и временем не добавляется повторно
+    save_completed_impulse(rec1, file_path)
+    assert len(load_completed_impulses(file_path)) == 1
+
+    # 4. Некорректный пик (<= 0) игнорируется
+    save_completed_impulse({"symbol": "LINKUSDT", "peak_price": 0.0}, file_path)
+    assert len(load_completed_impulses(file_path)) == 1
+
+
+def test_is_impulse_disqualified_rules():
+    """Проверка правил дисквалификации отработанных импульсов и их подволн."""
+    from scripts.bybit_trader import is_impulse_disqualified
+
+    completed = [
+        {
+            "symbol": "LINKUSDT",
+            "peak_price": 12.229,
+            "imp_start_price": 11.719,
+            "imp_start_time": "2026-09-05 12:00:00+00:00",
+            "imp_end_time": "2026-09-05 17:00:00+00:00",
+        }
+    ]
+
+    # 1. Другая монета (например ETHUSDT) с тем же временем или пиком НЕ дисквалифицируется
+    assert not is_impulse_disqualified(
+        imp_peak=12.229,
+        imp_start_time="2026-09-05 12:00:00+00:00",
+        imp_end_time="2026-09-05 17:00:00+00:00",
+        symbol="ETHUSDT",
+        completed_records=completed,
+    )
+
+    # 2. Совпадение вершины для LINKUSDT -> дисквалифицирован
+    assert is_impulse_disqualified(
+        imp_peak=12.229,
+        imp_start_time="2026-09-05 13:00:00+00:00",
+        imp_end_time="2026-09-05 17:00:00+00:00",
+        symbol="LINKUSDT",
+        completed_records=completed,
+    )
+
+    # 3. Подволна/середина старого импульса (start_time <= end_time отработанного) -> дисквалифицирован
+    assert is_impulse_disqualified(
+        imp_peak=12.15,
+        imp_start_time="2026-09-05 14:00:00+00:00",
+        imp_end_time="2026-09-05 18:00:00+00:00",
+        symbol="LINKUSDT",
+        completed_records=completed,
+    )
+
+    # 4. Старый импульс, завершившийся до или на вершине отработанного -> дисквалифицирован
+    assert is_impulse_disqualified(
+        imp_peak=12.00,
+        imp_start_time="2026-09-05 10:00:00+00:00",
+        imp_end_time="2026-09-05 15:00:00+00:00",
+        symbol="LINKUSDT",
+        completed_records=completed,
+    )
+
+    # 5. НОВЫЙ импульс, начавшийся строго после вершины отработанного -> РАЗРЕШЕН
+    assert not is_impulse_disqualified(
+        imp_peak=12.80,
+        imp_start_time="2026-09-05 18:00:00+00:00",
+        imp_end_time="2026-09-05 22:00:00+00:00",
+        symbol="LINKUSDT",
+        completed_records=completed,
+    )
+
+
+def test_find_active_setup_ignores_completed_wave():
+    """Проверка: find_active_setup игнорирует отработанный импульс и возвращает только новый импульс после него."""
+    from scripts.bybit_trader import find_active_setup
+
+    dates = pd.date_range("2026-09-01 00:00:00", periods=30, freq="1h")
+    bars = []
+    # 1. Старый импульс со 100 до 120 (свечи 0-14, вершина на свече 14)
+    for i in range(15):
+        p = 100.0 + (20.0 / 14.0) * i
+        bars.append({"timestamp": dates[i], "open": p, "high": p + 0.2, "low": p - 0.2, "close": p + 0.1, "volume": 100})
+    # Свечи отката 15-19 (боковик 115-116)
+    for i in range(15, 20):
+        bars.append({"timestamp": dates[i], "open": 115.5, "high": 116.0, "low": 115.0, "close": 115.5, "volume": 100})
+    # 2. Новый свежий импульс со 115 до 140 (свечи 20-29)
+    for i in range(20, 30):
+        p = 115.0 + (25.0 / 9.0) * (i - 20)
+        bars.append({"timestamp": dates[i], "open": p, "high": p + 0.2, "low": p - 0.2, "close": p + 0.1, "volume": 100})
+
+    df = pd.DataFrame(bars)
+
+    completed = [
+        {
+            "symbol": "COINUSDT",
+            "peak_price": 120.2,
+            "imp_start_price": 100.0,
+            "imp_start_time": str(dates[0]),
+            "imp_end_time": str(dates[14]),
+        }
+    ]
+
+    setup = find_active_setup(
+        df,
+        min_pct=2.0,
+        symbol="COINUSDT",
+        completed_impulses=completed,
+        layer="minor",
+    )
+    assert setup is not None
+    # Должен быть найден именно новый импульс с вершиной > 135, а не старый с вершиной 120.2
+    assert setup.imp_peak_price > 135.0
+    assert setup.imp_start_time >= dates[20]
+
+
+def test_process_monitor_step_saves_completed_impulse_on_tp(monkeypatch, tmp_path):
+    """Проверка вызова save_completed_impulse при закрытии позиции по TP."""
+    import scripts.bybit_trader as bt
+    from scripts.bybit_trader import ActiveTradeMonitor, TradeConfig, process_monitor_step
+
+    saved = []
+    monkeypatch.setattr(bt, "save_completed_impulse", lambda rec, *args, **kwargs: saved.append(rec))
+
+    cfg = TradeConfig()
+    m = ActiveTradeMonitor(
+        symbol="SOLUSDT",
+        setup_type="TRIPLE_GRID_TRAILING",
+        state="O1_FILLED",
+        cur_peak=150.0,
+        imp_start_price=130.0,
+        imp_start_time=pd.Timestamp("2026-09-01 10:00:00+00:00"),
+        imp_end_time=pd.Timestamp("2026-09-01 15:00:00+00:00"),
+        cur_tp1=145.0,
+        sl=128.0,
+        position_was_open=True,
+        layer="minor",
+    )
+    klines = pd.DataFrame([
+        {"timestamp": pd.Timestamp("2026-09-01 16:00:00+00:00"), "open": 144.0, "high": 146.0, "low": 143.0, "close": 145.5, "volume": 100}
+    ])
+    client = MockBybitClient(pos_size=0.0, klines_df=klines)
+    process_monitor_step(m, client, cfg, "60")
+
+    assert m.state == "IDLE"
+    assert len(saved) == 1
+    assert saved[0]["symbol"] == "SOLUSDT"
+    assert saved[0]["peak_price"] == 150.0
+    assert saved[0]["exit_reason"] == "TP_0236"
+    assert saved[0]["layer"] == "minor"
+
+
+def test_future_impulse_same_peak_allowed_in_flat():
+    """
+    Проверка: отработанный импульс имел вершину 12.229 и завершился в 12:00.
+    Новый самостоятельный импульс в боковике начинается в 14:00 и тоже имеет вершину 12.229.
+    is_impulse_disqualified должен разрешить его (False), так как imp_start_time > rec_end_time.
+    """
+    from scripts.bybit_trader import is_impulse_disqualified
+    completed = [{
+        "symbol": "LINKUSDT",
+        "peak_price": 12.229,
+        "imp_start_price": 11.719,
+        "imp_start_time": "2026-09-05 08:00:00+00:00",
+        "imp_end_time": "2026-09-05 12:00:00+00:00",
+    }]
+    # Импульс, начавшийся строго после rec_end_time, НЕ дисквалифицируется
+    assert not is_impulse_disqualified(
+        imp_peak=12.229,
+        imp_start_time="2026-09-05 14:00:00+00:00",
+        imp_end_time="2026-09-05 18:00:00+00:00",
+        symbol="LINKUSDT",
+        completed_records=completed,
+    )
+
+
+def test_find_active_setup_partial_grid_when_0500_passed():
+    """
+    Проверка find_active_setup:
+    - 0.500 пройден/налит, 0.618 не коснулись, TP 0.236 не достигнут -> TRIPLE_GRID_CORRECTION (o1_filled=True, o2_filled=False)
+    - 0.500 и 0.618 пройдены, 0.786 не коснулись -> TRIPLE_GRID_CORRECTION (o1_filled=True, o2_filled=True)
+    - 0.500, 0.618 и 0.786 пройдены -> AWAITING_BREAK_BELOW
+    """
+    from scripts.bybit_trader import find_active_setup
+    base = [
+        {"timestamp": pd.Timestamp("2026-09-01 00:00") + pd.Timedelta(hours=i), "open": 100, "high": 100.5, "low": 99.5, "close": 100, "volume": 10}
+        for i in range(20)
+    ]
+    imp = [
+        {"timestamp": pd.Timestamp("2026-09-01 20:00") + pd.Timedelta(hours=i), "open": 100 + i*4, "high": 104 + i*4, "low": 100 + i*4, "close": 104 + i*4, "volume": 20}
+        for i in range(5)  # 100 -> 120
+    ]
+    # 1. 0.500 пройден (low 109 <= 110.0), но 0.618 (107.64) не коснулись
+    pullback1 = [
+        {"timestamp": pd.Timestamp("2026-09-02 01:00"), "open": 115, "high": 115, "low": 109, "close": 109.5, "volume": 30},
+    ]
+    df1 = pd.DataFrame(base + imp + pullback1)
+    s1 = find_active_setup(df1, min_pct=2.0, layer="minor")
+    assert s1 is not None
+    assert s1.setup_type == "TRIPLE_GRID_CORRECTION"
+    assert s1.o1_filled is True
+    assert s1.o2_filled is False
+
+    # 2. 0.618 пройден (low 106 <= 107.64), но 0.786 (104.28) не коснулись
+    pullback2 = pullback1 + [
+        {"timestamp": pd.Timestamp("2026-09-02 02:00"), "open": 109.5, "high": 109.5, "low": 106, "close": 106.5, "volume": 30},
+    ]
+    df2 = pd.DataFrame(base + imp + pullback2)
+    s2 = find_active_setup(df2, min_pct=2.0, layer="minor")
+    assert s2 is not None
+    assert s2.setup_type == "TRIPLE_GRID_CORRECTION"
+    assert s2.o1_filled is True
+    assert s2.o2_filled is True
+
+    # 3. 0.786 пройден (low 103 <= 104.28) -> все уровни сетки пройдены -> AWAITING_BREAK_BELOW
+    pullback3 = pullback2 + [
+        {"timestamp": pd.Timestamp("2026-09-02 03:00"), "open": 106.5, "high": 106.5, "low": 103, "close": 103.5, "volume": 30},
+    ]
+    df3 = pd.DataFrame(base + imp + pullback3)
+    s3 = find_active_setup(df3, min_pct=2.0, layer="minor")
+    assert s3 is not None
+    assert s3.setup_type == "AWAITING_BREAK_BELOW"
+
+
+def test_monitor_places_o2_and_o3_when_o1_missed():
+    """
+    Проверка: если при поиске сетапа в IDLE Ордер 1 (0.500) уже упущен,
+    но Ордера 2 и 3 ниже текущей цены, бот выставляет Ордер 2 и Ордер 3
+    и переходит в состояние O1_FILLED.
+    """
+    from scripts.bybit_trader import ActiveTradeMonitor, TradeConfig, process_monitor_step
+    cfg = TradeConfig(minor_risk_usd=2.0)
+    m = ActiveTradeMonitor(
+        symbol="TESTUSDT",
+        setup_type="IDLE",
+        state="IDLE",
+        layer="minor",
+    )
+
+    t0 = pd.Timestamp("2026-09-01 00:00")
+    candles = []
+    for i in range(20):
+        candles.append({"timestamp": t0 + pd.Timedelta(hours=i), "open": 10.0, "high": 10.05, "low": 9.95, "close": 10.0, "volume": 100})
+    for i in range(1, 6):
+        candles.append({"timestamp": t0 + pd.Timedelta(hours=20+i), "open": 10.0 + (i-1)*0.4, "high": 10.0 + i*0.4, "low": 10.0 + (i-1)*0.4, "close": 10.0 + i*0.4, "volume": 200})
+    # Откат: 0.500 Fib ~ 11.0. Цена сейчас 10.9 (Ордер 1 упущен, но Ордер 2 ~10.76 и Ордер 3 ~10.43 активны)
+    candles.append({"timestamp": t0 + pd.Timedelta(hours=26), "open": 12.0, "high": 12.0, "low": 10.9, "close": 10.9, "volume": 300})
+
+    df = pd.DataFrame(candles)
+    client = MockBybitClient(pos_size=0.0, klines_df=df)
+
+    process_monitor_step(m, client, cfg, "60", is_live=True)
+
+    # Проверяем: выставлено 2 ордера (O2 и O3), а состояние O1_FILLED
+    assert m.state == "O1_FILLED"
+    assert len(client.placed_orders) == 2
+    # Ордер 1 НЕ выставлялся
+    assert m.o1_id is None
+    # Ордера 2 и 3 выставлены
+    assert m.o2_id is not None
+    assert m.o3_id is not None
+
+
+def test_monitor_o1_filled_price_reaches_tp_0236_without_prior_fill(monkeypatch):
+    """
+    Проверка: если бот выставил O2 и O3 (состояние O1_FILLED, позиции на бирже еще нет),
+    и цена вернулась к тейку 0.236 без налития O2/O3 ->
+    ордера снимаются, импульс сохраняется в completed_impulses, монитор переходит в IDLE.
+    """
+    import scripts.bybit_trader as bt
+    from scripts.bybit_trader import ActiveTradeMonitor, TradeConfig, process_monitor_step
+
+    saved = []
+    monkeypatch.setattr(bt, "save_completed_impulse", lambda rec, *args, **kwargs: saved.append(rec))
+
+    cfg = TradeConfig()
+    m = ActiveTradeMonitor(
+        symbol="TESTUSDT",
+        setup_type="TRIPLE_GRID_CORRECTION",
+        state="O1_FILLED",
+        cur_peak=12.0,
+        imp_start_price=10.0,
+        imp_start_time=pd.Timestamp("2026-09-01 00:00:00+00:00"),
+        imp_end_time=pd.Timestamp("2026-09-01 10:00:00+00:00"),
+        cur_tp1=11.5,
+        cur_e2=10.7,
+        cur_e3=10.4,
+        sl=9.9,
+        position_was_open=False,
+        layer="minor",
+        o2_id="ord_2",
+        o3_id="ord_3",
+        has_o2=True,
+        has_o3=True,
+    )
+
+    # 1. Свеча пока в диапазоне между e1 и e2: high 11.2, low 10.8 -> ни TP, ни SL
+    client = MockBybitClient(pos_size=0.0, klines_df=pd.DataFrame([
+        {"timestamp": pd.Timestamp("2026-09-01 11:00:00+00:00"), "open": 10.9, "high": 11.2, "low": 10.8, "close": 11.0, "volume": 100}
+    ]))
+    process_monitor_step(m, client, cfg, "60", is_live=True)
+    # Состояние остается O1_FILLED, ордера не отменяются
+    assert m.state == "O1_FILLED"
+    assert len(saved) == 0
+
+    # 2. Цена приходит к TP 0.236 (high 11.6 >= 11.5 * 0.999)
+    client.klines_df = pd.DataFrame([
+        {"timestamp": pd.Timestamp("2026-09-01 12:00:00+00:00"), "open": 11.0, "high": 11.6, "low": 11.0, "close": 11.55, "volume": 200}
+    ])
+    process_monitor_step(m, client, cfg, "60", is_live=True)
+
+    # Ордера 2 и 3 сняты, импульс записан, переход в IDLE
+    assert m.state == "IDLE"
+    assert len(saved) == 1
+    assert saved[0]["symbol"] == "TESTUSDT"
+    assert saved[0]["peak_price"] == 12.0
+    assert saved[0]["exit_reason"] == "TP_0236"
+
+
+def test_manual_close_in_o1_filled_transitions_to_idle_not_stop_loss(monkeypatch):
+    """
+    Проверка: пользователь руками закрыл позицию (например в плюс выше 0.382),
+    при этом цена не касалась SL 1.000.
+    Бот не должен писать 'Стоп-лосс сработал' и не должен переходить в AWAITING_SWEEP_CLOSE!
+    Он должен зафиксировать MANUAL_CLOSE, снять оставшиеся ордера и перейти в IDLE.
+    """
+    import scripts.bybit_trader as bt
+    from scripts.bybit_trader import ActiveTradeMonitor, TradeConfig, process_monitor_step
+
+    saved = []
+    monkeypatch.setattr(bt, "save_completed_impulse", lambda rec, *args, **kwargs: saved.append(rec))
+
+    cfg = TradeConfig()
+    m = ActiveTradeMonitor(
+        symbol="RENDERUSDT",
+        setup_type="TRIPLE_GRID_CORRECTION",
+        state="O1_FILLED",
+        cur_peak=6.5,
+        imp_start_price=5.0,
+        imp_start_time=pd.Timestamp("2026-09-01 00:00:00+00:00"),
+        imp_end_time=pd.Timestamp("2026-09-01 10:00:00+00:00"),
+        cur_e1=5.75,
+        cur_tp1=6.15,
+        cur_e2=5.50,
+        cur_tp2=5.90,
+        cur_e3=5.30,
+        sl=4.95,
+        position_was_open=True,
+        layer="minor",
+        o2_id="ord_render_2",
+        o3_id="ord_render_3",
+        has_o2=True,
+        has_o3=True,
+    )
+
+    # Цена 5.95 (выше e1, выше 0.382, но ниже TP 6.15). Позиция закрыта руками: pos_size = 0.
+    client = MockBybitClient(pos_size=0.0, klines_df=pd.DataFrame([
+        {"timestamp": pd.Timestamp("2026-09-01 12:00:00+00:00"), "open": 5.80, "high": 6.00, "low": 5.75, "close": 5.95, "volume": 1000}
+    ]))
+    client.placed_orders = [
+        {"orderId": "ord_render_2", "symbol": "RENDERUSDT"},
+        {"orderId": "ord_render_3", "symbol": "RENDERUSDT"},
+    ]
+
+    process_monitor_step(m, client, cfg, "60", is_live=True)
+
+    # Проверяем: переход в IDLE, а не в AWAITING_SWEEP_CLOSE!
+    assert m.state == "IDLE"
+    assert len(saved) == 1
+    assert saved[0]["symbol"] == "RENDERUSDT"
+    assert saved[0]["exit_reason"] == "MANUAL_CLOSE"
+    assert saved[0]["exit_price"] == 5.95
+    # Висящие ордера должны быть отменены
+    assert len(client.cancelled_order_ids) == 2
+
+
+def test_real_stop_loss_in_o1_filled_transitions_to_awaiting_sweep():
+    """
+    Проверка: если цена реально пробила уровень стоп-лосса 1.000 (low <= m.sl),
+    монитор переходит в AWAITING_SWEEP_CLOSE.
+    """
+    from scripts.bybit_trader import ActiveTradeMonitor, TradeConfig, process_monitor_step
+
+    cfg = TradeConfig()
+    m = ActiveTradeMonitor(
+        symbol="RENDERUSDT",
+        setup_type="TRIPLE_GRID_CORRECTION",
+        state="O1_FILLED",
+        cur_peak=6.5,
+        imp_start_price=5.0,
+        cur_e1=5.75,
+        cur_tp1=6.15,
+        sl=4.95,
+        position_was_open=True,
+        layer="minor",
+    )
+
+    # Свеча пробоя стопа: low 4.90 <= sl 4.95
+    client = MockBybitClient(pos_size=0.0, klines_df=pd.DataFrame([
+        {"timestamp": pd.Timestamp("2026-09-01 12:00:00+00:00"), "open": 5.20, "high": 5.25, "low": 4.90, "close": 4.92, "volume": 1000}
+    ]))
+
+    process_monitor_step(m, client, cfg, "60", is_live=True)
+
+    assert m.state == "AWAITING_SWEEP_CLOSE"
+    assert m.stop_sweep_low == 4.90
+
+
 
 
 

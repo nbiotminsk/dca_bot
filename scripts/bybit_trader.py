@@ -15,6 +15,8 @@
 """
 
 import argparse
+import json
+import math
 import sys
 import time
 import uuid
@@ -239,6 +241,116 @@ class SetupSignal:
     layer: Literal["minor", "major"] = "minor"
     p_0382: Optional[float] = None
     touched_0382: bool = True
+    o1_filled: bool = False
+    o2_filled: bool = False
+
+
+COMPLETED_IMPULSES_FILE = "data/trades/completed_impulses.json"
+
+
+def parse_timestamp_utc(val: Any) -> pd.Timestamp:
+    """Парсит временную метку и приводит ее к UTC."""
+    ts = pd.to_datetime(val)
+    if ts.tzinfo is None:
+        return ts.tz_localize("UTC")
+    return ts.tz_convert("UTC")
+
+
+def load_completed_impulses(file_path: str = COMPLETED_IMPULSES_FILE) -> list[dict[str, Any]]:
+    """Загружает список завершенных сделок и отработанных импульсов из JSON файла."""
+    p = Path(file_path)
+    if not p.exists():
+        return []
+    try:
+        with open(p, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            if isinstance(data, list):
+                return data
+    except Exception as e:
+        console.print(f"[yellow]⚠️ Ошибка чтения {file_path}: {e}[/yellow]")
+    return []
+
+
+def save_completed_impulse(record: dict[str, Any], file_path: str = COMPLETED_IMPULSES_FILE) -> None:
+    """Сохраняет отработанную сделку/импульс в JSON файл с защитой от дубликатов."""
+    if float(record.get("peak_price", 0.0)) <= 0:
+        return
+
+    p = Path(file_path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    existing = load_completed_impulses(file_path)
+
+    # Проверка на дубликат по символу, вершине и времени вершины
+    for r in existing:
+        sym_match = (r.get("symbol") == record.get("symbol"))
+        peak_match = False
+        try:
+            peak_match = math.isclose(float(r.get("peak_price", 0.0)), float(record.get("peak_price", 0.0)), rel_tol=1e-3)
+        except Exception:
+            pass
+        time_match = (str(r.get("imp_end_time")) == str(record.get("imp_end_time")))
+        if sym_match and peak_match and time_match:
+            return  # Уже сохранен
+
+    existing.append(record)
+    try:
+        with open(p, "w", encoding="utf-8") as f:
+            json.dump(existing, f, indent=2, ensure_ascii=False)
+        console.print(f"[dim][💾 Записан отработанный импульс {record.get('symbol')} (вершина ${record.get('peak_price')}) в {file_path}][/dim]")
+    except Exception as e:
+        console.print(f"[red]❌ Ошибка записи в {file_path}: {e}[/red]")
+
+
+def is_impulse_disqualified(
+    imp_peak: float,
+    imp_start_time: Any,
+    imp_end_time: Any,
+    symbol: str,
+    completed_records: list[dict[str, Any]],
+) -> bool:
+    """
+    Проверяет, не относится ли кандидат-импульс к уже отработанному импульсу (или его части/середине).
+    Правило:
+    - Запрещено входить в отработанную вершину (совпадение цены вершины).
+    - Запрещено входить в подволны, завершившиеся до или на свече вершины отработанного импульса.
+    - Новый вход рассматривается ТОЛЬКО от следующей свечи после отработанного импульса
+      (start_time должен быть строго позже imp_end_time отработанного импульса).
+    """
+    if not completed_records:
+        return False
+
+    imp_start_ts = parse_timestamp_utc(imp_start_time)
+    imp_end_ts = parse_timestamp_utc(imp_end_time)
+
+    for rec in completed_records:
+        rec_sym = rec.get("symbol", "")
+        if rec_sym:
+            if not symbol or rec_sym != symbol:
+                continue
+
+        rec_peak = float(rec.get("peak_price", 0.0))
+        rec_start_time = rec.get("imp_start_time")
+        rec_end_time = rec.get("imp_end_time")
+        peak_matches = (rec_peak > 0 and math.isclose(imp_peak, rec_peak, rel_tol=1e-3))
+
+        if rec_end_time:
+            rec_end_ts = parse_timestamp_utc(rec_end_time)
+
+            # Если импульс начался во времени строго ПОСЛЕ вершины отработанного:
+            # это новый самостоятельный импульс (даже если цена вершины совпадает в боковике).
+            if imp_start_ts > rec_end_ts:
+                continue
+
+            # Новый вход рассматривается ТОЛЬКО от следующей свечи после отработанного импульса:
+            # запрещено входить в старый импульс, его часть или середину (imp_start_ts <= rec_end_ts).
+            if imp_start_ts <= rec_end_ts:
+                return True
+        else:
+            # Если время вершины не указано, проверяем совпадение цены вершины
+            if peak_matches:
+                return True
+
+    return False
 
 
 def find_active_setup(
@@ -264,6 +376,8 @@ def find_active_setup(
     max_impulse_bars: Optional[int] = None,
     min_impulse_bars: Optional[int] = None,
     layer: Literal["minor", "major"] = "minor",
+    symbol: Optional[str] = None,
+    completed_impulses: Optional[list[dict[str, Any]]] = None,
 ) -> Optional[SetupSignal]:
     """
     Анализирует свечи на наличие активного не отработанного торгового сетапа (ТОЛЬКО В LONG):
@@ -273,6 +387,8 @@ def find_active_setup(
     """
     if len(df) < 15:
         return None
+
+    effective_completed: list[dict[str, Any]] = list(completed_impulses or [])
 
     # Ограничиваем глубину анализа lookback_bars последними свечами
     if len(df) > lookback_bars:
@@ -326,6 +442,17 @@ def find_active_setup(
         if not imps:
             continue
 
+        # Фильтруем импульсы, которые относятся к уже отработанным сделкам
+        filtered_imps = []
+        for imp in imps:
+            peak_val = imp.high if is_long else imp.low
+            if is_impulse_disqualified(peak_val, imp.start_time, imp.end_time, symbol or "", effective_completed):
+                continue
+            filtered_imps.append(imp)
+        imps = filtered_imps
+        if not imps:
+            continue
+
         unbroken_setups: list[SetupSignal] = []
         reclaim_setups: list[SetupSignal] = []
         manipulation_setups: list[SetupSignal] = []
@@ -333,6 +460,9 @@ def find_active_setup(
 
         # Перебираем от самых свежих к старым в поиске неотработанного
         for imp in reversed(imps):
+            peak_val = imp.high if is_long else imp.low
+            if is_impulse_disqualified(peak_val, imp.start_time, imp.end_time, symbol or "", effective_completed):
+                continue
             p_0236 = calc_fib(imp.high, imp.low, 0.236, is_long=is_long, scale=scale)
             p_0382 = calc_fib(imp.high, imp.low, 0.382, is_long=is_long, scale=scale)
             p_0500 = calc_fib(imp.high, imp.low, 0.500, is_long=is_long, scale=scale)
@@ -524,8 +654,20 @@ def find_active_setup(
                                 hit_tp = True
                                 break
 
-            # Если импульс уже завершил свой цикл (вход + тейк) — пропускаем
+            # Если импульс уже завершил свой цикл (вход + тейк 0.236) — закрыть и записать этот импульс
             if hit_tp:
+                if symbol:
+                    save_completed_impulse({
+                        "symbol": symbol,
+                        "peak_price": peak_val,
+                        "imp_start_price": p_1000,
+                        "imp_start_time": str(imp.start_time),
+                        "imp_end_time": str(imp.end_time),
+                        "exit_price": eff_tp,
+                        "exit_time": str(post_df["timestamp"].iloc[-1]),
+                        "exit_reason": "TP_0236",
+                        "layer": layer,
+                    })
                 continue
 
             # ─── Сценарий 1: Пробой 1.000 (Свип или Манипуляция) ───────────────
@@ -629,13 +771,61 @@ def find_active_setup(
                     touched_0382=touched_0382,
                 ))
             else:
-                # Касание 0.500 было!
-                if tested_0382_after_05:
-                    # Вход на 0.500 упущен, и отскок к 0.382 уже состоялся -> импульс отыгран
-                    continue
+                # Касание 0.500 было (уровень 0.500 пройден / налит)!
+                # Проверяем, куда пришла цена:
+                if not touched_0618:
+                    # Уровень 0.500 пройден, цена не дошла до TP 0.236 и не касалась 0.618:
+                    # Выставляем Ордер 2 и Ордер 3, тейк позиции на 0.236!
+                    unbroken_setups.append(SetupSignal(
+                        setup_type="TRIPLE_GRID_CORRECTION",
+                        side=side,
+                        imp_start_time=imp.start_time,
+                        imp_end_time=imp.end_time,
+                        imp_start_price=p_1000,
+                        imp_peak_price=imp.high if is_long else imp.low,
+                        imp_pct=imp.pct,
+                        entry_1=e_0500,
+                        tp_1=tp_0236,
+                        entry_2=e_0618,
+                        tp_2=tp_0382,
+                        entry_3=e_0786,
+                        tp_3=tp_0500,
+                        stop_loss=p_1000,
+                        description=f"Уровень 0.500 (${e_0500:.4f}) налит, цена не дошла до тейка 0.236 (${tp_0236:.4f}) и не касалась 0.618 (${e_0618:.4f}). Выставляем Ордер 2 и Ордер 3.",
+                        layer=layer,
+                        p_0382=p_0382,
+                        touched_0382=touched_0382,
+                        o1_filled=True,
+                        o2_filled=False,
+                    ))
+                elif not touched_0786:
+                    # Уровни 0.500 и 0.618 пройдены, 0.786 не коснулись:
+                    # Выставляем Ордер 3, тейк позиции на 0.382!
+                    unbroken_setups.append(SetupSignal(
+                        setup_type="TRIPLE_GRID_CORRECTION",
+                        side=side,
+                        imp_start_time=imp.start_time,
+                        imp_end_time=imp.end_time,
+                        imp_start_price=p_1000,
+                        imp_peak_price=imp.high if is_long else imp.low,
+                        imp_pct=imp.pct,
+                        entry_1=e_0500,
+                        tp_1=tp_0236,
+                        entry_2=e_0618,
+                        tp_2=tp_0382,
+                        entry_3=e_0786,
+                        tp_3=tp_0500,
+                        stop_loss=p_1000,
+                        description=f"Уровни 0.500 (${e_0500:.4f}) и 0.618 (${e_0618:.4f}) налиты. Выставляем Ордер 3 (${e_0786:.4f}), тейк 0.382.",
+                        layer=layer,
+                        p_0382=p_0382,
+                        touched_0382=touched_0382,
+                        o1_filled=True,
+                        o2_filled=True,
+                    ))
                 else:
-                    # Вход на 0.500 упущен, но 0.382 НЕ протестирован:
-                    # Оставляем следить за монетой (AWAITING_BREAK_BELOW), маржа свободна, сетка не выставляется.
+                    # Все три ордера (0.500, 0.618, 0.786) упали ниже точки входа ->
+                    # Ожидание манипуляции или ложного пробоя (1.000)
                     unbroken_setups.append(SetupSignal(
                         setup_type="AWAITING_BREAK_BELOW",
                         side=side,
@@ -651,10 +841,12 @@ def find_active_setup(
                         entry_3=e_0786,
                         tp_3=tp_0500,
                         stop_loss=p_1000,
-                        description=f"Вход на 0.500 (${e_0500:.4f}) упущен, 0.382 (${p_0382:.4f}) не протестирован. Ожидание пробоя 1.000 (${p_1000:.4f}) без возврата к 0.382 (маржа свободна).",
+                        description=f"Все уровни сетки (0.500, 0.618, 0.786) пройдены. Ожидание пробоя 1.000 (${p_1000:.4f}) без возврата (маржа свободна).",
                         layer=layer,
                         p_0382=p_0382,
                         touched_0382=touched_0382,
+                        o1_filled=True,
+                        o2_filled=True,
                     ))
 
         # Приоритет: живые несломанные импульсы > ложный пробой (свип) > манипуляция
@@ -715,6 +907,7 @@ class ActiveTradeMonitor:
     stop_bar_time: Optional[pd.Timestamp] = None
     stop_sweep_low: float = 0.0
     last_candle_time: Optional[pd.Timestamp] = None
+    imp_start_time: Optional[pd.Timestamp] = None
     imp_end_time: Optional[pd.Timestamp] = None
     close_only: bool = False
     done: bool = False
@@ -1207,16 +1400,31 @@ def process_monitor_step(
                         console.print(f"  ⚠️ [{m.symbol}] Ошибка переноса TP на 0.382: {err}")
             return
 
-        # Если pos_size == 0 — позиция закрылась (по TP 0.236 или по SL 1.000)
+        # Если pos_size == 0 — проверяем тейк или стоп
         df_now = client.fetch_klines(m.symbol, interval=interval, limit=5)
         latest_h = float(df_now["high"].iloc[-1])
         latest_l = float(df_now["low"].iloc[-1])
+        is_long = (m.side == "long")
 
-        if latest_h >= m.cur_tp1 * 0.999:
+        hit_tp = (latest_h >= m.cur_tp1 * 0.999) if is_long else (latest_l <= m.cur_tp1 * 1.001)
+        hit_sl = (latest_l <= m.sl) if is_long else (latest_h >= m.sl)
+
+        if hit_tp:
             console.print(f"\n[bold green]💰 [{m.symbol}] ТЕЙК-ПРОФИТ 0.236 ДОСТИГНУТ! Позиция закрыта в прибыль.[/bold green]")
             if is_live:
                 cancelled = cancel_monitor_orders(client, m)
                 console.print(f"[dim][{m.symbol}] Сняты висящие ордера 2 и 3 [отменено: {len(cancelled)}]. Сделка успешно завершена.[/dim]")
+            save_completed_impulse({
+                "symbol": m.symbol,
+                "peak_price": m.cur_peak,
+                "imp_start_price": m.imp_start_price,
+                "imp_start_time": str(m.imp_start_time) if m.imp_start_time else "",
+                "imp_end_time": str(m.imp_end_time) if m.imp_end_time else "",
+                "exit_price": m.cur_tp1,
+                "exit_time": str(pd.Timestamp.now(tz="UTC")),
+                "exit_reason": "TP_0236",
+                "layer": m.layer,
+            })
             if m.close_only:
                 m.state = "FINISHED"
                 m.done = True
@@ -1226,7 +1434,8 @@ def process_monitor_step(
             m.state = "IDLE"
             m.last_skipped_imp_time = m.imp_end_time
             m.position_was_open = False
-        else:
+            return
+        elif hit_sl and m.sl > 0:
             console.print(f"\n[bold red]🛑 [{m.symbol}] Стоп-лосс на уровне 1.000 (${m.sl}) сработал![/bold red]")
             if is_live:
                 cancel_monitor_orders(client, m)
@@ -1237,10 +1446,42 @@ def process_monitor_step(
                 console.print(f"[bold red]🏁 [{m.symbol}] Сделка закрыта по стоп-лоссу. Монета находилась в режиме Close-Only и завершает работу.[/bold red]")
                 return
             m.stop_bar_time = df_now["timestamp"].iloc[-1]
-            m.stop_sweep_low = min(latest_l, m.sl)
+            m.stop_sweep_low = min(latest_l, m.sl) if is_long else max(latest_h, m.sl)
             m.state = "AWAITING_SWEEP_CLOSE"
             m.position_was_open = False
             console.print(f"[bold yellow]⏳ [{m.symbol}] Ожидаем закрытия часовой свечи ({m.stop_bar_time}) для проверки Ложного пробоя или Сетки манипуляции...[/bold yellow]")
+            return
+        elif m.position_was_open:
+            # Позиция закрыта пользователем вручную (цена не доходила до SL 1.000)
+            latest_c = float(df_now["close"].iloc[-1])
+            console.print(f"\n[bold cyan]👋 [{m.symbol}] Позиция закрыта вручную пользователем (цена ${latest_c:.4f}, SL был на ${m.sl:.4f}).[/bold cyan]")
+            if is_live:
+                cancelled = cancel_monitor_orders(client, m)
+                console.print(f"[dim][{m.symbol}] Сняты висящие ордера сетки [отменено: {len(cancelled)}]. Сделка завершена.[/dim]")
+            save_completed_impulse({
+                "symbol": m.symbol,
+                "peak_price": m.cur_peak,
+                "imp_start_price": m.imp_start_price,
+                "imp_start_time": str(m.imp_start_time) if m.imp_start_time else "",
+                "imp_end_time": str(m.imp_end_time) if m.imp_end_time else "",
+                "exit_price": latest_c,
+                "exit_time": str(pd.Timestamp.now(tz="UTC")),
+                "exit_reason": "MANUAL_CLOSE",
+                "layer": m.layer,
+            })
+            if m.close_only:
+                m.state = "FINISHED"
+                m.done = True
+                m.position_was_open = False
+                console.print(f"[bold green]🏁 [{m.symbol}] Позиция закрыта вручную. Монета находилась в режиме Close-Only и завершает работу.[/bold green]")
+                return
+            m.state = "IDLE"
+            m.last_skipped_imp_time = m.imp_end_time
+            m.position_was_open = False
+            return
+        else:
+            # Ордер 1 пропущен при старте, Ордер 2 и 3 в стакане ждут налития
+            return
 
     # ─── 3. Состояние: НАЛИТЫ ОРДЕРА 1 И 2 (Выход на 0.382 или добор 3) ────────
     elif m.state in ("O2_FILLED", "BOTH_FILLED"):
@@ -1262,16 +1503,31 @@ def process_monitor_step(
                         console.print(f"  ⚠️ [{m.symbol}] Ошибка переноса TP на 0.500: {err}")
             return
 
-        # Позиция закрылась!
+        # Если pos_size == 0 — проверяем тейк или стоп
         df_now = client.fetch_klines(m.symbol, interval=interval, limit=5)
         latest_h = float(df_now["high"].iloc[-1])
         latest_l = float(df_now["low"].iloc[-1])
+        is_long = (m.side == "long")
 
-        if latest_h >= m.cur_tp2 * 0.999:
+        hit_tp = (latest_h >= m.cur_tp2 * 0.999) if is_long else (latest_l <= m.cur_tp2 * 1.001)
+        hit_sl = (latest_l <= m.sl) if is_long else (latest_h >= m.sl)
+
+        if hit_tp:
             console.print(f"\n[bold green]💰 [{m.symbol}] КОРЗИННЫЙ ТЕЙК-ПРОФИТ 0.382 ДОСТИГНУТ! Ордера 1 и 2 закрыты в плюс.[/bold green]")
             if is_live:
                 cancelled = cancel_monitor_orders(client, m)
                 console.print(f"[dim][{m.symbol}] Снят висящий Ордер 3 (0.786) [отменено: {len(cancelled)}].[/dim]")
+            save_completed_impulse({
+                "symbol": m.symbol,
+                "peak_price": m.cur_peak,
+                "imp_start_price": m.imp_start_price,
+                "imp_start_time": str(m.imp_start_time) if m.imp_start_time else "",
+                "imp_end_time": str(m.imp_end_time) if m.imp_end_time else "",
+                "exit_price": m.cur_tp2,
+                "exit_time": str(pd.Timestamp.now(tz="UTC")),
+                "exit_reason": "TP_0382",
+                "layer": m.layer,
+            })
             if m.close_only:
                 m.state = "FINISHED"
                 m.done = True
@@ -1281,7 +1537,8 @@ def process_monitor_step(
             m.state = "IDLE"
             m.last_skipped_imp_time = m.imp_end_time
             m.position_was_open = False
-        else:
+            return
+        elif hit_sl and m.sl > 0:
             console.print(f"\n[bold red]🛑 [{m.symbol}] Стоп-лосс на уровне 1.000 (${m.sl}) сработал![/bold red]")
             if is_live:
                 cancel_monitor_orders(client, m)
@@ -1292,10 +1549,41 @@ def process_monitor_step(
                 console.print(f"[bold red]🏁 [{m.symbol}] Сделка закрыта по стоп-лоссу. Монета находилась в режиме Close-Only и завершает работу.[/bold red]")
                 return
             m.stop_bar_time = df_now["timestamp"].iloc[-1]
-            m.stop_sweep_low = min(latest_l, m.sl)
+            m.stop_sweep_low = min(latest_l, m.sl) if is_long else max(latest_h, m.sl)
             m.state = "AWAITING_SWEEP_CLOSE"
             m.position_was_open = False
             console.print(f"[bold yellow]⏳ [{m.symbol}] Ожидаем закрытия часовой свечи ({m.stop_bar_time}) для проверки Ложного пробоя или Сетки манипуляции...[/bold yellow]")
+            return
+        elif m.position_was_open:
+            # Позиция закрыта пользователем вручную (цена не доходила до SL 1.000)
+            latest_c = float(df_now["close"].iloc[-1])
+            console.print(f"\n[bold cyan]👋 [{m.symbol}] Позиция закрыта вручную пользователем (цена ${latest_c:.4f}, SL был на ${m.sl:.4f}).[/bold cyan]")
+            if is_live:
+                cancelled = cancel_monitor_orders(client, m)
+                console.print(f"[dim][{m.symbol}] Снят висящий Ордер 3 (0.786) [отменено: {len(cancelled)}]. Сделка завершена.[/dim]")
+            save_completed_impulse({
+                "symbol": m.symbol,
+                "peak_price": m.cur_peak,
+                "imp_start_price": m.imp_start_price,
+                "imp_start_time": str(m.imp_start_time) if m.imp_start_time else "",
+                "imp_end_time": str(m.imp_end_time) if m.imp_end_time else "",
+                "exit_price": latest_c,
+                "exit_time": str(pd.Timestamp.now(tz="UTC")),
+                "exit_reason": "MANUAL_CLOSE",
+                "layer": m.layer,
+            })
+            if m.close_only:
+                m.state = "FINISHED"
+                m.done = True
+                m.position_was_open = False
+                console.print(f"[bold green]🏁 [{m.symbol}] Позиция закрыта вручную. Монета находилась в режиме Close-Only и завершает работу.[/bold green]")
+                return
+            m.state = "IDLE"
+            m.last_skipped_imp_time = m.imp_end_time
+            m.position_was_open = False
+            return
+        else:
+            return
 
     # ─── 4. Состояние: НАЛИТЫ ВСЕ 3 ОРДЕРА (Выход всей тройки на 0.500) ─────────
     elif m.state == "O3_FILLED":
@@ -1312,15 +1600,30 @@ def process_monitor_step(
                     console.print(f"  ⚠️ [{m.symbol}] Ошибка установки TP на 0.500: {err}")
             return
 
-        # Позиция закрылась!
+        # Если pos_size == 0 — проверяем тейк или стоп
         df_now = client.fetch_klines(m.symbol, interval=interval, limit=5)
         latest_h = float(df_now["high"].iloc[-1])
         latest_l = float(df_now["low"].iloc[-1])
+        is_long = (m.side == "long")
 
-        if latest_h >= m.cur_tp3 * 0.999:
+        hit_tp = (latest_h >= m.cur_tp3 * 0.999) if is_long else (latest_l <= m.cur_tp3 * 1.001)
+        hit_sl = (latest_l <= m.sl) if is_long else (latest_h >= m.sl)
+
+        if hit_tp:
             console.print(f"\n[bold green]💰 [{m.symbol}] СУПЕР-ТЕЙК-ПРОФИТ 0.500 ДОСТИГНУТ! Все 3 ордера закрыты (Ордер 3 в макси-плюс, Ордер 2 в плюс, Ордер 1 в БУ).[/bold green]")
             if is_live:
                 cancel_monitor_orders(client, m)
+            save_completed_impulse({
+                "symbol": m.symbol,
+                "peak_price": m.cur_peak,
+                "imp_start_price": m.imp_start_price,
+                "imp_start_time": str(m.imp_start_time) if m.imp_start_time else "",
+                "imp_end_time": str(m.imp_end_time) if m.imp_end_time else "",
+                "exit_price": m.cur_tp3,
+                "exit_time": str(pd.Timestamp.now(tz="UTC")),
+                "exit_reason": "TP_0500",
+                "layer": m.layer,
+            })
             if m.close_only:
                 m.state = "FINISHED"
                 m.done = True
@@ -1330,7 +1633,8 @@ def process_monitor_step(
             m.state = "IDLE"
             m.last_skipped_imp_time = m.imp_end_time
             m.position_was_open = False
-        else:
+            return
+        elif hit_sl and m.sl > 0:
             console.print(f"\n[bold red]🛑 [{m.symbol}] Стоп-лосс на уровне 1.000 (${m.sl}) сработал![/bold red]")
             if is_live:
                 cancel_monitor_orders(client, m)
@@ -1341,10 +1645,40 @@ def process_monitor_step(
                 console.print(f"[bold red]🏁 [{m.symbol}] Сделка закрыта по стоп-лоссу. Монета находилась в режиме Close-Only и завершает работу.[/bold red]")
                 return
             m.stop_bar_time = df_now["timestamp"].iloc[-1]
-            m.stop_sweep_low = min(latest_l, m.sl)
+            m.stop_sweep_low = min(latest_l, m.sl) if is_long else max(latest_h, m.sl)
             m.state = "AWAITING_SWEEP_CLOSE"
             m.position_was_open = False
             console.print(f"[bold yellow]⏳ [{m.symbol}] Ожидаем закрытия часовой свечи ({m.stop_bar_time}) для проверки Ложного пробоя или Сетки манипуляции...[/bold yellow]")
+            return
+        elif m.position_was_open:
+            # Позиция закрыта пользователем вручную (цена не доходила до SL 1.000)
+            latest_c = float(df_now["close"].iloc[-1])
+            console.print(f"\n[bold cyan]👋 [{m.symbol}] Позиция закрыта вручную пользователем (цена ${latest_c:.4f}, SL был на ${m.sl:.4f}).[/bold cyan]")
+            if is_live:
+                cancel_monitor_orders(client, m)
+            save_completed_impulse({
+                "symbol": m.symbol,
+                "peak_price": m.cur_peak,
+                "imp_start_price": m.imp_start_price,
+                "imp_start_time": str(m.imp_start_time) if m.imp_start_time else "",
+                "imp_end_time": str(m.imp_end_time) if m.imp_end_time else "",
+                "exit_price": latest_c,
+                "exit_time": str(pd.Timestamp.now(tz="UTC")),
+                "exit_reason": "MANUAL_CLOSE",
+                "layer": m.layer,
+            })
+            if m.close_only:
+                m.state = "FINISHED"
+                m.done = True
+                m.position_was_open = False
+                console.print(f"[bold green]🏁 [{m.symbol}] Позиция закрыта вручную. Монета находилась в режиме Close-Only и завершает работу.[/bold green]")
+                return
+            m.state = "IDLE"
+            m.last_skipped_imp_time = m.imp_end_time
+            m.position_was_open = False
+            return
+        else:
+            return
 
     # ─── 5. Состояние: ОЖИДАНИЕ ЗАКРЫТИЯ СВЕЧИ СВИПА 1.000 ────────────────────
     elif m.state == "AWAITING_SWEEP_CLOSE":
@@ -1500,6 +1834,17 @@ def process_monitor_step(
             console.print(f"\n[bold green]🏁 [{m.symbol}] Сделка по Ложному пробою закрыта (TP или SL). Фибоначчи завершена.[/bold green]")
             if is_live:
                 cancel_monitor_orders(client, m)
+            save_completed_impulse({
+                "symbol": m.symbol,
+                "peak_price": m.cur_peak,
+                "imp_start_price": m.imp_start_price,
+                "imp_start_time": str(m.imp_start_time) if m.imp_start_time else "",
+                "imp_end_time": str(m.imp_end_time) if m.imp_end_time else "",
+                "exit_price": m.cur_tp1,
+                "exit_time": str(pd.Timestamp.now(tz="UTC")),
+                "exit_reason": "SWEEP_CLOSED",
+                "layer": m.layer,
+            })
             if m.close_only:
                 m.state = "FINISHED"
                 m.done = True
@@ -1536,6 +1881,17 @@ def process_monitor_step(
             console.print(f"\n[bold green]🏁 [{m.symbol}] Сетка Манипуляции закрыта (TP или SL). Работа с данной Фибоначчи полностью завершена.[/bold green]")
             if is_live:
                 cancel_monitor_orders(client, m)
+            save_completed_impulse({
+                "symbol": m.symbol,
+                "peak_price": m.cur_peak,
+                "imp_start_price": m.imp_start_price,
+                "imp_start_time": str(m.imp_start_time) if m.imp_start_time else "",
+                "imp_end_time": str(m.imp_end_time) if m.imp_end_time else "",
+                "exit_price": m.cur_tp1,
+                "exit_time": str(pd.Timestamp.now(tz="UTC")),
+                "exit_reason": "MANIPULATION_CLOSED",
+                "layer": m.layer,
+            })
             if m.close_only:
                 m.state = "FINISHED"
                 m.done = True
@@ -1565,6 +1921,7 @@ def process_monitor_step(
         max_bars = cfg.major_max_impulse_bars if is_major else cfg.minor_max_impulse_bars
 
         setup_timeout = cfg.major_timeout_hours if is_major else cfg.minor_timeout_hours
+        completed_trades_list = load_completed_impulses()
         setup = find_active_setup(
             df_now,
             min_pct=cfg.min_impulse_pct,
@@ -1588,6 +1945,8 @@ def process_monitor_step(
             min_impulse_bars=min_bars,
             max_impulse_bars=max_bars,
             layer=m.layer,
+            symbol=m.symbol,
+            completed_impulses=completed_trades_list,
         )
 
         if setup is not None:
@@ -1615,6 +1974,7 @@ def process_monitor_step(
                 m.cur_tp3 = client.round_price(setup.tp_3, m.symbol) if setup.tp_3 else None
                 m.sl = client.round_price(setup.stop_loss, m.symbol)
                 m.imp_start_price = setup.imp_start_price
+                m.imp_start_time = setup.imp_start_time
                 m.imp_end_time = setup.imp_end_time
                 m.touched_0382 = False
                 m.timeout_hours = setup_timeout
@@ -1628,6 +1988,7 @@ def process_monitor_step(
                 m.state = "AWAITING_BREAK_BELOW"
                 m.cur_peak = setup.imp_peak_price
                 m.imp_start_price = setup.imp_start_price
+                m.imp_start_time = setup.imp_start_time
                 m.p_0382 = setup.p_0382
                 m.cur_e1 = client.round_price(setup.entry_1, m.symbol)
                 m.cur_tp1 = client.round_price(setup.tp_1, m.symbol)
@@ -1690,19 +2051,21 @@ def process_monitor_step(
 
                 is_fib_grid = setup.setup_type in ("TRIPLE_GRID_TRAILING", "TRIPLE_GRID_CORRECTION", "DUAL_GRID_TRAILING", "DUAL_GRID_CORRECTION")
                 is_long = (setup.side == "long")
-                o1_missed = is_entry_missed(e1, cur_p, is_long=is_long)
+                o1_missed = getattr(setup, "o1_filled", False) or is_entry_missed(e1, cur_p, is_long=is_long)
+                o2_missed = getattr(setup, "o2_filled", False) or (e2 is not None and is_entry_missed(e2, cur_p, is_long=is_long))
+                o3_missed = bool(e3 is not None and is_entry_missed(e3, cur_p, is_long=is_long))
 
-                # Если вход на 0.500 уже упущен: переходим в AWAITING_BREAK_BELOW (ожидание пробоя 1.000 без возврата к 0.382)
-                if is_fib_grid and o1_missed:
-                    cmp_op = "<=" if is_long else ">="
-                    reason = f"рыночная цена ${cur_p} {cmp_op} ${e1}"
-                    console.print(f"  [yellow]⚠️ [{m.symbol}] [{layer_tag}] Вход на 0.500 (${e1}) уже упущен ({reason}). Переход в AWAITING_BREAK_BELOW (маржа свободна).[/yellow]")
+                # Если ВСЕ доступные уровни сетки уже пройдены (ордер 1, 2 и 3 ниже входа):
+                if setup.setup_type == "AWAITING_BREAK_BELOW" or (is_fib_grid and o1_missed and o2_missed and (e3 is None or o3_missed)):
+                    reason = "все уровни сетки (0.500, 0.618, 0.786) уже пройдены" if is_fib_grid else "уровень 0.500 уже протестирован"
+                    console.print(f"  [yellow]⚠️ [{m.symbol}] [{layer_tag}] {reason}. Переход в AWAITING_BREAK_BELOW (маржа свободна).[/yellow]")
                     if is_live:
                         cleanup_orphan_orders_for_layer(client, m.symbol, m.layer)
                     m.setup_type = "AWAITING_BREAK_BELOW"
                     m.state = "AWAITING_BREAK_BELOW"
                     m.cur_peak = setup.imp_peak_price
                     m.imp_start_price = setup.imp_start_price
+                    m.imp_start_time = setup.imp_start_time
                     m.p_0382 = setup.p_0382
                     m.cur_e1 = e1
                     m.cur_tp1 = tp1
@@ -1716,11 +2079,11 @@ def process_monitor_step(
                     return
 
                 place_o1 = not o1_missed
-                place_o2 = bool(e2 and q2 > 0 and tp2 and not is_entry_missed(e2, cur_p, is_long=is_long))
-                place_o3 = bool(e3 and q3 > 0 and tp3 and not is_entry_missed(e3, cur_p, is_long=is_long))
+                place_o2 = bool(e2 and q2 > 0 and tp2 and not o2_missed)
+                place_o3 = bool(e3 and q3 > 0 and tp3 and not o3_missed)
 
                 if not place_o1:
-                    console.print(f"  [yellow]ℹ️ [{m.symbol}] [{layer_tag}] Текущая цена (${cur_p}) ниже Ордера 1 (${e1}). Ордер 1 пропущен.[/yellow]")
+                    console.print(f"  [yellow]ℹ️ [{m.symbol}] [{layer_tag}] Текущая цена (${cur_p}) ниже Ордера 1 (${e1}). Ордер 1 пропущен, выставляем последующие ордера.[/yellow]")
                 if not place_o2 and e2 and q2 > 0:
                     console.print(f"  [yellow]ℹ️ [{m.symbol}] [{layer_tag}] Текущая цена (${cur_p}) ниже Ордера 2 (${e2}). Ордер 2 пропущен.[/yellow]")
                 if not place_o3 and e3 and q3 > 0:
@@ -1762,7 +2125,10 @@ def process_monitor_step(
                     return
 
             m.setup_type = setup.setup_type
-            m.state = "TRAILING" if setup.setup_type in ("TRIPLE_GRID_TRAILING", "TRIPLE_GRID_CORRECTION", "DUAL_GRID_TRAILING", "DUAL_GRID_CORRECTION") else setup.setup_type
+            if is_fib_grid and o1_missed:
+                m.state = "O2_FILLED" if o2_missed else "O1_FILLED"
+            else:
+                m.state = "TRAILING" if setup.setup_type in ("TRIPLE_GRID_TRAILING", "TRIPLE_GRID_CORRECTION", "DUAL_GRID_TRAILING", "DUAL_GRID_CORRECTION") else setup.setup_type
             m.o1_id = o1_id
             m.o2_id = o2_id
             m.o3_id = o3_id
@@ -1774,6 +2140,7 @@ def process_monitor_step(
             m.cur_e3 = e3 if e3 else 0.0
             m.cur_tp3 = tp3 if tp3 else 0.0
             m.imp_start_price = setup.imp_start_price
+            m.imp_start_time = setup.imp_start_time
             m.imp_end_time = setup.imp_end_time
             m.sl = sl
             m.q1 = q1
@@ -1905,6 +2272,7 @@ def main():
     actionable_setups = []
     awaiting_major_setups = []
     active_monitors: list[ActiveTradeMonitor] = []
+    completed_trades_list = load_completed_impulses()
 
     layers = [
         ("minor", None, cfg.minor_max_impulse_bars, cfg.minor_risk_usd),
@@ -1960,6 +2328,8 @@ def main():
                 min_impulse_bars=min_bars,
                 max_impulse_bars=max_bars,
                 layer=layer_name,
+                symbol=symbol,
+                completed_impulses=completed_trades_list,
             )
 
             if not setup:
@@ -1985,12 +2355,44 @@ def main():
                 except Exception:
                     pos_open = False
 
-            o1_missed = is_entry_missed(e1, cur_price, is_long=is_long)
-            if not pos_open and (setup.setup_type == "AWAITING_BREAK_BELOW" or (is_fib_grid and o1_missed)):
-                cmp_op = "<=" if is_long else ">="
-                reason = "уровень 0.500 уже был протестирован ранее" if setup.setup_type == "AWAITING_BREAK_BELOW" else f"текущая цена ${cur_price} {cmp_op} ${e1}"
-                p_0382_str = f"${setup.p_0382:.4f}" if setup.p_0382 else "-"
-                console.print(f"[yellow]ℹ️ [{symbol}] {layer_tag_title}: вход на 0.500 (${e1}) уже упущен ({reason}), 0.382 ({p_0382_str}) не протестирован. Ожидание пробоя 1.000 (${sl}) без возврата к 0.382 (маржа свободна).[/yellow]")
+            e2 = client.round_price(setup.entry_2, symbol) if setup.entry_2 else None
+            tp2 = client.round_price(setup.tp_2, symbol) if setup.tp_2 else None
+            e3 = client.round_price(setup.entry_3, symbol) if setup.entry_3 else None
+            tp3 = client.round_price(setup.tp_3, symbol) if setup.tp_3 else None
+
+            # Проверка: если позиция уже открыта на бирже и цена достигла TP 0.236
+            # -> закрыть позицию и записать этот импульс в completed_impulses.json
+            if pos_open and ((is_long and cur_price >= tp1) or (not is_long and cur_price <= tp1)):
+                console.print(f"[bold green]💰 [{symbol}] При запуске зафиксирован тейк-профит 0.236 (${tp1})! Закрываем позицию и сохраняем импульс.[/bold green]")
+                if is_live:
+                    try:
+                        client.close_position(symbol)
+                        cancel_monitor_orders(client, ActiveTradeMonitor(symbol=symbol))
+                    except Exception as err:
+                        console.print(f"⚠️ Ошибка закрытия позиции: {err}")
+                save_completed_impulse({
+                    "symbol": symbol,
+                    "peak_price": setup.imp_peak_price,
+                    "imp_start_price": setup.imp_start_price,
+                    "imp_start_time": str(setup.imp_start_time) if setup.imp_start_time else "",
+                    "imp_end_time": str(setup.imp_end_time) if setup.imp_end_time else "",
+                    "exit_price": cur_price,
+                    "exit_time": str(pd.Timestamp.now(tz="UTC")),
+                    "exit_reason": "TP_0236_STARTUP",
+                    "layer": layer_name,
+                })
+                active_monitors.append(ActiveTradeMonitor(symbol=symbol, setup_type="IDLE", state="IDLE", layer=layer_name))
+                continue
+
+            o1_missed = getattr(setup, "o1_filled", False) or is_entry_missed(e1, cur_price, is_long=is_long)
+            o2_missed = getattr(setup, "o2_filled", False) or (e2 is not None and is_entry_missed(e2, cur_price, is_long=is_long))
+            o3_missed = bool(e3 is not None and is_entry_missed(e3, cur_price, is_long=is_long))
+
+            # Если ВСЕ доступные уровни сетки уже пройдены (ордер 1, 2 и 3 ниже входа) и нет открытой позиции,
+            # либо это явный сетап AWAITING_BREAK_BELOW:
+            if not pos_open and (setup.setup_type == "AWAITING_BREAK_BELOW" or (is_fib_grid and o1_missed and o2_missed and (e3 is None or o3_missed))):
+                reason = "все уровни сетки (0.500, 0.618, 0.786) уже пройдены" if is_fib_grid else "уровень 0.500 уже протестирован"
+                console.print(f"[yellow]ℹ️ [{symbol}] {layer_tag_title}: {reason}. Ожидание пробоя 1.000 (${sl}) (маржа свободна).[/yellow]")
                 if is_live:
                     cleanup_orphan_orders_for_layer(client, symbol, layer_name)
                 active_monitors.append(ActiveTradeMonitor(
@@ -2001,25 +2403,20 @@ def main():
                     side=setup.side,
                     cur_peak=setup.imp_peak_price,
                     imp_start_price=setup.imp_start_price,
+                    imp_start_time=setup.imp_start_time,
                     p_0382=setup.p_0382,
                     cur_e1=e1,
                     cur_tp1=tp1,
-                    cur_e2=client.round_price(setup.entry_2, symbol) if setup.entry_2 else 0.0,
-                    cur_tp2=client.round_price(setup.tp_2, symbol) if setup.tp_2 else 0.0,
-                    cur_e3=client.round_price(setup.entry_3, symbol) if setup.entry_3 else 0.0,
-                    cur_tp3=client.round_price(setup.tp_3, symbol) if setup.tp_3 else 0.0,
+                    cur_e2=e2 if e2 else 0.0,
+                    cur_tp2=tp2 if tp2 else 0.0,
+                    cur_e3=e3 if e3 else 0.0,
+                    cur_tp3=tp3 if tp3 else 0.0,
                     sl=sl,
                     imp_end_time=setup.imp_end_time,
                     last_candle_time=df["timestamp"].iloc[-1] if len(df) > 0 else None,
                     timeout_hours=setup_timeout,
                 ))
                 continue
-
-            e2 = client.round_price(setup.entry_2, symbol) if setup.entry_2 else None
-            tp2 = client.round_price(setup.tp_2, symbol) if setup.tp_2 else None
-
-            e3 = client.round_price(setup.entry_3, symbol) if setup.entry_3 else None
-            tp3 = client.round_price(setup.tp_3, symbol) if setup.tp_3 else None
 
             # Расчет лотов
             if setup.setup_type == "MANIPULATION":
@@ -2376,14 +2773,13 @@ def main():
                     # Проверка цен ордеров относительно текущей рыночной цены (защита от покупки выше рынка)
                     is_fib_grid = setup.setup_type in ("TRIPLE_GRID_TRAILING", "TRIPLE_GRID_CORRECTION", "DUAL_GRID_TRAILING", "DUAL_GRID_CORRECTION")
                     is_long = (setup.side == "long")
-                    o1_missed = is_entry_missed(e1, cur_p, is_long=is_long)
+                    o1_missed = getattr(setup, "o1_filled", False) or is_entry_missed(e1, cur_p, is_long=is_long)
+                    o2_missed = getattr(setup, "o2_filled", False) or (e2 is not None and is_entry_missed(e2, cur_p, is_long=is_long))
+                    o3_missed = bool(e3 is not None and is_entry_missed(e3, cur_p, is_long=is_long))
 
-                    # Если вход на 0.500 уже упущен: переходим в AWAITING_BREAK_BELOW (ожидание пробоя 1.000 без возврата к 0.382)
-                    if is_fib_grid and (setup.setup_type == "AWAITING_BREAK_BELOW" or o1_missed):
-                        cmp_op = "<=" if is_long else ">="
-                        reason = "уровень 0.500 уже был протестирован ранее" if setup.setup_type == "AWAITING_BREAK_BELOW" else f"рыночная цена ${cur_p} {cmp_op} ${e1}"
-                        p_0382_str = f"${setup.p_0382:.4f}" if setup.p_0382 else "-"
-                        console.print(f"  [yellow]⚠️ [{sym}] [{layer_tag}] Вход на 0.500 (${e1}) уже упущен ({reason}), 0.382 ({p_0382_str}) не протестирован. Ожидание пробоя 1.000 (${sl}) без возврата к 0.382 (маржа свободна).[/yellow]")
+                    # Если ВСЕ доступные уровни сетки уже пройдены (ордер 1, 2 и 3 ниже точки входа) и позиции нет:
+                    if not pos_open and (setup.setup_type == "AWAITING_BREAK_BELOW" or (is_fib_grid and o1_missed and o2_missed and (e3 is None or o3_missed))):
+                        console.print(f"  [yellow]⚠️ [{sym}] [{layer_tag}] Все входы сетки (0.500, 0.618, 0.786) уже пройдены. Ожидание пробоя 1.000 (${sl}) без возврата к 0.382 (маржа свободна).[/yellow]")
                         if is_live:
                             cleanup_orphan_orders_for_layer(client, sym, layer_name)
                         active_monitors.append(ActiveTradeMonitor(
@@ -2394,6 +2790,7 @@ def main():
                             side=setup.side,
                             cur_peak=setup.imp_peak_price,
                             imp_start_price=setup.imp_start_price,
+                            imp_start_time=setup.imp_start_time,
                             p_0382=setup.p_0382,
                             cur_e1=e1,
                             cur_tp1=tp1,
@@ -2408,15 +2805,15 @@ def main():
                         continue
 
                     place_o1 = not o1_missed
-                    place_o2 = bool(e2 is not None and q2 > 0 and tp2 is not None and not is_entry_missed(e2, cur_p, is_long=is_long))
-                    place_o3 = bool(e3 is not None and q3 > 0 and tp3 is not None and not is_entry_missed(e3, cur_p, is_long=is_long))
+                    place_o2 = bool(e2 is not None and q2 > 0 and tp2 is not None and not o2_missed)
+                    place_o3 = bool(e3 is not None and q3 > 0 and tp3 is not None and not o3_missed)
 
                     if not place_o1:
-                        console.print(f"  [yellow]ℹ️ [{sym}] [{layer_tag}] Текущая цена (${cur_p}) ниже Ордера 1 (${e1}). Ордер 1 пропущен (опоздание на вход).[/yellow]")
+                        console.print(f"  [yellow]ℹ️ [{sym}] [{layer_tag}] Ордер 1 (0.500: ${e1}) уже налит/пройден. Выставляются Ордер 2 и/или Ордер 3.[/yellow]")
                     if not place_o2 and e2 is not None and q2 > 0:
-                        console.print(f"  [yellow]ℹ️ [{sym}] [{layer_tag}] Текущая цена (${cur_p}) ниже Ордера 2 (${e2}). Ордер 2 пропущен.[/yellow]")
+                        console.print(f"  [yellow]ℹ️ [{sym}] [{layer_tag}] Ордер 2 (0.618: ${e2}) уже пройден.[/yellow]")
                     if not place_o3 and e3 is not None and q3 > 0:
-                        console.print(f"  [yellow]ℹ️ [{sym}] [{layer_tag}] Текущая цена (${cur_p}) ниже Ордера 3 (${e3}). Ордер 3 пропущен.[/yellow]")
+                        console.print(f"  [yellow]ℹ️ [{sym}] [{layer_tag}] Ордер 3 (0.786: ${e3}) уже пройден.[/yellow]")
 
                     if not (place_o1 or place_o2 or place_o3):
                         console.print(f"  [yellow]⚠️ [{sym}] [{layer_tag}] Все уровни сетки выше текущей цены (${cur_p}). Сетка не выставляется, монета переходит в IDLE.[/yellow]")
@@ -2468,7 +2865,10 @@ def main():
                     if is_live:
                         available_margin = max(0.0, available_margin - needed_margin)
 
-                    initial_state = "TRAILING" if setup.setup_type in ("TRIPLE_GRID_TRAILING", "TRIPLE_GRID_CORRECTION", "DUAL_GRID_TRAILING", "DUAL_GRID_CORRECTION") else setup.setup_type
+                    if is_fib_grid and o1_missed:
+                        initial_state = "O2_FILLED" if o2_missed else "O1_FILLED"
+                    else:
+                        initial_state = "TRAILING" if setup.setup_type in ("TRIPLE_GRID_TRAILING", "TRIPLE_GRID_CORRECTION", "DUAL_GRID_TRAILING", "DUAL_GRID_CORRECTION") else setup.setup_type
 
             active_monitors.append(ActiveTradeMonitor(
                 symbol=sym,
@@ -2488,6 +2888,7 @@ def main():
                 cur_e3=e3 if e3 else 0.0,
                 cur_tp3=tp3 if tp3 else 0.0,
                 imp_start_price=setup.imp_start_price,
+                imp_start_time=setup.imp_start_time,
                 sl=sl,
                 q1=q1,
                 q2=q2,
@@ -2537,6 +2938,7 @@ def main():
             has_o2=(item["e2"] is not None and item["q2"] > 0),
             has_o3=(item["e3"] is not None and item["q3"] > 0),
             imp_start_price=item["setup"].imp_start_price,
+            imp_start_time=item["setup"].imp_start_time,
             imp_end_time=item["setup"].imp_end_time,
             touched_0382=False,
         ))
