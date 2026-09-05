@@ -113,6 +113,11 @@ i_macd_fast = input.int(12, "MACD Fast Length", minval=1, group=grp_macd)
 i_macd_slow = input.int(26, "MACD Slow Length", minval=1, group=grp_macd)
 i_macd_sig  = input.int(9,  "MACD Signal Length", minval=1, group=grp_macd)
 
+grp_atr      = "🌊 Фильтр волатильности ATR (Динамический порог)"
+use_atr_filt = input.bool(true, "Включить динамический фильтр ATR", tooltip="Динамический порог импульса: max(min_pct, atr_mult * ATR%)", group=grp_atr)
+atr_period   = input.int(14, "Период ATR", minval=1, maxval=100, group=grp_atr)
+atr_mult     = input.float(2.5, "Множитель ATR", minval=0.5, step=0.1, tooltip="Порог импульса адаптируется под волатильность: 2.5x ATR(14)", group=grp_atr)
+
 grp_swp     = "🎯 Детектор Ложного Пробоя (Свип Ликвидности & MACD)"
 show_swp    = input.bool(true, "Показывать сигналы Ложного Пробоя (Sweep Reclaim)", group=grp_swp)
 max_swp_p   = input.float(0.5, "Макс. глубина свипа за 1.0 (%)", minval=0.1, step=0.1, tooltip="Максимальный допустимый прокол уровня 1.000 для сбора ликвидности без закрепления (по умолчанию 0.5%)", group=grp_swp)
@@ -564,11 +569,14 @@ find_minor_short(int lookback, float min_pct, int max_duration) =>
 // ══════════════════════════════════════════════════════════════════════════════
 var line[] lines_arr   = array.new_line()
 var label[] labels_arr = array.new_label()
-var table risk_tbl     = table.new(position.top_right, 2, 22, bgcolor=color.new(#0b0e14, 15), border_color=color.new(#1e293b, 0), border_width=1)
+var table risk_tbl     = table.new(position.top_right, 2, 25, bgcolor=color.new(#0b0e14, 15), border_color=color.new(#1e293b, 0), border_width=1)
 
-// Индикатор MACD и RSI
+// Индикаторы MACD, RSI и ATR
 [macd_line, signal_line, hist_line] = ta.macd(close, i_macd_fast, i_macd_slow, i_macd_sig)
 rsi_val = ta.rsi(close, 14)
+atr_val = ta.atr(atr_period)
+atr_pct = (atr_val / close) * 100.0
+eff_min_p = use_atr_filt ? math.max(min_min_p, atr_mult * atr_pct) : min_min_p
 bool is_macd_bull = macd_line > signal_line
 bool is_macd_bear = macd_line < signal_line
 
@@ -581,12 +589,12 @@ if barstate.islast
     labels_arr.clear()
 
     // Старшая Фиба: Свинг-поиск макро-волн
-    // Младшая Фиба: Локальные импульсы только с подтвержденным завершением (b >= 1)
+    // Младшая Фиба: Локальные импульсы только с подтвержденным завершением (b >= 1) с динамическим порогом ATR
     [maj_l_s, maj_l_low, maj_l_high, maj_l_pct] = find_macro_long(maj_lookb, maj_min_p)
-    [min_l_s, min_l_low, min_l_high, min_l_pct, min_l_bars] = find_minor_long(min_lookb, min_min_p, min_bars)
+    [min_l_s, min_l_low, min_l_high, min_l_pct, min_l_bars] = find_minor_long(min_lookb, eff_min_p, min_bars)
 
     [maj_s_s, maj_s_high, maj_s_low, maj_s_pct] = find_macro_short(maj_lookb, maj_min_p)
-    [min_s_s, min_s_high, min_s_low, min_s_pct, min_s_bars] = find_minor_short(min_lookb, min_min_p, min_bars)
+    [min_s_s, min_s_high, min_s_low, min_s_pct, min_s_bars] = find_minor_short(min_lookb, eff_min_p, min_bars)
 
     bool allow_long  = (i_mode == "Только LONG") or (i_mode == "Оба направления (L+S)") or (i_mode == "Авто (по тренду)" and (na(min_s_pct) or min_l_pct >= min_s_pct))
     bool allow_short = (i_mode == "Только SHORT") or (i_mode == "Оба направления (L+S)") or (i_mode == "Авто (по тренду)" and (na(min_l_pct) or min_s_pct > min_l_pct))
@@ -899,24 +907,37 @@ if barstate.islast
         table.cell(risk_tbl, 0, 1, imp_title, text_color=color.silver, text_size=size.small)
         table.cell(risk_tbl, 1, 1, imp_status, text_color=imp_col, text_size=size.small)
 
-        // 2. Статус MACD (Линия против Сигнала)
+        // 2. Волатильность ATR и динамический порог
+        string atr_title  = "Волатильность ATR (" + str.tostring(atr_period) + "):"
+        string atr_status = ""
+        color  atr_col    = color.silver
+        if use_atr_filt
+            atr_status := str.tostring(atr_pct, "#.##") + "% (Порог ≥ " + str.tostring(eff_min_p, "#.##") + "%)"
+            atr_col    := (has_impulse and cur_imp_pct >= eff_min_p) ? color.lime : color.yellow
+        else
+            atr_status := str.tostring(atr_pct, "#.##") + "% (Фильтр выкл: " + str.tostring(min_min_p, "#.#") + "%)"
+            atr_col    := color.silver
+        table.cell(risk_tbl, 0, 2, atr_title, text_color=color.silver, text_size=size.small)
+        table.cell(risk_tbl, 1, 2, atr_status, text_color=atr_col, text_size=size.small)
+
+        // 3. Статус MACD (Линия против Сигнала)
         bool macd_ok = allow_long ? is_macd_bull : is_macd_bear
         string macd_title  = "MACD (" + str.tostring(i_macd_fast) + "," + str.tostring(i_macd_slow) + "," + str.tostring(i_macd_sig) + "):"
         string macd_status = macd_ok ? (allow_long ? "🟢 БЫЧИЙ (Линия > Сигнал)" : "🔴 МЕДВЕЖИЙ (Линия < Сигнал)") : (allow_long ? "❌ МЕДВЕЖИЙ (Против лонга!)" : "❌ БЫЧИЙ (Против шорта!)")
         color  macd_col    = macd_ok ? color.lime : color.red
-        table.cell(risk_tbl, 0, 2, macd_title, text_color=color.silver, text_size=size.small)
-        table.cell(risk_tbl, 1, 2, macd_status, text_color=macd_col, text_size=size.small)
+        table.cell(risk_tbl, 0, 3, macd_title, text_color=color.silver, text_size=size.small)
+        table.cell(risk_tbl, 1, 3, macd_status, text_color=macd_col, text_size=size.small)
 
-        // 3. Гистограмма MACD и Моментум
+        // 4. Гистограмма MACD и Моментум
         bool hist_growing = allow_long ? (hist_line > hist_line[1]) : (hist_line < hist_line[1])
         string hist_title = "Гистограмма MACD:"
         string hist_val_str = (hist_line >= 0 ? "+" : "") + str.tostring(hist_line, "#.####")
         string hist_status = hist_val_str + (hist_growing ? " (Растет ↗)" : " (Затухает ↘)")
         color  hist_col = (allow_long ? hist_line > 0 : hist_line < 0) ? (hist_growing ? color.lime : #a3e635) : color.orange
-        table.cell(risk_tbl, 0, 3, hist_title, text_color=color.silver, text_size=size.small)
-        table.cell(risk_tbl, 1, 3, hist_status, text_color=hist_col, text_size=size.small)
+        table.cell(risk_tbl, 0, 4, hist_title, text_color=color.silver, text_size=size.small)
+        table.cell(risk_tbl, 1, 4, hist_status, text_color=hist_col, text_size=size.small)
 
-        // 4. Оценка Модуля Качества Импульса (RSI + Фитиль)
+        // 5. Оценка Модуля Качества Импульса (RSI + Фитиль)
         int peak_bars_ago = 0
         if allow_long and not na(min_l_s) and not na(min_l_bars)
             peak_bars_ago := math.max(0, (bar_index - min_l_s) - min_l_bars + 1)
@@ -951,10 +972,10 @@ if barstate.islast
             qual_status := "💎 ОДОБРЕНО (RSI: " + str.tostring(p_rsi, "#.#") + ", Фитиль: " + str.tostring(p_wick, "#.#") + "%)"
             qual_col    := color.lime
 
-        table.cell(risk_tbl, 0, 4, qual_title, bgcolor=color.new(#1e293b, 30), text_color=color.white, text_size=size.small)
-        table.cell(risk_tbl, 1, 4, qual_status, bgcolor=color.new(#1e293b, 30), text_color=qual_col, text_size=size.small)
+        table.cell(risk_tbl, 0, 5, qual_title, bgcolor=color.new(#1e293b, 30), text_color=color.white, text_size=size.small)
+        table.cell(risk_tbl, 1, 5, qual_status, bgcolor=color.new(#1e293b, 30), text_color=qual_col, text_size=size.small)
 
-        // 5. Вероятность сделки в % (Win-Rate)
+        // 6. Вероятность сделки в % (Win-Rate)
         string prob_verdict = ""
         color  prob_col     = color.green
         if not macd_ok
@@ -973,25 +994,25 @@ if barstate.islast
             prob_verdict := "🔵 78% (УМЕРЕННАЯ: Слабый импульс)"
             prob_col     := color.yellow
 
-        table.cell(risk_tbl, 0, 5, "🎯 ВЕРОЯТНОСТЬ СДЕЛКИ:", bgcolor=color.new(#1e293b, 40), text_color=color.white, text_size=size.small)
-        table.cell(risk_tbl, 1, 5, prob_verdict, bgcolor=color.new(#1e293b, 40), text_color=prob_col, text_size=size.small)
+        table.cell(risk_tbl, 0, 6, "🎯 ВЕРОЯТНОСТЬ СДЕЛКИ:", bgcolor=color.new(#1e293b, 40), text_color=color.white, text_size=size.small)
+        table.cell(risk_tbl, 1, 6, prob_verdict, bgcolor=color.new(#1e293b, 40), text_color=prob_col, text_size=size.small)
 
         if swp_detected_long
-            table.cell(risk_tbl, 0, 6, "🎯 СВИП ЛИКВИДНОСТИ:", bgcolor=color.new(#10b981, 20), text_color=color.white, text_size=size.small)
-            table.cell(risk_tbl, 1, 6, "🟢 ЛОЖНЫЙ ПРОБОЙ (-" + str.tostring(swp_pct_val, "#.#") + "%)", bgcolor=color.new(#10b981, 20), text_color=color.lime, text_size=size.small)
-            table.cell(risk_tbl, 0, 7, "  Reclaim план:", text_color=color.silver, text_size=size.small)
-            table.cell(risk_tbl, 1, 7, "TP 0.618-2% (" + fmt_p(swp_target_val) + ") | SL " + fmt_p(swp_ext_val), text_color=color.yellow, text_size=size.small)
+            table.cell(risk_tbl, 0, 7, "🎯 СВИП ЛИКВИДНОСТИ:", bgcolor=color.new(#10b981, 20), text_color=color.white, text_size=size.small)
+            table.cell(risk_tbl, 1, 7, "🟢 ЛОЖНЫЙ ПРОБОЙ (-" + str.tostring(swp_pct_val, "#.#") + "%)", bgcolor=color.new(#10b981, 20), text_color=color.lime, text_size=size.small)
+            table.cell(risk_tbl, 0, 8, "  Reclaim план:", text_color=color.silver, text_size=size.small)
+            table.cell(risk_tbl, 1, 8, "TP 0.618-2% (" + fmt_p(swp_target_val) + ") | SL " + fmt_p(swp_ext_val), text_color=color.yellow, text_size=size.small)
         else if swp_detected_short
-            table.cell(risk_tbl, 0, 6, "🎯 СВИП ЛИКВИДНОСТИ:", bgcolor=color.new(#ef4444, 20), text_color=color.white, text_size=size.small)
-            table.cell(risk_tbl, 1, 6, "🔴 ЛОЖНЫЙ ВЫНОС (+" + str.tostring(swp_pct_val, "#.#") + "%)", bgcolor=color.new(#ef4444, 20), text_color=color.orange, text_size=size.small)
-            table.cell(risk_tbl, 0, 7, "  Reclaim план:", text_color=color.silver, text_size=size.small)
-            table.cell(risk_tbl, 1, 7, "TP 0.618+2% (" + fmt_p(swp_target_val) + ") | SL " + fmt_p(swp_ext_val), text_color=color.yellow, text_size=size.small)
+            table.cell(risk_tbl, 0, 7, "🎯 СВИП ЛИКВИДНОСТИ:", bgcolor=color.new(#ef4444, 20), text_color=color.white, text_size=size.small)
+            table.cell(risk_tbl, 1, 7, "🔴 ЛОЖНЫЙ ВЫНОС (+" + str.tostring(swp_pct_val, "#.#") + "%)", bgcolor=color.new(#ef4444, 20), text_color=color.orange, text_size=size.small)
+            table.cell(risk_tbl, 0, 8, "  Reclaim план:", text_color=color.silver, text_size=size.small)
+            table.cell(risk_tbl, 1, 8, "TP 0.618+2% (" + fmt_p(swp_target_val) + ") | SL " + fmt_p(swp_ext_val), text_color=color.yellow, text_size=size.small)
 
     // ── 💰 РИСК-КАЛЬКУЛЯТОР ОБЪЕМА ПОЗИЦИИ ──
     bool has_active_long = allow_long and not na(min_l_high) and not na(min_l_low)
     bool has_active_short = allow_short and not na(min_s_high) and not na(min_s_low)
 
-    int cur_row = (swp_detected_long or swp_detected_short) ? 8 : 6
+    int cur_row = (swp_detected_long or swp_detected_short) ? 9 : 7
 
     if has_active_long or has_active_short
         string sl_mode_str = i_sl_mode
