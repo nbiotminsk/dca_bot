@@ -669,6 +669,7 @@ class ActiveTradeMonitor:
     layer: Literal["minor", "major"] = "minor"
     p_0382: Optional[float] = None
     touched_0382: bool = True
+    last_skipped_imp_time: Optional[pd.Timestamp] = None
 
 
 def make_order_link_id(sym_short: str, layer_tag: str, side_str: str, order_tag: str) -> str:
@@ -679,6 +680,20 @@ def make_order_link_id(sym_short: str, layer_tag: str, side_str: str, order_tag:
     side_code = "B" if str(side_str).lower() in ("buy", "long") else "S"
     uid = uuid.uuid4().hex[:6]
     return f"FIB-{sym_short}-{layer_tag}-{side_code}-{order_tag}-{uid}"
+
+
+def is_entry_missed(entry_price: float, cur_price: float, is_long: bool = True) -> bool:
+    """
+    Проверяет, не упущен ли вход (цена уже опустилась ниже уровня лимитки на лонге).
+    Для Long: вход упущен, если текущая цена <= цены входа (с допуском 0.05%).
+    Для Short: вход упущен, если текущая цена >= цены входа (с допуском 0.05%).
+    """
+    if cur_price <= 0:
+        return False
+    if is_long:
+        return (cur_price <= entry_price) or (entry_price >= cur_price * 0.9995)
+    else:
+        return (cur_price >= entry_price) or (entry_price <= cur_price * 1.0005)
 
 
 def cancel_monitor_orders(client: Any, m: ActiveTradeMonitor) -> list[dict[str, Any]]:
@@ -759,6 +774,7 @@ def process_monitor_step(
                     console.print(f"🏁 [{m.symbol}] Тайм-аут сетки в режиме Close-Only. Монета завершает работу.")
                     return
                 m.state = "IDLE"
+                m.last_skipped_imp_time = m.imp_end_time
                 m.o1_id = None
                 m.o2_id = None
                 m.o3_id = None
@@ -928,11 +944,21 @@ def process_monitor_step(
             if elapsed_hours > cfg.major_timeout_hours:
                 console.print(f"\n[bold yellow]⏰ [{m.symbol}] [MAJOR] Истек тайм-аут свежести ({elapsed_hours:.1f}ч > {cfg.major_timeout_hours}ч без отката к 0.382). Переход в IDLE.[/bold yellow]")
                 m.state = "IDLE"
+                m.last_skipped_imp_time = m.imp_end_time
                 return
 
         # 3. Проверка пробоя уровня 0.382 (Long: low <= p_0382)
         if m.p_0382 is not None and latest_l <= m.p_0382:
             console.print(f"\n[bold green]🎯 [{m.symbol}] [MAJOR] Цена (${latest_l}) пробила/коснулась уровня 0.382 (${m.p_0382:.4f})![/bold green]")
+            cur_p = client.get_ticker_price(m.symbol) if hasattr(client, "get_ticker_price") else latest_l
+            if cur_p <= 0:
+                cur_p = latest_l
+            if is_entry_missed(m.cur_e1, cur_p, is_long=True):
+                console.print(f"  [yellow]⚠️ [{m.symbol}] [MAJOR] Вход на 0.500 (${m.cur_e1}) уже упущен (рыночная цена ${cur_p} <= ${m.cur_e1}). Полностью пропускаем сетап по этой монете до появления нового импульса.[/yellow]")
+                m.last_skipped_imp_time = m.imp_end_time or (df_now["timestamp"].iloc[-1] if len(df_now) > 0 else None)
+                m.state = "IDLE"
+                return
+
             console.print("  ➜ Большая фиба АКТИВИРОВАНА. Выставляем тройную сетку в стакан Bybit...")
             m.touched_0382 = True
 
@@ -1039,6 +1065,7 @@ def process_monitor_step(
                 console.print(f"[bold green]🏁 [{m.symbol}] Позиция закрыта. Монета находилась в режиме Close-Only и завершает работу.[/bold green]")
                 return
             m.state = "IDLE"
+            m.last_skipped_imp_time = m.imp_end_time
             m.position_was_open = False
         else:
             console.print(f"\n[bold red]🛑 [{m.symbol}] Стоп-лосс на уровне 1.000 (${m.sl}) сработал![/bold red]")
@@ -1093,6 +1120,7 @@ def process_monitor_step(
                 console.print(f"[bold green]🏁 [{m.symbol}] Позиция закрыта. Монета находилась в режиме Close-Only и завершает работу.[/bold green]")
                 return
             m.state = "IDLE"
+            m.last_skipped_imp_time = m.imp_end_time
             m.position_was_open = False
         else:
             console.print(f"\n[bold red]🛑 [{m.symbol}] Стоп-лосс на уровне 1.000 (${m.sl}) сработал![/bold red]")
@@ -1141,6 +1169,7 @@ def process_monitor_step(
                 console.print(f"[bold green]🏁 [{m.symbol}] Позиция закрыта. Монета находилась в режиме Close-Only и завершает работу.[/bold green]")
                 return
             m.state = "IDLE"
+            m.last_skipped_imp_time = m.imp_end_time
             m.position_was_open = False
         else:
             console.print(f"\n[bold red]🛑 [{m.symbol}] Стоп-лосс на уровне 1.000 (${m.sl}) сработал![/bold red]")
@@ -1319,6 +1348,7 @@ def process_monitor_step(
                 console.print(f"[bold green]🏁 [{m.symbol}] Позиция закрыта. Монета находилась в режиме Close-Only и завершает работу.[/bold green]")
                 return
             m.state = "IDLE"
+            m.last_skipped_imp_time = m.imp_end_time
             m.position_was_open = False
 
     # ─── 7. Состояние: АКТИВНАЯ СЕТКА МАНИПУЛЯЦИИ ──────────────────────────────
@@ -1354,6 +1384,7 @@ def process_monitor_step(
                 console.print(f"[bold green]🏁 [{m.symbol}] Позиция закрыта. Монета находилась в режиме Close-Only и завершает работу.[/bold green]")
                 return
             m.state = "IDLE"
+            m.last_skipped_imp_time = m.imp_end_time
             m.position_was_open = False
 
     # ─── 8. Состояние: IDLE (Поиск новых импульсов на закрытии свечи) ───────────
@@ -1396,6 +1427,10 @@ def process_monitor_step(
         )
 
         if setup is not None:
+            # Если этот импульс уже был пропущен (вход на 0.500 упущен) — ждем появления более свежего импульса
+            if m.last_skipped_imp_time is not None and setup.imp_end_time <= m.last_skipped_imp_time:
+                return
+
             layer_tag_log = "[MAJOR]" if is_major else "[MINOR]"
             console.print(f"\n[bold green]✨ [{m.symbol}] {layer_tag_log} На закрытии свечи обнаружен импульс:[/bold green] {setup.description}")
 
@@ -1466,9 +1501,22 @@ def process_monitor_step(
                     except Exception:
                         cur_p = e1
 
-                place_o1 = (e1 < cur_p * 0.9995)
-                place_o2 = bool(e2 and q2 > 0 and tp2 and (e2 < cur_p * 0.9995))
-                place_o3 = bool(e3 and q3 > 0 and tp3 and (e3 < cur_p * 0.9995))
+                is_fib_grid = setup.setup_type in ("TRIPLE_GRID_TRAILING", "TRIPLE_GRID_CORRECTION", "DUAL_GRID_TRAILING", "DUAL_GRID_CORRECTION")
+                is_long = (setup.side == "long")
+                o1_missed = is_entry_missed(e1, cur_p, is_long=is_long)
+
+                # Если вход на 0.500 уже упущен: полностью пропускаем сетап по этой монете до нового импульса
+                if is_fib_grid and (setup.setup_type == "TRIPLE_GRID_CORRECTION" or o1_missed):
+                    cmp_op = "<=" if is_long else ">="
+                    reason = "уровень 0.500 уже был протестирован ранее" if setup.setup_type == "TRIPLE_GRID_CORRECTION" else f"рыночная цена ${cur_p} {cmp_op} ${e1}"
+                    console.print(f"  [yellow]⚠️ [{m.symbol}] [{layer_tag}] Вход на 0.500 (${e1}) уже упущен ({reason}). Полностью пропускаем сетап до появления нового импульса.[/yellow]")
+                    m.last_skipped_imp_time = setup.imp_end_time
+                    m.state = "IDLE"
+                    return
+
+                place_o1 = not o1_missed
+                place_o2 = bool(e2 and q2 > 0 and tp2 and not is_entry_missed(e2, cur_p, is_long=is_long))
+                place_o3 = bool(e3 and q3 > 0 and tp3 and not is_entry_missed(e3, cur_p, is_long=is_long))
 
                 if not place_o1:
                     console.print(f"  [yellow]ℹ️ [{m.symbol}] [{layer_tag}] Текущая цена (${cur_p}) ниже Ордера 1 (${e1}). Ордер 1 пропущен.[/yellow]")
@@ -1479,6 +1527,8 @@ def process_monitor_step(
 
                 if not (place_o1 or place_o2 or place_o3):
                     console.print(f"  [yellow]⚠️ [{m.symbol}] [{layer_tag}] Все уровни сетки выше текущей цены (${cur_p}). Пропуск выставления.[/yellow]")
+                    m.last_skipped_imp_time = setup.imp_end_time
+                    m.state = "IDLE"
                     return
 
                 # Проверка свободной маржи
@@ -1642,6 +1692,7 @@ def main():
     # Сканирование монет по двум независимым слоям: Minor (локальная) и Major (старшая)
     actionable_setups = []
     awaiting_major_setups = []
+    active_monitors: list[ActiveTradeMonitor] = []
 
     layers = [
         ("minor", None, cfg.minor_max_impulse_bars, cfg.minor_risk_usd),
@@ -1702,6 +1753,33 @@ def main():
             e1 = client.round_price(setup.entry_1, symbol)
             tp1 = client.round_price(setup.tp_1, symbol)
             sl = client.round_price(setup.stop_loss, symbol)
+
+            is_fib_grid = setup.setup_type in ("TRIPLE_GRID_TRAILING", "TRIPLE_GRID_CORRECTION", "DUAL_GRID_TRAILING", "DUAL_GRID_CORRECTION")
+            is_long = (setup.side == "long")
+
+            # Проверяем, нет ли уже открытой позиции на Bybit для данного символа
+            pos_open = False
+            if is_live:
+                try:
+                    curr_pos = client.get_position(symbol, side=("Buy" if is_long else "Sell"))
+                    pos_open = float(curr_pos.get("size", "0")) > 0
+                except Exception:
+                    pos_open = False
+
+            o1_missed = is_entry_missed(e1, cur_price, is_long=is_long)
+            if not pos_open and is_fib_grid and (setup.setup_type == "TRIPLE_GRID_CORRECTION" or o1_missed):
+                cmp_op = "<=" if is_long else ">="
+                reason = "уровень 0.500 уже был протестирован ранее" if setup.setup_type == "TRIPLE_GRID_CORRECTION" else f"текущая цена ${cur_price} {cmp_op} ${e1}"
+                console.print(f"[yellow]ℹ️ [{symbol}] {layer_tag_title}: вход на 0.500 (${e1}) уже упущен ({reason}). Полностью пропускаем сетап до появления нового импульса.[/yellow]")
+                active_monitors.append(ActiveTradeMonitor(
+                    symbol=symbol,
+                    setup_type="IDLE",
+                    state="IDLE",
+                    layer=layer_name,
+                    last_candle_time=df["timestamp"].iloc[-1] if len(df) > 0 else None,
+                    last_skipped_imp_time=setup.imp_end_time,
+                ))
+                continue
 
             e2 = client.round_price(setup.entry_2, symbol) if setup.entry_2 else None
             tp2 = client.round_price(setup.tp_2, symbol) if setup.tp_2 else None
@@ -1838,7 +1916,7 @@ def main():
             console.print(f"[bold green]Автоподтверждение (-y): выставляем ордера для {symbols_to_trade_str}...[/bold green]")
 
     # Выставляем ордера для всех подтвержденных сетапов
-    active_monitors: list[ActiveTradeMonitor] = []
+    # (active_monitors уже может содержать IDLE-мониторы монет с упущенным 0.500)
 
     # Проверяем доступную свободную маржу на аккаунте Bybit перед выставлением ордеров
     available_margin = client.get_available_balance() if (is_live and hasattr(client, "get_available_balance")) else 999999.0
@@ -2045,20 +2123,44 @@ def main():
                             available_margin = client.get_available_balance()
 
                     # Проверка цен ордеров относительно текущей рыночной цены (защита от покупки выше рынка)
-                    place_o1 = (e1 < cur_p * 0.9995)
-                    place_o2 = bool(e2 is not None and q2 > 0 and tp2 is not None and (e2 < cur_p * 0.9995))
-                    place_o3 = bool(e3 is not None and q3 > 0 and tp3 is not None and (e3 < cur_p * 0.9995))
+                    is_fib_grid = setup.setup_type in ("TRIPLE_GRID_TRAILING", "TRIPLE_GRID_CORRECTION", "DUAL_GRID_TRAILING", "DUAL_GRID_CORRECTION")
+                    is_long = (setup.side == "long")
+                    o1_missed = is_entry_missed(e1, cur_p, is_long=is_long)
+
+                    # Если вход на 0.500 уже упущен: полностью пропускаем сетап по этой монете до появления нового импульса
+                    if is_fib_grid and (setup.setup_type == "TRIPLE_GRID_CORRECTION" or o1_missed):
+                        cmp_op = "<=" if is_long else ">="
+                        reason = "уровень 0.500 уже был протестирован ранее" if setup.setup_type == "TRIPLE_GRID_CORRECTION" else f"рыночная цена ${cur_p} {cmp_op} ${e1}"
+                        console.print(f"  [yellow]⚠️ [{sym}] [{layer_tag}] Вход на 0.500 (${e1}) уже упущен ({reason}). Полностью пропускаем сетап до появления нового импульса.[/yellow]")
+                        active_monitors.append(ActiveTradeMonitor(
+                            symbol=sym,
+                            setup_type="IDLE",
+                            state="IDLE",
+                            layer=layer_name,
+                            last_skipped_imp_time=setup.imp_end_time,
+                        ))
+                        continue
+
+                    place_o1 = not o1_missed
+                    place_o2 = bool(e2 is not None and q2 > 0 and tp2 is not None and not is_entry_missed(e2, cur_p, is_long=is_long))
+                    place_o3 = bool(e3 is not None and q3 > 0 and tp3 is not None and not is_entry_missed(e3, cur_p, is_long=is_long))
 
                     if not place_o1:
-                        console.print(f"  [yellow]ℹ️ [{sym}] [{layer_tag}] Текущая цена (${cur_p}) уже ниже Ордера 1 (${e1}). Ордер 1 пропущен (опоздание на вход).[/yellow]")
+                        console.print(f"  [yellow]ℹ️ [{sym}] [{layer_tag}] Текущая цена (${cur_p}) ниже Ордера 1 (${e1}). Ордер 1 пропущен (опоздание на вход).[/yellow]")
                     if not place_o2 and e2 is not None and q2 > 0:
-                        console.print(f"  [yellow]ℹ️ [{sym}] [{layer_tag}] Текущая цена (${cur_p}) уже ниже Ордера 2 (${e2}). Ордер 2 пропущен.[/yellow]")
+                        console.print(f"  [yellow]ℹ️ [{sym}] [{layer_tag}] Текущая цена (${cur_p}) ниже Ордера 2 (${e2}). Ордер 2 пропущен.[/yellow]")
                     if not place_o3 and e3 is not None and q3 > 0:
                         console.print(f"  [yellow]ℹ️ [{sym}] [{layer_tag}] Текущая цена (${cur_p}) ниже Ордера 3 (${e3}). Ордер 3 пропущен.[/yellow]")
 
                     if not (place_o1 or place_o2 or place_o3):
                         console.print(f"  [yellow]⚠️ [{sym}] [{layer_tag}] Все уровни сетки выше текущей цены (${cur_p}). Сетка не выставляется, монета переходит в IDLE.[/yellow]")
-                        active_monitors.append(ActiveTradeMonitor(symbol=sym, setup_type="IDLE", state="IDLE", layer=layer_name))
+                        active_monitors.append(ActiveTradeMonitor(
+                            symbol=sym,
+                            setup_type="IDLE",
+                            state="IDLE",
+                            layer=layer_name,
+                            last_skipped_imp_time=setup.imp_end_time,
+                        ))
                         continue
 
                     # Проверка свободной маржи

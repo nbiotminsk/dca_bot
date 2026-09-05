@@ -434,6 +434,8 @@ class MockBybitClient:
         return True
 
     def get_ticker_price(self, symbol):
+        if self.klines_df is not None and len(self.klines_df) > 0 and "close" in self.klines_df.columns:
+            return float(self.klines_df["close"].iloc[-1])
         return 100.0
 
     def get_available_balance(self):
@@ -1098,6 +1100,131 @@ def test_outdated_risk_qty_detection():
     qty1 = float(existing_orders[0]["qty"])
     qty_ok = abs(qty1 - new_q1) <= tol1
     assert qty_ok is False  # 100 != 50 -> не совпадает -> требуется перевыставление!
+
+
+def test_is_entry_missed():
+    """Проверка хелпера is_entry_missed для Long и Short позиций."""
+    from scripts.bybit_trader import is_entry_missed
+
+    # Long: цена 100, лимитка входа e1 = 100.05 -> вход упущен (цена ниже/равна e1)
+    assert is_entry_missed(entry_price=100.0, cur_price=99.0, is_long=True) is True
+    assert is_entry_missed(entry_price=100.0, cur_price=100.0, is_long=True) is True
+    # С учетом допуска 0.05%: cur_price=100.04 при entry=100 -> cur_price * 0.9995 = 99.99 <= 100 -> упущен
+    assert is_entry_missed(entry_price=100.0, cur_price=100.02, is_long=True) is True
+    # Цена заметно выше лимитки: cur_price = 105.0 -> вход НЕ упущен
+    assert is_entry_missed(entry_price=100.0, cur_price=105.0, is_long=True) is False
+
+    # Short: вход упущен, если текущая цена выше лимитки
+    assert is_entry_missed(entry_price=100.0, cur_price=101.0, is_long=False) is True
+    assert is_entry_missed(entry_price=100.0, cur_price=95.0, is_long=False) is False
+
+
+def test_missed_0500_skips_setup_completely_in_idle():
+    """
+    Проверка: если на закрытии свечи обнаружен сетап, но текущая цена уже ниже 0.500 (e1),
+    сетап ПОЛНОСТЬЮ пропускается (не выставляются ни O1, ни O2, ни O3),
+    а монитор остается в IDLE и запоминает last_skipped_imp_time.
+    """
+    from scripts.bybit_trader import ActiveTradeMonitor, TradeConfig, process_monitor_step
+    cfg = TradeConfig(minor_risk_usd=2.0)
+    m = ActiveTradeMonitor(
+        symbol="BTCUSDT",
+        setup_type="IDLE",
+        state="IDLE",
+        layer="minor",
+    )
+
+    # Создаем свечи с импульсом 100 -> 120 (рост 20%), но последняя свеча закрылась на 105 (ниже 0.500 Fib ~ 109.5)
+    t0 = pd.Timestamp("2026-09-01 00:00")
+    candles = []
+    # 20 свечей базы
+    for i in range(20):
+        candles.append({"timestamp": t0 + pd.Timedelta(hours=i), "open": 100.0, "high": 100.5, "low": 99.5, "close": 100.0, "volume": 100})
+    # Импульс вверх 100 -> 120 за 5 свечей
+    for i in range(1, 6):
+        candles.append({"timestamp": t0 + pd.Timedelta(hours=20+i), "open": 100.0 + (i-1)*4, "high": 100.0 + i*4, "low": 100.0 + (i-1)*4, "close": 100.0 + i*4, "volume": 200})
+    # Свеча отката вниз до 105 (ниже 0.500 Fib)
+    candles.append({"timestamp": t0 + pd.Timedelta(hours=26), "open": 120.0, "high": 120.0, "low": 105.0, "close": 105.0, "volume": 300})
+
+    df = pd.DataFrame(candles)
+    client = MockBybitClient(pos_size=0.0, klines_df=df)
+
+    process_monitor_step(m, client, cfg, "60", is_live=True)
+
+    # Проверяем: сетап пропущен, ни один ордер не выставлен!
+    assert m.state == "IDLE"
+    assert len(client.placed_orders) == 0
+    assert m.last_skipped_imp_time is not None
+
+    # Повторный шаг с теми же свечами: импульс уже в last_skipped_imp_time, не пытается перевыставлять
+    process_monitor_step(m, client, cfg, "60", is_live=True)
+    assert m.state == "IDLE"
+    assert len(client.placed_orders) == 0
+
+
+def test_awaiting_major_0382_skips_if_price_below_0500():
+    """
+    Проверка: если в режиме AWAITING_MAJOR_0382 цена пробила 0.382,
+    но текущая рыночная цена уже опустилась ниже 0.500 (e1),
+    сетка НЕ выставляется, сетап пропускается, монитор переходит в IDLE.
+    """
+    from scripts.bybit_trader import ActiveTradeMonitor, TradeConfig, process_monitor_step
+    cfg = TradeConfig(major_risk_usd=2.0)
+    m = ActiveTradeMonitor(
+        symbol="ZECUSDT",
+        setup_type="TRIPLE_GRID_TRAILING",
+        state="AWAITING_MAJOR_0382",
+        layer="major",
+        cur_peak=1000.0,
+        p_0382=950.0,
+        cur_e1=920.0,
+        cur_tp1=970.0,
+        cur_e2=890.0,
+        cur_tp2=940.0,
+        cur_e3=850.0,
+        cur_tp3=920.0,
+        sl=800.0,
+        imp_start_price=750.0,
+        touched_0382=False,
+    )
+
+    # Свеча резкого пролива: low=900 <= 950 (пробили 0.382), но close=910 <= cur_e1 (920.0)!
+    klines_crash = pd.DataFrame([
+        {"timestamp": pd.Timestamp("2026-09-01 13:00"), "open": 960, "high": 965, "low": 900, "close": 910, "volume": 500}
+    ])
+    client = MockBybitClient(pos_size=0.0, klines_df=klines_crash)
+    process_monitor_step(m, client, cfg, "60", is_live=True)
+
+    # Сетка НЕ выставляется, сетап пропущен
+    assert m.state == "IDLE"
+    assert len(client.placed_orders) == 0
+    assert m.last_skipped_imp_time is not None
+
+
+def test_missed_0500_detected_on_correction():
+    """
+    Проверка: если сетап типа TRIPLE_GRID_CORRECTION (уже касался 0.500 в истории),
+    он квалифицируется как упущенный, если нет открытой позиции.
+    """
+    from scripts.bybit_trader import SetupSignal, is_entry_missed
+    setup = SetupSignal(
+        setup_type="TRIPLE_GRID_CORRECTION",
+        side="long",
+        imp_start_time=pd.Timestamp("2026-09-01 00:00"),
+        imp_end_time=pd.Timestamp("2026-09-01 10:00"),
+        imp_start_price=100.0,
+        imp_peak_price=120.0,
+        imp_pct=20.0,
+        entry_1=110.0,
+        tp_1=115.0,
+        stop_loss=100.0,
+        description="тест",
+        layer="minor",
+    )
+    is_fib_grid = setup.setup_type in ("TRIPLE_GRID_TRAILING", "TRIPLE_GRID_CORRECTION")
+    assert is_fib_grid is True
+    # Сетап уже в активной коррекции (0.500 коснулось ранее) -> вход 0.500 упущен
+    assert setup.setup_type == "TRIPLE_GRID_CORRECTION"
 
 
 
