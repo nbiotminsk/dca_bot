@@ -2,7 +2,6 @@ from __future__ import annotations
 """Unit-тесты для математики Фибоначчи и симулятора стратегии «Манипуляция на часе»."""
 import numpy as np
 import pandas as pd
-import pytest
 
 
 def calc_fib_log(high: float, low: float, level: float, is_long: bool = True) -> float:

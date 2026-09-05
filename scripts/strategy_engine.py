@@ -16,7 +16,7 @@
 from __future__ import annotations
 
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Literal
 import numpy as np
@@ -727,7 +727,7 @@ def simulate_manipulation_grid(
     """
     highs = df["high"].values
     lows = df["low"].values
-    closes = df["close"].values
+    df["close"].values
     n = len(df)
 
     trades: list[TradeResult] = []
@@ -749,8 +749,8 @@ def simulate_manipulation_grid(
         dist2 = abs(p_e2 - p_sl)
         qty2 = risk_per_order / dist2 if dist2 > 0 else 0.0
 
-        o1_filled = o1_closed = False
-        o2_filled = o2_closed = False
+        o1_filled = False
+        o2_filled = False
         o1_pnl = o2_pnl = 0.0
         outcome = ""
         exit_k = -1
@@ -779,13 +779,11 @@ def simulate_manipulation_grid(
             if o2_filled:
                 tp_hit = (is_long and h_k >= p_basket) or (not is_long and l_k <= p_basket)
                 if sl_hit:
-                    o1_closed = o2_closed = True
                     o1_pnl = o2_pnl = -risk_per_order
                     outcome = "Manip_SL_both"
                     exit_k = k
                     break
                 elif tp_hit:
-                    o1_closed = o2_closed = True
                     g1 = abs(p_basket - p_e1) - p_e1 * fee_maker - p_basket * fee_taker
                     g2 = abs(p_basket - p_e2) - p_e2 * fee_maker - p_basket * fee_taker
                     o1_pnl = qty1 * g1
@@ -796,13 +794,11 @@ def simulate_manipulation_grid(
             else:
                 tp_hit = (is_long and h_k >= p_tp1) or (not is_long and l_k <= p_tp1)
                 if sl_hit:
-                    o1_closed = True
                     o1_pnl = -risk_per_order
                     outcome = "Manip_SL1"
                     exit_k = k
                     break
                 elif tp_hit:
-                    o1_closed = True
                     g1 = abs(p_tp1 - p_e1) - p_e1 * fee_maker - p_tp1 * fee_taker
                     o1_pnl = qty1 * g1
                     outcome = "Manip_TP1"

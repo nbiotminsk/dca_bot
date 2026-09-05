@@ -8,13 +8,11 @@
 from __future__ import annotations
 
 import argparse
-import math
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Literal
 
-import numpy as np
 import pandas as pd
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -24,7 +22,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from volatility_calc.data_fetcher import fetch_ohlcv
 from indicators.atr import calculate_atr
 from scripts.backtest_strategy_interactive import calc_fib, detect_impulses, Impulse
-from scripts.constants import FEE_MAKER, FEE_TAKER
+from scripts.constants import FEE_MAKER
 
 
 @dataclass
@@ -71,7 +69,7 @@ def simulate_triple_grid(
     highs = df["high"].values
     lows = df["low"].values
     closes = df["close"].values
-    times = df["timestamp"].values
+    df["timestamp"].values
     n = len(df)
 
     is_long = imp.is_long
@@ -82,13 +80,13 @@ def simulate_triple_grid(
     start_price = imp.low
 
     # Расчет уровней Фибоначчи
-    def get_levels(h: float, l: float):
-        p_0500 = calc_fib(h, l, 0.500, is_long=True, scale=scale)
-        p_0618 = calc_fib(h, l, 0.618, is_long=True, scale=scale)
-        p_0786 = calc_fib(h, l, 0.786, is_long=True, scale=scale)
-        p_0236 = calc_fib(h, l, 0.236, is_long=True, scale=scale)
-        p_0382 = calc_fib(h, l, 0.382, is_long=True, scale=scale)
-        p_1000 = l
+    def get_levels(h: float, low: float):
+        p_0500 = calc_fib(h, low, 0.500, is_long=True, scale=scale)
+        p_0618 = calc_fib(h, low, 0.618, is_long=True, scale=scale)
+        p_0786 = calc_fib(h, low, 0.786, is_long=True, scale=scale)
+        p_0236 = calc_fib(h, low, 0.236, is_long=True, scale=scale)
+        p_0382 = calc_fib(h, low, 0.382, is_long=True, scale=scale)
+        p_1000 = low
 
         e1 = p_0500 * (1.0 + entry_buffer_pct / 100.0)
         e2 = p_0618 * (1.0 + entry_buffer_pct / 100.0)
@@ -113,7 +111,6 @@ def simulate_triple_grid(
     o2_filled = False
     o3_filled = False
     entry_bar = -1
-    exit_bar = -1
 
     search_end = min(n, imp.end_idx + 1 + max_hold_hours)
 
@@ -121,7 +118,7 @@ def simulate_triple_grid(
         bars_since_peak = k - imp.end_idx
         h_k = highs[k]
         l_k = lows[k]
-        c_k = closes[k]
+        closes[k]
 
         # Если еще не вошли:
         if not o1_filled:

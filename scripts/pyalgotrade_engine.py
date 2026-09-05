@@ -12,8 +12,7 @@
 from __future__ import annotations
 
 import datetime
-from typing import Optional, Literal
-import numpy as np
+from typing import Optional
 import pandas as pd
 
 from pyalgotrade import strategy, bar

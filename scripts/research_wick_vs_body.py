@@ -7,9 +7,7 @@
 import sys
 from pathlib import Path
 from dataclasses import dataclass
-from typing import Optional, Literal
 import pandas as pd
-import numpy as np
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
@@ -17,8 +15,8 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from volatility_calc.data_fetcher import fetch_ohlcv
 from indicators.atr import calculate_atr
-from scripts.backtest_strategy_interactive import calc_fib, detect_impulses, Impulse
-from scripts.backtest_filters_research import simulate_triple_grid, TradeOutcome
+from scripts.backtest_strategy_interactive import detect_impulses, Impulse
+from scripts.backtest_filters_research import simulate_triple_grid
 
 
 @dataclass
@@ -72,7 +70,7 @@ def analyze_coin(symbol: str, days: int = 90, atr_mult: float = 2.5, timeout_hou
         h1 = highs[i]
         c2_idx = min(len(df) - 1, i + 1)
         o2, h2, l2, c2 = opens[c2_idx], highs[c2_idx], lows[c2_idx], closes[c2_idx]
-        
+
         c2_green = (c2 >= o2)
         c2_closed_above = (c2 > h1)
         rng2 = h2 - l2
@@ -129,7 +127,7 @@ def main():
 
     for name, df_sub in [("ARBUSDT", all_dfs[0]), ("NEARUSDT", all_dfs[1]), ("ZECUSDT", all_dfs[2]), ("ВСЕ 3 МОНЕТЫ ВМЕСТЕ", total_df)]:
         print(f"\n>>> {name} <<<")
-        
+
         # 1. По типу обновления: BODY vs WICK
         for b_t in ["BODY", "WICK"]:
             sub = df_sub[df_sub["b_type"] == b_t]
@@ -137,7 +135,7 @@ def main():
             if n == 0:
                 print(f"  {b_t:5s}: 0 сделок")
                 continue
-            wins = len(sub[sub["win"] == True])
+            wins = len(sub[sub["win"]])
             losses = len(sub[sub["outcome"] == "SL"])
             wr = wins / n * 100.0
             pnl = sub["pnl"].sum()
@@ -151,7 +149,7 @@ def main():
             print(f"      Сделок: {n} | Побед: {wins} | Стопов: {losses} | WR: {wr:.1f}%")
             print(f"      PnL: ${pnl:+.2f} | PF: {pf:.2f} | Ср. PnL: ${avg_pnl:+.2f}/сделка")
 
-        # 2. Детальное разбиение: 
+        # 2. Детальное разбиение:
         #   - Вторая свеча Зеленая vs Красная
         print("\n  Детализация по цвету второй свечи:")
         for c_color, is_g in [("Зеленая (Green)", True), ("Красная (Red)", False)]:
@@ -159,7 +157,7 @@ def main():
             n = len(sub)
             if n == 0:
                 continue
-            wins = len(sub[sub["win"] == True])
+            wins = len(sub[sub["win"]])
             losses = len(sub[sub["outcome"] == "SL"])
             wr = wins / n * 100.0
             pnl = sub["pnl"].sum()
@@ -175,7 +173,7 @@ def main():
             n = len(sub)
             if n == 0:
                 continue
-            wins = len(sub[sub["win"] == True])
+            wins = len(sub[sub["win"]])
             losses = len(sub[sub["outcome"] == "SL"])
             wr = wins / n * 100.0
             pnl = sub["pnl"].sum()

@@ -1,10 +1,8 @@
-import numpy as np
 import pandas as pd
 import pytest
 
 from volatility_calc.drawdown_analyzer import (
     analyze_extremes,
-    MultiHorizonStats,
 )
 
 

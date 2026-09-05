@@ -57,22 +57,22 @@ def aggregate(trades: list[Trade], risk_free_rate: float = 0.0) -> PortfolioStat
     max_mae = min(mae_vals) if mae_vals else None
 
     dca_counter = Counter(m.dca_used for m in metrics)
-    
+
     pnl_floats = [float(p) for p in pnls]
     avg_pnl_float = sum(pnl_floats) / len(pnl_floats)
     std_pnl = (sum((p - avg_pnl_float) ** 2 for p in pnl_floats) / len(pnl_floats)) ** 0.5
-    
+
     sharpe = 0.0
     if std_pnl > 0:
         sharpe = (avg_pnl_float - risk_free_rate) / std_pnl
-    
+
     downside = [p for p in pnl_floats if p < 0]
     sortino = 0.0
     if downside:
         downside_std = (sum(p ** 2 for p in downside) / len(downside)) ** 0.5
         if downside_std > 0:
             sortino = (avg_pnl_float - risk_free_rate) / downside_std
-    
+
     max_dd = 0.0
     peak = 0.0
     for c in cum:
@@ -82,11 +82,11 @@ def aggregate(trades: list[Trade], risk_free_rate: float = 0.0) -> PortfolioStat
         dd = peak - c_float
         if dd > max_dd:
             max_dd = dd
-    
+
     calmar = 0.0
     if max_dd > 0:
         calmar = avg_pnl_float / max_dd
-    
+
     win_pnls = [p for p in pnls if p > 0]
     loss_pnls = [p for p in pnls if p < 0]
     avg_win = sum(win_pnls, ZERO) / Decimal(len(win_pnls)) if win_pnls else ZERO

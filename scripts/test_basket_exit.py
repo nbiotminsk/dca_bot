@@ -14,8 +14,6 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-import pandas as pd
-import numpy as np
 from volatility_calc.data_fetcher import fetch_ohlcv
 from scripts.backtest_strategy_interactive import detect_impulses, calc_fib
 
@@ -38,21 +36,21 @@ def simulate_basket_exit(df, impulses, risk_per_order=10.0, fee_maker=0.0002, fe
     highs = df["high"].values
     lows = df["low"].values
     n = len(df)
-    
+
     trades = []
     last_exit_idx = -1
-    
+
     for imp in impulses:
         if imp.end_idx <= last_exit_idx:
             continue
-            
+
         is_long = imp.is_long
         p_500 = calc_fib(imp.high, imp.low, 0.500, is_long=is_long, scale="log")
         p_618 = calc_fib(imp.high, imp.low, 0.618, is_long=is_long, scale="log")
         p_tp236 = calc_fib(imp.high, imp.low, 0.236, is_long=is_long, scale="log")
         p_tp382 = calc_fib(imp.high, imp.low, 0.382, is_long=is_long, scale="log")
         p_sl100 = calc_fib(imp.high, imp.low, 1.000, is_long=is_long, scale="log")
-        
+
         if is_long:
             loss_500 = (p_500 - p_sl100) + (p_500 * fee_maker) + (p_sl100 * fee_taker)
             gain_500_at_236 = (p_tp236 - p_500) - (p_500 * fee_maker) - (p_tp236 * fee_maker)
@@ -65,49 +63,49 @@ def simulate_basket_exit(df, impulses, risk_per_order=10.0, fee_maker=0.0002, fe
             gain_500_at_382 = (p_500 - p_tp382) - (p_500 * fee_maker) - (p_tp382 * fee_maker)
             loss_618 = (p_sl100 - p_618) + (p_618 * fee_maker) + (p_sl100 * fee_taker)
             gain_618_at_382 = (p_618 - p_tp382) - (p_618 * fee_maker) - (p_tp382 * fee_maker)
-            
+
         qty_500 = risk_per_order / loss_500 if loss_500 > 0 else 0.0
         qty_618 = risk_per_order / loss_618 if loss_618 > 0 else 0.0
-        
+
         o1_filled = False
         o2_filled = False
         o2_active = True
-        
+
         end_search = min(imp.end_idx + 720, n)
         event_exit_idx = -1
         total_pnl = 0.0
         outcome = ""
-        
+
         for k in range(imp.end_idx + 1, end_search):
             h_k = highs[k]
             l_k = lows[k]
-            
+
             if not o1_filled and not o2_filled:
                 if is_long and h_k > imp.high:
                     break
                 if not is_long and l_k < imp.low:
                     break
-                    
+
             if not o1_filled:
                 if is_long and l_k <= p_500:
                     o1_filled = True
                 elif not is_long and h_k >= p_500:
                     o1_filled = True
-                    
+
             if o2_active and not o2_filled:
                 if is_long and l_k <= p_618:
                     o2_filled = True
                 elif not is_long and h_k >= p_618:
                     o2_filled = True
-                    
+
             if not o1_filled and not o2_filled:
                 continue
-                
+
             # Ситуация 1: Заполнен только 0.500
             if o1_filled and not o2_filled:
                 tp_hit = (h_k >= p_tp236) if is_long else (l_k <= p_tp236)
                 sl_hit = (l_k <= p_sl100) if is_long else (h_k >= p_sl100)
-                
+
                 if sl_hit:
                     total_pnl = -risk_per_order
                     outcome = "SL 0.500"
@@ -118,12 +116,12 @@ def simulate_basket_exit(df, impulses, risk_per_order=10.0, fee_maker=0.0002, fe
                     outcome = "TP 0.500->0.236"
                     event_exit_idx = k
                     break
-                    
+
             # Ситуация 2: Заполнены оба ордера -> выход на 0.382
             if o1_filled and o2_filled:
                 tp382_hit = (h_k >= p_tp382) if is_long else (l_k <= p_tp382)
                 sl_hit = (l_k <= p_sl100) if is_long else (h_k >= p_sl100)
-                
+
                 if sl_hit and tp382_hit:
                     total_pnl = -2.0 * risk_per_order
                     outcome = "Both SL"

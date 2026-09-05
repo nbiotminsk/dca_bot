@@ -1,15 +1,12 @@
-from datetime import date
 from decimal import Decimal
 
 import pytest
 
-from trade_tracker.models import Trade, TradeEntry
 from trade_tracker.storage import (
-    csv_columns, save_trade, load_trades, write_csv, write_json,
-    trade_to_csv_row, csv_row_to_trade, DuplicateTradeError,
+    csv_columns, save_trade, load_trades, write_csv, trade_to_csv_row, DuplicateTradeError,
     rebuild_json_from_csv, csv_template,
 )
-from tests.helpers import make_bot, make_trade
+from tests.helpers import make_trade
 
 
 def test_csv_columns_count():

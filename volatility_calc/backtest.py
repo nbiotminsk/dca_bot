@@ -978,7 +978,6 @@ def monte_carlo_simulate(
             liq_price = _liq_price_short(avg_entry, leverage, maintenance_margin_rate)
 
         liquidated = False
-        hit_tp = False
         exit_price = prices[-1]
         n_filled = 1
 
@@ -1019,13 +1018,11 @@ def monte_carlo_simulate(
             if side == "long":
                 tp_level = avg_entry * (1.0 + tp_pct)
                 if price >= tp_level:
-                    hit_tp = True
                     exit_price = tp_level
                     break
             else:
                 tp_level = avg_entry * (1.0 - tp_pct)
                 if price <= tp_level:
-                    hit_tp = True
                     exit_price = tp_level
                     break
 

@@ -19,7 +19,7 @@ import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 import yaml
 
@@ -308,7 +308,7 @@ def find_active_setup(
             e_0786 = p_0786 * buf_mult
             e_1414 = p_1414 * buf_mult
             e_1618 = p_1618 * buf_mult
-            e_2000 = p_2000 * buf_mult
+            p_2000 * buf_mult
 
             # Буфер перед тейком (-0.1% для Лонга для гарантированного раннего закрытия)
             tp_mult = 1.0 - (tp_buffer_pct / 100.0) if is_long else 1.0 + (tp_buffer_pct / 100.0)
@@ -917,7 +917,7 @@ def process_monitor_step(
         # 3. Проверка пробоя уровня 0.382 (Long: low <= p_0382)
         if m.p_0382 is not None and latest_l <= m.p_0382:
             console.print(f"\n[bold green]🎯 [{m.symbol}] [MAJOR] Цена (${latest_l}) пробила/коснулась уровня 0.382 (${m.p_0382:.4f})![/bold green]")
-            console.print(f"  ➜ Большая фиба АКТИВИРОВАНА. Выставляем тройную сетку в стакан Bybit...")
+            console.print("  ➜ Большая фиба АКТИВИРОВАНА. Выставляем тройную сетку в стакан Bybit...")
             m.touched_0382 = True
 
             sym_short = m.symbol.replace("USDT.P", "").replace("USDT", "")
@@ -1365,7 +1365,7 @@ def process_monitor_step(
 
             # Если это большая фиба и цена еще выше 0.382 — не выставляем лимитки, ждем 0.382
             if is_major and not setup.touched_0382:
-                console.print(f"  ➜ Переход в режим ожидания 0.382 (AWAITING_MAJOR_0382). Лимитки не выставляются, маржа свободна.")
+                console.print("  ➜ Переход в режим ожидания 0.382 (AWAITING_MAJOR_0382). Лимитки не выставляются, маржа свободна.")
                 m.setup_type = setup.setup_type
                 m.state = "AWAITING_MAJOR_0382"
                 m.cur_peak = setup.imp_peak_price

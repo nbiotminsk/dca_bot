@@ -12,31 +12,31 @@ DEFAULT_THRESHOLDS = [5.0, 10.0, 15.0]
 
 def compute_hurst_exponent(series: pd.Series, max_lag: int = 100) -> float:
     """Вычислить Hurst exponent для определения режима рынка.
-    
+
     H < 0.5 — mean-reverting (DCA работает хорошо)
     H ≈ 0.5 — random walk (нейтрально)
     H > 0.5 — trending (DCA работает хуже)
-    
+
     Метод: R/S анализ (Rescaled Range).
     """
     values = series.to_numpy(dtype=float)
     values = values[np.isfinite(values)]
     n = len(values)
-    
+
     if n < max_lag * 2:
         max_lag = n // 4
-    
+
     if max_lag < 10:
         return 0.5
-    
+
     rs_values = []
     lag_values = []
-    
+
     for lag in range(10, max_lag + 1, 5):
         n_chunks = n // lag
         if n_chunks < 1:
             continue
-        
+
         rs_chunk = []
         for i in range(n_chunks):
             chunk = values[i * lag:(i + 1) * lag]
@@ -46,19 +46,19 @@ def compute_hurst_exponent(series: pd.Series, max_lag: int = 100) -> float:
             S = np.std(chunk, ddof=1)
             if S > 0:
                 rs_chunk.append(R / S)
-        
+
         if rs_chunk:
             rs_values.append(np.mean(rs_chunk))
             lag_values.append(lag)
-    
+
     if len(rs_values) < 2:
         return 0.5
-    
+
     log_rs = np.log(rs_values)
     log_lag = np.log(lag_values)
-    
+
     slope, _ = np.polyfit(log_lag, log_rs, 1)
-    
+
     return float(slope)
 
 
@@ -81,13 +81,13 @@ class SideStats:
         if arr.size == 0:
             nan = float("nan")
             return cls(nan, nan, nan, nan, nan, nan, nan, nan, nan)
-        
+
         p95 = float(np.percentile(arr, 95))
         p99 = float(np.percentile(arr, 99))
-        
+
         cvar_95 = float(np.mean(arr[arr >= p95])) if np.any(arr >= p95) else p95
         cvar_99 = float(np.mean(arr[arr >= p99])) if np.any(arr >= p99) else p99
-        
+
         return cls(
             mean=float(np.mean(arr)),
             median=float(np.median(arr)),
@@ -128,26 +128,26 @@ class MultiHorizonStats:
 
 def _rolling_extreme_after(series: pd.Series, window: int, func: str = "min") -> np.ndarray:
     """Экстремум (min/max) среди будущих `window` точек после текущей.
-    
+
     Для точки i возвращает min/max среди точек [i+1, i+window].
     Использует pandas.rolling для O(n) производительности.
     """
     values = series.to_numpy(dtype=float)
     n = len(values)
-    
+
     if n == 0:
         return np.array([], dtype=float)
-    
+
     s = pd.Series(values)
     shifted = s.shift(-1)
-    
+
     if func == "min":
         rolled = shifted.rolling(window=window, min_periods=1).min()
     elif func == "max":
         rolled = shifted.rolling(window=window, min_periods=1).max()
     else:
         raise ValueError(f"func должен быть 'min' или 'max', получено {func!r}")
-    
+
     out = rolled.to_numpy(dtype=float, copy=True)
     out[-1] = np.nan
     return out

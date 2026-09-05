@@ -55,33 +55,33 @@ class FullRecommendation:
 
 def _compute_kelly(win_rate: float, avg_win: float, avg_loss: float) -> tuple[float, str]:
     """Критерий Келли: оптимальная доля капитала на сделку.
-    
+
     f* = (p * b - q) / b
     где p — вероятность выигрыша, q = 1 - p, b = avg_win / avg_loss
-    
+
     Returns:
         (kelly_fraction, rationale)
     """
     if win_rate <= 0 or avg_win <= 0 or avg_loss <= 0:
         return 0.0, "Недостаточно данных для расчёта Келли"
-    
+
     p = win_rate / 100.0
     q = 1.0 - p
     b = avg_win / abs(avg_loss)
-    
+
     kelly = (p * b - q) / b
-    
+
     if kelly <= 0:
         rationale = f"Kelly ≤ 0 ({kelly:.3f}): стратегия убыточна, не торговать"
         return 0.0, rationale
-    
+
     half_kelly = kelly / 2.0
     rationale = (
         f"Kelly criterion: f*={kelly:.3f} (win_rate={win_rate:.1f}%, "
         f"avg_win/loss={b:.2f}). Рекомендуется half-Kelly={half_kelly:.3f} "
         f"для снижения волатильности"
     )
-    
+
     return half_kelly, rationale
 
 
@@ -207,7 +207,7 @@ def recommend_all(
     rationale.extend(long_rationale)
     rationale.extend(short_rationale)
     rationale.extend(tp_rationale)
-    
+
     kelly_fraction = 0.0
     kelly_rationale = ""
     if historical_stats:

@@ -117,7 +117,7 @@ def main() -> int:
 
     except (FailedRequestError, InvalidRequestError) as e:
         print(f"\n❌ Ошибка Bybit API: {e}")
-        status = getattr(e, "status_code", None)
+        getattr(e, "status_code", None)
         msg = str(e)
         if "10003" in msg or "10004" in msg:
             print("💡 Подсказка: Проверьте правильность API Key и API Secret.")

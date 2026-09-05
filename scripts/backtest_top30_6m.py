@@ -173,7 +173,6 @@ def main():
     print('-' * 80)
 
     baseline_pnl = None
-    baseline_sl = None
     for fname in FILTERS:
         label = FILTER_LABELS[fname]
         tot_n = sum(results[fname].get(n, {}).get('n', 0) for n in names_ok)
@@ -185,7 +184,6 @@ def main():
 
         if baseline_pnl is None:
             baseline_pnl = tot_pnl
-            baseline_sl = tot_sl
             vs = '  (base)'
         else:
             diff_p = tot_pnl - baseline_pnl

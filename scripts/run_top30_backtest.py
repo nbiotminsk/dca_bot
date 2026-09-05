@@ -62,9 +62,8 @@ def macd_ind(series, fast=12, slow=26, signal=9):
 def run_test():
     days = 180
     print(f'=== Запуск бэктеста: ТОП-30 монет | 1h | {days} дней (6 месяцев) ===')
-    print(f'Конфигурация: Входы 0.500/0.618, Тейки 0.236/0.382, Стоп 1.000, Риск $10/ордер')
-    print(f'Поиск импульсов: min_pct=2.0%, max_bars=6, allow_internal=True
-')
+    print('Конфигурация: Входы 0.500/0.618, Тейки 0.236/0.382, Стоп 1.000, Риск $10/ордер')
+    print('Поиск импульсов: min_pct=2.0%, max_bars=6, allow_internal=True\n')
 
     results = []
 
@@ -141,8 +140,7 @@ def run_test():
     avg_wr_base = (res_df['tr_base'] * res_df['wr_base']).sum() / tot_tr_base if tot_tr_base else 0.0
     avg_wr_macd = (res_df['tr_macd'] * res_df['wr_macd']).sum() / tot_tr_macd if tot_tr_macd else 0.0
 
-    print('
-' + '='*92)
+    print('\n' + '='*92)
     print('ИТОГИ БЭКТЕСТА ЗА 6 МЕСЯЦЕВ (ТОП-30 МОНЕТ)')
     print('='*92)
     print(f'Всего монет протестировано: {len(res_df)}')

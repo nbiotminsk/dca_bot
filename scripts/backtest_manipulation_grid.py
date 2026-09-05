@@ -21,7 +21,6 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-import pandas as pd
 from volatility_calc.data_fetcher import fetch_ohlcv
 from scripts.backtest_strategy_interactive import detect_impulses
 from scripts.strategy_engine import simulate_manipulation_grid, summarize

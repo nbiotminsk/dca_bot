@@ -1,10 +1,9 @@
-from dataclasses import dataclass
 
 from volatility_calc.drawdown_analyzer import (
-    analyze_extremes, MultiHorizonStats, HorizonStats, SideStats,
+    analyze_extremes, SideStats,
 )
 from volatility_calc.liquidation import (
-    assess_liquidation_risk, LiquidationAssessment, RiskLevel,
+    assess_liquidation_risk, RiskLevel,
 )
 import pandas as pd
 import pytest

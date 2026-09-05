@@ -10,14 +10,12 @@
 from __future__ import annotations
 
 import argparse
-import math
 import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Optional
 
-import numpy as np
 import pandas as pd
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -132,9 +130,9 @@ def sim_single_order(
     max_hold = min(entry_k + timeout_candles, n)
     for m in range(entry_k + 1, max_hold):
         h = highs[m]
-        l = lows[m]
-        sl_hit = (l <= p_sl) if is_long else (h >= p_sl)
-        tp_hit = (h >= p_tp) if is_long else (l <= p_tp)
+        low_m = lows[m]
+        sl_hit = (low_m <= p_sl) if is_long else (h >= p_sl)
+        tp_hit = (h >= p_tp) if is_long else (low_m <= p_tp)
 
         if sl_hit and tp_hit:
             return SingleTrade(p_entry, p_sl, "sl", -risk_usd, -dist_sl / p_entry * 100.0, m - entry_k, entry_fib, tp_fib, sl_fib)
@@ -167,7 +165,7 @@ def sim_trailing_breakeven(
 ) -> Optional[dict]:
     highs = df["high"].values
     lows = df["low"].values
-    closes = df["close"].values
+    df["close"].values
     n = len(df)
     is_long = imp.is_long
 
@@ -215,11 +213,11 @@ def sim_trailing_breakeven(
 
     for m in range(entry_k + 1, max_hold):
         h = highs[m]
-        l = lows[m]
+        low_m = lows[m]
 
-        sl_init_hit = (l <= p_sl_init) if is_long else (h >= p_sl_init)
-        trig_hit = (h >= p_trig) if is_long else (l <= p_trig)
-        targ_hit = (h >= p_targ) if is_long else (l <= p_targ)
+        sl_init_hit = (low_m <= p_sl_init) if is_long else (h >= p_sl_init)
+        trig_hit = (h >= p_trig) if is_long else (low_m <= p_trig)
+        targ_hit = (h >= p_targ) if is_long else (low_m <= p_targ)
 
         # Сценарий А (Фикс на 0.382)
         if res_a is None:
@@ -253,7 +251,7 @@ def sim_trailing_breakeven(
                     res_b = ("tp_target", qty * gain_targ)
                     break
         else:
-            be_hit = (l <= p_be) if is_long else (h >= p_be)
+            be_hit = (low_m <= p_be) if is_long else (h >= p_be)
             if be_hit and targ_hit:
                 res_b = ("be_exit", 0.0)
                 break
@@ -396,7 +394,7 @@ def sim_dca_grid(
 ) -> Optional[dict]:
     highs = df["high"].values
     lows = df["low"].values
-    closes = df["close"].values
+    df["close"].values
     n = len(df)
     is_long = imp.is_long
 
@@ -442,14 +440,14 @@ def sim_dca_grid(
 
     for m in range(entry1_k + 1, max_hold):
         h = highs[m]
-        l = lows[m]
+        low_m = lows[m]
 
         if not o2_filled:
-            if (is_long and l <= p_e2) or (not is_long and h >= p_e2):
+            if (is_long and low_m <= p_e2) or (not is_long and h >= p_e2):
                 o2_filled = True
 
-        sl_hit = (l <= p_sl) if is_long else (h >= p_sl)
-        tp_hit = (h >= p_tp) if is_long else (l <= p_tp)
+        sl_hit = (low_m <= p_sl) if is_long else (h >= p_sl)
+        tp_hit = (h >= p_tp) if is_long else (low_m <= p_tp)
 
         if sl_hit and tp_hit:
             total_loss = -(risk_per_order + (risk_per_order * mult_2 if o2_filled else 0.0))
@@ -486,7 +484,7 @@ def main():
             df = fetch_ohlcv(symbol, timeframe="1h", days=args.days, use_cache=True)
             if len(df) < 50 and name == "ASTER":
                 df = fetch_ohlcv("ASTRUSDT", timeframe="1h", days=args.days, use_cache=True)
-            
+
             data_map[name] = df
             imps = detect_impulses(df, min_pct=args.min_impulse, side="both", scale="log")
             impulses_map[name] = imps
@@ -830,11 +828,11 @@ def main():
 
     with open(report_path, "w", encoding="utf-8") as f:
         f.write("# 📊 Исчерпывающий аналитический отчет: Тестирование стратегий Fibonacci (1H, 180 дней)\n\n")
-        f.write(f"* **Период исследования:** 180 дней (6 месяцев, часовой таймфрейм 1H).\n")
+        f.write("* **Период исследования:** 180 дней (6 месяцев, часовой таймфрейм 1H).\n")
         f.write(f"* **Пул монет:** {total_coins} монет Bybit Linear Futures.\n")
         f.write(f"* **Всего обнаружено импульсов:** {total_all_imps}.\n")
-        f.write(f"* **Биржевые комиссии:** Maker 0.02%, Taker 0.055%.\n")
-        f.write(f"* **Заложенный риск:** $20.00 на сетап (масштабирование объема).\n\n")
+        f.write("* **Биржевые комиссии:** Maker 0.02%, Taker 0.055%.\n")
+        f.write("* **Заложенный риск:** $20.00 на сетап (масштабирование объема).\n\n")
         f.write("---\n\n")
 
         # Блок 1
@@ -857,7 +855,7 @@ def main():
 
         # Блок 3
         f.write("## 3. Короткие движения (Скальп) и динамический безубыток (0.500 -> 0.382 -> 0.236)\n\n")
-        f.write(f"### Ключевая статистика переходов:\n")
+        f.write("### Ключевая статистика переходов:\n")
         f.write(f"* **Всего входов на уровне 0.500:** {tot_entries}\n")
         f.write(f"* **Касаний уровня 0.382 после входа:** {reached_0382_count} ({pct_0382:.1f}%)\n")
         f.write(f"* **Из дошедших до 0.382 продолжили движение к 0.236:** {scen_b_tp} (**{conv_to_0236:.1f}%**)\n")

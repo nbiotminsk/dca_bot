@@ -1,9 +1,8 @@
-from datetime import date
 from decimal import Decimal
 
 from trade_tracker.aggregator import aggregate
 from trade_tracker.models import TradeEntry
-from tests.helpers import make_bot, make_trade
+from tests.helpers import make_trade
 
 
 def _win_trade(exit_price="2500"):

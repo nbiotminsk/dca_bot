@@ -1,7 +1,7 @@
 """Доменные модели trade_tracker: Trade, TradeEntry, BotSettingsSnapshot."""
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 from typing import Literal

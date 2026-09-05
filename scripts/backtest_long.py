@@ -12,7 +12,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from volatility_calc.data_fetcher import fetch_ohlcv
-from volatility_calc.backtest import grid_search, coverage_to_ps
+from volatility_calc.backtest import grid_search
 from rich.console import Console
 from rich.table import Table
 

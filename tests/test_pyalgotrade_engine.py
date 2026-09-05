@@ -3,7 +3,7 @@ import pytest
 
 from scripts.strategy_engine import GridConfig, simulate_grid
 from scripts.backtest_strategy_interactive import Impulse
-from scripts.pyalgotrade_engine import run_pyalgotrade_backtest, PyAlgoTradeGridStrategy, DataFrameBarFeed
+from scripts.pyalgotrade_engine import run_pyalgotrade_backtest
 
 
 def test_pyalgotrade_solo_1_matches_simulate_grid():

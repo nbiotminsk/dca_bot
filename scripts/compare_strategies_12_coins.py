@@ -15,7 +15,6 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-import pandas as pd
 import numpy as np
 from volatility_calc.data_fetcher import fetch_ohlcv
 from scripts.backtest_strategy_interactive import (
@@ -48,37 +47,37 @@ SETUPS = [
 
 def calc_dollar_metrics(trades, entry_fib, tp_fib, sl_fib, risk_usd=20.0):
     pnl_usd_list = []
-    
+
     for t in trades:
         is_long = (t.side == "long")
         entry = t.entry_price
         sl = calc_fib(t.impulse_high, t.impulse_low, sl_fib, is_long=is_long, scale="log")
         tp = calc_fib(t.impulse_high, t.impulse_low, tp_fib, is_long=is_long, scale="log")
-        
+
         if is_long:
             loss_per_coin = (entry - sl) + (entry * 0.0002) + (sl * 0.00055)
             gain_per_coin = (tp - entry) - (entry * 0.0002) - (tp * 0.0002)
         else:
             loss_per_coin = (sl - entry) + (entry * 0.0002) + (sl * 0.00055)
             gain_per_coin = (entry - tp) - (entry * 0.0002) - (tp * 0.0002)
-            
+
         qty = risk_usd / loss_per_coin if loss_per_coin > 0 else 0.0
-        
+
         if t.exit_reason == "tp":
             pnl = qty * gain_per_coin
         elif t.exit_reason == "sl":
             pnl = -risk_usd
         else:
             pnl = (t.net_pnl_pct / 100.0) * (qty * entry)
-            
+
         pnl_usd_list.append(pnl)
-        
+
     total_usd = sum(pnl_usd_list)
     wins = [p for p in pnl_usd_list if p > 0]
     losses = [p for p in pnl_usd_list if p < 0]
     avg_win_usd = np.mean(wins) if len(wins) > 0 else 0.0
     avg_loss_usd = np.mean(losses) if len(losses) > 0 else 0.0
-    
+
     return {
         "total_usd": total_usd,
         "avg_win_usd": avg_win_usd,

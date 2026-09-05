@@ -11,7 +11,6 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-import yaml
 
 from trade_tracker.models import Trade, TradeEntry, BotSettingsSnapshot
 from trade_tracker.storage import save_trade, DuplicateTradeError
@@ -144,19 +143,19 @@ def main(argv: list[str] | None = None) -> int:
             return 1
 
     mae = None if args.no_mae else (Decimal(str(args.mae)) if args.mae else None)
-    
+
     exit_price = Decimal(str(args.exit_price))
     if exit_price <= 0:
         print(f"[ERROR] Цена выхода должна быть положительной: {exit_price}", file=sys.stderr)
         return 2
-    
+
     fees = None
     if args.fees:
         fees = Decimal(str(args.fees))
         if fees < 0:
             print(f"[ERROR] Комиссии не могут быть отрицательными: {fees}", file=sys.stderr)
             return 2
-    
+
     trade = Trade(
         date=date.fromisoformat(args.date),
         symbol=args.symbol.upper(),

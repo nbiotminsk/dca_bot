@@ -41,7 +41,6 @@ try:
     from rich.console import Console
     from rich.panel import Panel
     from rich.table import Table
-    from rich.text import Text
     USE_RICH = True
     console = Console()
 except ImportError:
@@ -961,31 +960,40 @@ def run_interactive_wizard() -> dict:
     elif ind_choice == "10":
         print("   Включить RSI? (введите условие, напр. '< 35', или Enter чтобы пропустить):")
         r_inp = input("   > ").strip()
-        if r_inp: rsi_filter = r_inp
+        if r_inp:
+            rsi_filter = r_inp
         print("   Включить CCI? (введите golden или условие, или Enter чтобы пропустить):")
         c_inp = input("   > ").strip()
-        if c_inp: cci_filter = c_inp
+        if c_inp:
+            cci_filter = c_inp
         print("   Включить EMA? (введите период, напр. 200, или Enter чтобы пропустить):")
         e_inp = input("   > ").strip()
-        if e_inp: ema_filter = e_inp
+        if e_inp:
+            ema_filter = e_inp
         print("   Включить MACD? (введите bullish, или Enter чтобы пропустить):")
         m_inp = input("   > ").strip()
-        if m_inp: macd_filter = m_inp
+        if m_inp:
+            macd_filter = m_inp
         print("   Включить Stoch RSI? (введите '< 20', или Enter чтобы пропустить):")
         s_inp = input("   > ").strip()
-        if s_inp: stoch_filter = s_inp
+        if s_inp:
+            stoch_filter = s_inp
         print("   Включить Полосы Боллинджера? (введите touch_lower или '< 0.2', или Enter):")
         b_inp = input("   > ").strip()
-        if b_inp: bb_filter = b_inp
+        if b_inp:
+            bb_filter = b_inp
         print("   Включить SuperTrend? (введите trend, или Enter чтобы пропустить):")
         st_inp = input("   > ").strip()
-        if st_inp: st_filter = st_inp
+        if st_inp:
+            st_filter = st_inp
         print("   Включить ATR? (введите '> 0.5%', или Enter чтобы пропустить):")
         a_inp = input("   > ").strip()
-        if a_inp: atr_filter = a_inp
+        if a_inp:
+            atr_filter = a_inp
         print("   Включить объем? (введите '> sma' или '> 1.5x', или Enter чтобы пропустить):")
         v_inp = input("   > ").strip()
-        if v_inp: vol_filter = v_inp
+        if v_inp:
+            vol_filter = v_inp
 
     return {
         "symbol": symbol,
@@ -1031,9 +1039,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("-d", "--days", type=int, default=180,
                         help="Глубина истории в днях (90, 180, 365, 548, 730 и др.)")
     parser.add_argument("-imp", "--impulse", "--min-impulse", dest="min_impulse", type=float, default=0.5,
-                        help="Минимальный % импульса (от 0.5%%)")
+                        help="Минимальный %% импульса (от 0.5%%)")
     parser.add_argument("-max-imp", "--max-impulse", dest="max_impulse", type=float, default=None,
-                        help="Максимальный % импульса (ограничение сверху, напр. 2.0 или 5.0)")
+                        help="Максимальный %% импульса (ограничение сверху, напр. 2.0 или 5.0)")
     parser.add_argument("--tolerance", type=float, default=0.0,
                         help="Допуск погрешности касания уровней Фибо в %% цены (напр. 0.1 для 0.1%%, по умолчанию 0.0)")
     parser.add_argument("--entry", type=float, default=0.618,
@@ -1071,7 +1079,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--supertrend", type=str, default=None,
                         help="Фильтр SuperTrend, напр. 'trend' (зеленый для Long, красный для Short)")
     parser.add_argument("--atr", type=str, default=None,
-                        help="Фильтр волатильности ATR, напр. '> 0.5%', '> 1.0%', '> sma'")
+                        help="Фильтр волатильности ATR, напр. '> 0.5%%', '> 1.0%%', '> sma'")
     parser.add_argument("--vol", "--volume", dest="volume", type=str, default=None,
                         help="Фильтр объема, напр. '> sma', '> 1.5x', 'spike'")
     parser.add_argument("--allow-overlap", action="store_true",

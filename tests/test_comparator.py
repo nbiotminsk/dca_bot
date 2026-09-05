@@ -1,13 +1,11 @@
-from datetime import date
 from decimal import Decimal
 
 import pytest
 
 from trade_tracker.comparator import (
-    compare_epochs, compare_with_config, group_by_epoch, EpochStats,
+    compare_epochs, compare_with_config, group_by_epoch,
 )
-from trade_tracker.models import TradeEntry
-from trade_tracker.aggregator import aggregate, PortfolioStats
+from trade_tracker.aggregator import aggregate
 from tests.helpers import make_bot, make_trade
 
 

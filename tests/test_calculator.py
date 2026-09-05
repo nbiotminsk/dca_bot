@@ -1,11 +1,10 @@
-from datetime import date
 from decimal import Decimal
 
 import pytest
 
 from trade_tracker.calculator import compute_metrics
 from trade_tracker.models import TradeEntry
-from tests.helpers import make_bot, make_trade
+from tests.helpers import make_trade
 
 
 def test_avg_entry_weighted():

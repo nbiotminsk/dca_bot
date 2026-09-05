@@ -1,7 +1,6 @@
 """rich-таблицы для волатильности и DCA-рекомендации."""
 from __future__ import annotations
 
-from io import StringIO
 
 from rich.console import Console
 from rich.table import Table

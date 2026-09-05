@@ -206,7 +206,11 @@ uv run pytest -v
 
 ---
 
-## 8. Документация для разработчиков и AI-агентов
+## 8. Документация и путеводитель по проекту
 
-* 🧠 **[`AGENT.md`](AGENT.md)** — полное руководство и карта проекта для AI-ассистентов.
-* 📜 **[`strategiya-manipulyaciya-na-chase-gemini.md`](strategiya-manipulyaciya-na-chase-gemini.md)** — глубокая математическая спецификация 3 вариантов стратегии.
+* 🗺️ **[`PROJECT_STRUCTURE.md`](PROJECT_STRUCTURE.md)** — **Подробная карта репозитория**: назначение всех папок, скриптов, веб-калькуляторов и модулей.
+* 🧠 **[`AGENT.md`](AGENT.md)** — полное руководство и правила для AI-ассистентов.
+* 📜 **[`docs/strategies/strategiya-manipulyaciya-na-chase-gemini.md`](docs/strategies/strategiya-manipulyaciya-na-chase-gemini.md)** — глубокая математическая спецификация 3 вариантов стратегии.
+* 📚 **[`docs/`](docs/)** — папка с отчетами по монетам (`docs/coins/`), стратегиями (`docs/strategies/`) и планами развития (`docs/plans/`).
+* 🌐 **[`web/`](web/)** — веб-скринеры и калькуляторы (PHP / HTML).
+

@@ -1,5 +1,4 @@
 import pandas as pd
-import pytest
 from scripts.strategy_engine import (
     GridConfig,
     simulate_grid,

@@ -21,15 +21,14 @@ from scripts.backtest_strategy_interactive import (
     detect_impulses,
     run_backtest,
     compute_statistics,
-    calc_fib,
 )
 
 
 def run_test_suite(symbol: str = "UNIUSDT", days: int = 90, min_impulse: float = 1.5):
-    print(f"================================================================================")
+    print("================================================================================")
     print(f"  КОМПЛЕКСНЫЙ БЭКТЕСТ: {symbol} (1h), ПЕРИОД {days} ДНЕЙ")
     print(f"  Шкала: Логарифмическая (Log Fib) | Мин. импульс: >={min_impulse}%")
-    print(f"================================================================================\n")
+    print("================================================================================\n")
 
     df = fetch_ohlcv(symbol, timeframe="1h", days=days, use_cache=True)
     n_candles = len(df)

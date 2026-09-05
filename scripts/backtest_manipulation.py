@@ -170,12 +170,12 @@ def run_backtest(df: pd.DataFrame, timeout_candles: int = 168, manip_timeout: in
 
     for imp in impulses:
         h = imp.impulse_high
-        l = imp.impulse_low
+        imp_low = imp.impulse_low
 
-        p382 = fib_price(h, l, 0.382)
-        p500 = fib_price(h, l, 0.500)
-        p618 = fib_price(h, l, 0.618)
-        sl   = fib_price(h, l, NORMAL_SL_FIB)   # = l (уровень 1.0)
+        p382 = fib_price(h, imp_low, 0.382)
+        p500 = fib_price(h, imp_low, 0.500)
+        p618 = fib_price(h, imp_low, 0.618)
+        sl   = fib_price(h, imp_low, NORMAL_SL_FIB)   # = imp_low (уровень 1.0)
 
         # ── Обычный сценарий: вход на 0.500 ──────────────────────────────────
         # Ищем первое касание 0.500 после завершения импульса
@@ -266,9 +266,9 @@ def run_backtest(df: pd.DataFrame, timeout_candles: int = 168, manip_timeout: in
         if breach_candle is None:
             continue
 
-        m_ep1 = fib_price(h, l, MANIP_ENTRY_FIB)   # 1.618 — первый вход
-        m_ep2 = fib_price(h, l, MANIP_SL_FIB)       # 2.0   — второй вход (DCA)
-        m_tp  = fib_price(h, l, MANIP_TP_FIB)       # 0.500 — цель для обоих
+        m_ep1 = fib_price(h, imp_low, MANIP_ENTRY_FIB)   # 1.618 — первый вход
+        m_ep2 = fib_price(h, imp_low, MANIP_SL_FIB)       # 2.0   — второй вход (DCA)
+        m_tp  = fib_price(h, imp_low, MANIP_TP_FIB)       # 0.500 — цель для обоих
 
         # Ищем первое касание 1.618
         entry1_candle = None
