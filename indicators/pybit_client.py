@@ -269,6 +269,56 @@ class BybitClient:
         loss3 = q3 * dist3
         return q1, q2, q3, loss1, loss2, loss3
 
+    def calc_residual_order_sizes(
+        self,
+        current_pos_size: float,
+        current_pos_avg_price: float,
+        p_entry2: Optional[float],
+        p_entry3: Optional[float],
+        p_sl: float,
+        total_risk_usd: float = 2.0,
+        symbol: str = "ZECUSDT",
+    ) -> tuple[float, float, float, float, float]:
+        """
+        Рассчитывает объемы Ордеров 2 и 3 с учетом уже открытой позиции и задействованного риска.
+        Суммарный риск: CurrentRisk + Loss2 + Loss3 <= total_risk_usd.
+        Возвращает: (q2, q3, current_risk, loss2_est, loss3_est).
+        """
+        specs = self.get_specs(symbol)
+        current_risk = current_pos_size * abs(current_pos_avg_price - p_sl) if current_pos_size > 0 else 0.0
+        remaining_risk = max(0.0, total_risk_usd - current_risk)
+
+        if remaining_risk <= 0.05 or (p_entry2 is None and p_entry3 is None):
+            return 0.0, 0.0, current_risk, 0.0, 0.0
+
+        # Распределяем остаточный риск между доступными ордерами
+        num_orders = (1 if p_entry2 is not None else 0) + (1 if p_entry3 is not None else 0)
+        risk_each = remaining_risk / num_orders
+
+        q2 = loss2 = 0.0
+        if p_entry2 is not None and p_entry2 > 0:
+            dist2 = abs(p_entry2 - p_sl)
+            raw_q2 = risk_each / dist2 if dist2 > 0 else 0.0
+            min_q2 = specs.min_qty
+            if specs.min_notional > 0:
+                req2 = round(math.ceil((specs.min_notional / p_entry2) / specs.qty_step - 1e-9) * specs.qty_step, specs.qty_decimals)
+                min_q2 = max(min_q2, req2)
+            q2 = max(min_q2, self.round_qty(raw_q2, symbol)) if raw_q2 > 0 else 0.0
+            loss2 = q2 * dist2
+
+        q3 = loss3 = 0.0
+        if p_entry3 is not None and p_entry3 > 0:
+            dist3 = abs(p_entry3 - p_sl)
+            raw_q3 = risk_each / dist3 if dist3 > 0 else 0.0
+            min_q3 = specs.min_qty
+            if specs.min_notional > 0:
+                req3 = round(math.ceil((specs.min_notional / p_entry3) / specs.qty_step - 1e-9) * specs.qty_step, specs.qty_decimals)
+                min_q3 = max(min_q3, req3)
+            q3 = max(min_q3, self.round_qty(raw_q3, symbol)) if raw_q3 > 0 else 0.0
+            loss3 = q3 * dist3
+
+        return q2, q3, current_risk, loss2, loss3
+
     def place_order(
         self,
         symbol: str,
@@ -281,6 +331,7 @@ class BybitClient:
         reduce_only: bool = False,
         order_filter: str = "Order",
         tpsl_mode: str = "Partial",
+        order_link_id: Optional[str] = None,
     ) -> dict[str, Any]:
         """Размещает ордер на Bybit V5."""
         specs = self.get_specs(symbol)
@@ -298,6 +349,8 @@ class BybitClient:
             "tpslMode": tpsl_mode,
             "positionIdx": pos_idx,
         }
+        if order_link_id:
+            params["orderLinkId"] = order_link_id
         if price is not None:
             params["price"] = f"{self.round_price(price, symbol):.{specs.price_decimals}f}"
         if take_profit is not None:
@@ -312,6 +365,12 @@ class BybitClient:
         resp = self.session.place_order(**params)
         ret_code = resp.get("retCode", 0)
         if ret_code != 0:
+            ret_msg = str(resp.get("retMsg", ""))
+            if order_link_id and ("orderlinkid" in ret_msg.lower() or "duplicate" in ret_msg.lower() or ret_code in (10001, 110007)):
+                open_ords = self.get_open_orders(symbol)
+                for o in open_ords:
+                    if o.get("orderLinkId") == order_link_id:
+                        return o
             raise RuntimeError(f"Bybit place_order failed ({ret_code}): {resp.get('retMsg')}")
         return resp.get("result", {})
 
