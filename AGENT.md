@@ -13,7 +13,7 @@
 2. **Индикатор TradingView** (`indicators/fib_dual_grid.pine`) — визуальное отображение импульсов, сеток, свипов и сигналов.
 3. **Интерактивный бэктестер и симулятор** (`scripts/backtest_strategy_interactive.py`, `scripts/backtest_manipulation_grid.py`).
 4. **Модуль анализа волатильности и DCA** (`volatility_calc/`).
-5. **Набор автоматических тестов** (`tests/test_bybit_trader.py`, `tests/test_risk_guard.py`, 173 теста).
+5. **Набор автоматических тестов** (`tests/test_bybit_trader.py`, `tests/test_risk_guard.py`, 174 теста).
 
 ---
 
@@ -21,9 +21,9 @@
 
 | Путь к файлу / каталогу | Назначение и ответственность |
 | :--- | :--- |
-| **`scripts/bybit_trader.py`** | **Главный исполнительный скрипт бота.** Загружает конфиг, сканирует рынок по заданным монетам в двух независимых слоях (Minor $\le 24$ свечей и Major $25..96$ свечей), сохраняет маржу старшей фибы в состоянии `AWAITING_MAJOR_0382` до пробоя 0.382, рассчитывает объемы под риск ($2.00 на слой), выставляет ордера (или симулирует в `--dry-run`), ведет непрерывный фоновый мониторинг (трейлинг, послойная отмена `cancel_monitor_orders`, перенос в безубыток, режим `Close-Only`). |
+| **`scripts/bybit_trader.py`** | **Главный исполнительный скрипт бота.** Загружает конфиг, сканирует рынок по заданным монетам в двух независимых слоях (Minor $\le 20$ свечей и Major $21..96$ свечей), сохраняет маржу старшей фибы в состоянии `AWAITING_MAJOR_0382` до пробоя 0.382, рассчитывает объемы под риск ($2.00 на слой), выставляет ордера (или симулирует в `--dry-run`), ведет непрерывный фоновый мониторинг с раздельными тайм-аутами свежести (`minor_timeout_hours: 24`, `major_timeout_hours: 96`), послойной отменой `cancel_monitor_orders`, переносом в безубыток и режимом `Close-Only`. |
 | **`indicators/pybit_client.py`** | **Клиент Bybit API V5 Linear.** Автоматически определяет режим позиций (**Hedge Mode** `positionIdx: 1/2` vs **One-Way Mode** `0`), округляет цены и объемы по биржевым спецификациям (`tick_size`, `qty_step`), рассчитывает базовые и остаточные объемы (`calc_residual_order_sizes`), размещает (`place_order`), сдвигает (`amend_order`), отменяет (`cancel_order`, `cancel_all_orders`), предотвращает сбросы соединений через `force_retry` (10 попыток с задержкой 3с) и защищает от дублей через `orderLinkId`. Не содержит хардкодных дефолтных символов. |
-| **`config/trade_config.yaml`** | **Основной конфигурационный файл стратегии.** Содержит список торгуемых монет (`symbols`: NEAR, ZEC, ICP, CAKE, STRK, SUI, BNB), раздельные риски (`minor_risk_usd: 2.0`, `major_risk_usd: 2.0`, `manipulation_risk_usd: 2.0`), буферы входа/тейка (`entry_buffer_pct: 0.10`, `tp_buffer_pct: 0.10`), фильтр волатильности (`atr_multiplier: 2.5`), тайм-аут свежести (`timeout_hours: 24`), окно анализа (`lookback_bars: 120`), границы импульсов (`minor_max_impulse_bars: 24`, `major_max_impulse_bars: 96`). |
+| **`config/trade_config.yaml`** | **Основной конфигурационный файл стратегии.** Содержит список торгуемых монет (`symbols`: NEAR, ZEC, ICP, CAKE, STRK, SUI, BNB), раздельные риски (`minor_risk_usd: 2.0`, `major_risk_usd: 2.0`, `manipulation_risk_usd: 2.0`), буферы входа/тейка (`entry_buffer_pct: 0.10`, `tp_buffer_pct: 0.10`), фильтр волатильности (`atr_multiplier: 2.5`), раздельные тайм-ауты свежести (`minor_timeout_hours: 24`, `major_timeout_hours: 96`), окно анализа (`lookback_bars: 120`), границы импульсов (`minor_max_impulse_bars: 20`, `major_max_impulse_bars: 96`). |
 | **`indicators/fib_dual_grid.pine`** | **Скрипт индикатора TradingView (Pine Script v5).** Полная визуальная реализация логики: поиск импульсов (вершина $H$ по абсолютному пику волны), отображение уровней Фибоначчи, отрисовка сеток, детектор ложного пробоя (Sweep Reclaim) с фильтром отскока MACD и тейком на 0.382 при наливе 0.618. |
 | **`indicators/macd.py`** | Расчет гистограммы MACD (12, 26, 9) на pandas. Используется для подтверждения моментума (отскока) при ложном пробое. |
 | **`scripts/backtest_strategy_interactive.py`** | Интерактивный бэктестер стратегии с Rich-таблицами, эмуляцией исполнения ордеров, расчетом логарифмических уровней Фибоначчи (`calc_fib`). |

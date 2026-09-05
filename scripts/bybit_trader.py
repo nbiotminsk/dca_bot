@@ -57,6 +57,8 @@ class TradeConfig:
     min_impulse_pct: float = 2.0
     atr_multiplier: float = 2.5
     timeout_hours: int = 24
+    minor_timeout_hours: int = 24
+    major_timeout_hours: int = 96
     lookback_bars: int = 120
     max_impulse_bars: int = 24
     minor_max_impulse_bars: int = 24
@@ -122,6 +124,14 @@ def load_trade_config(config_path: Optional[str | Path] = None) -> TradeConfig:
         if "timeout_hours" in strat_data:
             val_to = strat_data["timeout_hours"]
             cfg.timeout_hours = int(val_to) if val_to is not None else 0
+            cfg.minor_timeout_hours = cfg.timeout_hours
+        if "minor_timeout_hours" in strat_data:
+            val_mto = strat_data["minor_timeout_hours"]
+            cfg.minor_timeout_hours = int(val_mto) if val_mto is not None else 0
+            cfg.timeout_hours = cfg.minor_timeout_hours
+        if "major_timeout_hours" in strat_data:
+            val_majto = strat_data["major_timeout_hours"]
+            cfg.major_timeout_hours = int(val_majto) if val_majto is not None else 0
         if "lookback_bars" in strat_data:
             cfg.lookback_bars = int(strat_data["lookback_bars"])
         if "max_impulse_bars" in strat_data:
@@ -318,10 +328,12 @@ def find_active_setup(
                 touched_0382 = True
 
             # Проверка тайм-аута свежести:
-            # Если от пика прошло больше timeout_hours, и цена за первые timeout_hours так и не коснулась 0.500 — остыл
+            # Для Minor: если за timeout_hours не коснулась 0.500 — остыл
+            # Для Major: если за timeout_hours не коснулась 0.382 — остыл
             if timeout_hours is not None and timeout_hours > 0 and len(post_df) > timeout_hours:
                 post_slice = post_df.iloc[:timeout_hours]
-                touched_early = (post_slice["low"] <= p_0500).any() if is_long else (post_slice["high"] >= p_0500).any()
+                check_level = p_0382 if layer == "major" else p_0500
+                touched_early = (post_slice["low"] <= check_level).any() if is_long else (post_slice["high"] >= check_level).any()
                 if not touched_early:
                     continue  # Пропускаем остывший в боковике импульс
 
@@ -709,13 +721,14 @@ def process_monitor_step(
         pos_size = float(pos.get("size", 0.0)) if pos else 0.0
 
         # Проверка тайм-аута свежести для незаполненной сетки в режиме TRAILING
-        if pos_size == 0 and cfg.timeout_hours > 0 and m.imp_end_time is not None:
+        effective_timeout = cfg.major_timeout_hours if m.layer == "major" else cfg.timeout_hours
+        if pos_size == 0 and effective_timeout > 0 and m.imp_end_time is not None:
             now_ts = pd.Timestamp.now(tz="UTC")
             imp_ts = pd.to_datetime(m.imp_end_time, utc=True)
             elapsed_hours = (now_ts - imp_ts).total_seconds() / 3600.0
-            if elapsed_hours > cfg.timeout_hours:
+            if elapsed_hours > effective_timeout:
                 layer_log = "[MAJOR]" if m.layer == "major" else "[MINOR]"
-                console.print(f"\n[bold yellow]⏰ [{m.symbol}] {layer_log} Истек тайм-аут свежести импульса ({elapsed_hours:.1f}ч > {cfg.timeout_hours}ч без коррекции к 0.500).[/bold yellow]")
+                console.print(f"\n[bold yellow]⏰ [{m.symbol}] {layer_log} Истек тайм-аут свежести импульса ({elapsed_hours:.1f}ч > {effective_timeout}ч без коррекции к 0.500).[/bold yellow]")
                 console.print(f"  ➜ Снимаем ордера сетки и переводим {m.symbol} в режим ожидания нового импульса (IDLE).")
                 if is_live:
                     cancel_monitor_orders(client, m)
@@ -887,12 +900,12 @@ def process_monitor_step(
             console.print(f"📈 [{m.symbol}] [MAJOR] Новый максимум ${new_peak}! Уровень 0.382 скорректирован до ${m.p_0382:.4f}.")
 
         # 2. Проверка тайм-аута свежести:
-        if cfg.timeout_hours > 0 and m.imp_end_time is not None:
+        if cfg.major_timeout_hours > 0 and m.imp_end_time is not None:
             now_ts = pd.Timestamp.now(tz="UTC")
             imp_ts = pd.to_datetime(m.imp_end_time, utc=True)
             elapsed_hours = (now_ts - imp_ts).total_seconds() / 3600.0
-            if elapsed_hours > cfg.timeout_hours:
-                console.print(f"\n[bold yellow]⏰ [{m.symbol}] [MAJOR] Истек тайм-аут свежести ({elapsed_hours:.1f}ч > {cfg.timeout_hours}ч без отката к 0.382). Переход в IDLE.[/bold yellow]")
+            if elapsed_hours > cfg.major_timeout_hours:
+                console.print(f"\n[bold yellow]⏰ [{m.symbol}] [MAJOR] Истек тайм-аут свежести ({elapsed_hours:.1f}ч > {cfg.major_timeout_hours}ч без отката к 0.382). Переход в IDLE.[/bold yellow]")
                 m.state = "IDLE"
                 return
 
@@ -1318,6 +1331,7 @@ def process_monitor_step(
         min_bars = (cfg.minor_max_impulse_bars + 1) if is_major else None
         max_bars = cfg.major_max_impulse_bars if is_major else cfg.minor_max_impulse_bars
 
+        setup_timeout = cfg.major_timeout_hours if is_major else cfg.minor_timeout_hours
         setup = find_active_setup(
             df_now,
             min_pct=cfg.min_impulse_pct,
@@ -1332,7 +1346,7 @@ def process_monitor_step(
             reclaim_be_trigger_fib=cfg.reclaim_be_trigger_fib,
             reclaim_be_offset_pct=cfg.reclaim_be_offset_pct,
             atr_multiplier=cfg.atr_multiplier,
-            timeout_hours=cfg.timeout_hours,
+            timeout_hours=setup_timeout,
             min_impulse_bars=min_bars,
             max_impulse_bars=max_bars,
             layer=m.layer,
@@ -1575,6 +1589,7 @@ def main():
             is_major = (layer_name == "major")
             layer_tag_title = f"[MAJOR FIB {min_bars}-{max_bars} свечей]" if is_major else f"[MINOR FIB <= {max_bars} свечей]"
 
+            setup_timeout = cfg.major_timeout_hours if is_major else cfg.minor_timeout_hours
             setup = find_active_setup(
                 df,
                 min_pct=cfg.min_impulse_pct,
@@ -1589,7 +1604,7 @@ def main():
                 reclaim_be_trigger_fib=cfg.reclaim_be_trigger_fib,
                 reclaim_be_offset_pct=cfg.reclaim_be_offset_pct,
                 atr_multiplier=cfg.atr_multiplier,
-                timeout_hours=cfg.timeout_hours,
+                timeout_hours=setup_timeout,
                 min_impulse_bars=min_bars,
                 max_impulse_bars=max_bars,
                 layer=layer_name,
@@ -1660,8 +1675,8 @@ def main():
                 t.add_row("Уровень 0.382 Фибы", status_0382)
             if cfg.atr_multiplier > 0:
                 t.add_row("ATR волатильность", f"Множитель {cfg.atr_multiplier:.1f}x ATR(14)")
-            if cfg.timeout_hours > 0:
-                t.add_row("Тайм-аут свежести", f"{cfg.timeout_hours} часов")
+            if setup_timeout > 0:
+                t.add_row("Тайм-аут свежести", f"{setup_timeout} часов")
             t.add_row("Буфер входа", f"+{cfg.entry_buffer_pct:.2f}% перед уровнем")
             t.add_row("Буфер тейка", f"-{cfg.tp_buffer_pct:.2f}% от уровня")
             t.add_row("─" * 20, "─" * 30)

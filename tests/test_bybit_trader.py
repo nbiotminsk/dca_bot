@@ -940,4 +940,38 @@ def test_cancel_monitor_orders_only_cancels_own_layer():
     assert "ord_maj_2" not in cancelled_ids
 
 
+def test_major_timeout_hours_does_not_reset_prematurely():
+    """Тест: при major_timeout_hours=96 и timeout_hours=24, через 30 часов Major не сбрасывается в IDLE."""
+    from scripts.bybit_trader import ActiveTradeMonitor, TradeConfig, process_monitor_step
+    client = MockBybitClient()
+    # 30 часов назад
+    past_time = pd.Timestamp.now(tz="UTC") - pd.Timedelta(hours=30)
+    cfg = TradeConfig(timeout_hours=24, minor_timeout_hours=24, major_timeout_hours=96)
+
+    m = ActiveTradeMonitor(
+        symbol="ZECUSDT",
+        setup_type="TRIPLE_GRID_TRAILING",
+        state="AWAITING_MAJOR_0382",
+        layer="major",
+        imp_start_price=800.0,
+        cur_peak=1000.0,
+        p_0382=900.0,
+        imp_end_time=past_time,
+    )
+
+    # Цена 950 (выше 0.382) -> через 30ч не должно сбросить в IDLE (так как major_timeout=96)
+    client.klines_df = pd.DataFrame([{
+        "timestamp": pd.Timestamp.now(tz="UTC"),
+        "open": 950.0, "high": 955.0, "low": 945.0, "close": 950.0, "volume": 100.0
+    }])
+
+    process_monitor_step(m, client, cfg, "60", is_live=False)
+    assert m.state == "AWAITING_MAJOR_0382"
+
+    # А если прошло 97 часов (> major_timeout_hours=96) -> должен сбросить в IDLE
+    m.imp_end_time = pd.Timestamp.now(tz="UTC") - pd.Timedelta(hours=97)
+    process_monitor_step(m, client, cfg, "60", is_live=False)
+    assert m.state == "IDLE"
+
+
 
