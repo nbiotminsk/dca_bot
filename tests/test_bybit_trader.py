@@ -396,7 +396,7 @@ class MockBybitClient:
     def calc_dual_grid_order_sizes(self, e1, e2, sl, total_risk_usd=2.0, symbol="TEST", equal_weight=True, **kwargs):
         return 1.0, 1.0, 1.0, 1.0
 
-    def calc_triple_grid_order_sizes(self, e1, e2, e3, sl, total_risk_usd=2.0, symbol="TEST", equal_weight=True):
+    def calc_triple_grid_order_sizes(self, e1, e2, e3, sl, total_risk_usd=2.0, symbol="TEST", equal_weight=True, **kwargs):
         return 1.0, 1.0, 1.0, 0.67, 0.67, 0.67
 
     def set_position_tp_sl(self, symbol, take_profit=None, stop_loss=None):
@@ -972,6 +972,55 @@ def test_major_timeout_hours_does_not_reset_prematurely():
     m.imp_end_time = pd.Timestamp.now(tz="UTC") - pd.Timedelta(hours=97)
     process_monitor_step(m, client, cfg, "60", is_live=False)
     assert m.state == "IDLE"
+
+
+def test_calc_triple_grid_order_sizes_weighted_50_30_20():
+    """Проверка расчета объемов тройной сетки с весами входа 50% / 30% / 20%."""
+    from indicators.pybit_client import BybitClient
+    client = BybitClient(testnet=True)
+    client._specs_cache["TESTUSDT"] = InstrumentSpecs(
+        symbol="TESTUSDT",
+        tick_size=0.01,
+        qty_step=0.001,
+        min_qty=0.001,
+        max_qty=10000.0,
+        min_notional=1.0,
+        price_decimals=2,
+        qty_decimals=3,
+    )
+
+    e1 = 100.0
+    e2 = 90.0
+    e3 = 80.0
+    sl = 70.0
+
+    # weights: 50% / 30% / 20%
+    q1, q2, q3, l1, l2, l3 = client.calc_triple_grid_order_sizes(
+        p_entry1=e1,
+        p_entry2=e2,
+        p_entry3=e3,
+        p_sl=sl,
+        total_risk_usd=2.0,
+        symbol="TESTUSDT",
+        equal_weight=False,
+        weights=[0.50, 0.30, 0.20],
+    )
+
+    # Проверяем соотношение номиналов (Notional = q * entry):
+    n1 = q1 * e1
+    n2 = q2 * e2
+    n3 = q3 * e3
+    tot_n = n1 + n2 + n3
+
+    assert pytest.approx(n1 / tot_n, abs=0.02) == 0.50
+    assert pytest.approx(n2 / tot_n, abs=0.02) == 0.30
+    assert pytest.approx(n3 / tot_n, abs=0.02) == 0.20
+
+    # Суммарный убыток при выбивании SL не должен превышать $2.00
+    tot_loss = l1 + l2 + l3
+    assert tot_loss <= 2.0
+    assert pytest.approx(tot_loss, abs=0.05) == 2.0
+
 
 
 

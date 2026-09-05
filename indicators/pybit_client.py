@@ -229,21 +229,50 @@ class BybitClient:
         symbol: str,
         total_risk_usd: float = 2.0,
         equal_weight: bool = True,
+        weights: Optional[list[float]] = None,
     ) -> tuple[float, float, float, float, float, float]:
         """
         Рассчитывает объемы ордеров 1, 2 и 3 так, чтобы суммарный риск при выбивании стопа был равен total_risk_usd.
+        Если weights задан (например, [0.50, 0.30, 0.20]), объемы (notional) распределяются в данной пропорции:
+        50% на Ордер 1 (0.500), 30% на Ордер 2 (0.618), 20% на Ордер 3 (0.786).
         Возвращает: (qty1, qty2, qty3, loss1_est, loss2_est, loss3_est).
         """
         specs = self.get_specs(symbol)
-        risk_per_order = total_risk_usd / 3.0 if equal_weight else total_risk_usd / 3.0
-
         dist1 = abs(p_entry1 - p_sl)
         dist2 = abs(p_entry2 - p_sl)
         dist3 = abs(p_entry3 - p_sl)
 
-        raw_q1 = risk_per_order / dist1 if dist1 > 0 else 0.0
-        raw_q2 = risk_per_order / dist2 if dist2 > 0 else 0.0
-        raw_q3 = risk_per_order / dist3 if dist3 > 0 else 0.0
+        if weights is not None and len(weights) == 3 and not equal_weight:
+            w1, w2, w3 = float(weights[0]), float(weights[1]), float(weights[2])
+            tot_w = w1 + w2 + w3
+            if tot_w > 0:
+                w1, w2, w3 = w1 / tot_w, w2 / tot_w, w3 / tot_w
+            # Суммарный номинал TotalNotional = N
+            # Номиналы: N1 = w1 * N, N2 = w2 * N, N3 = w3 * N
+            # Лоты: raw_q_i = N_i / p_entry_i = (w_i / p_entry_i) * N
+            # Убыток: Loss_i = raw_q_i * dist_i = N * (w_i * dist_i / p_entry_i)
+            # Суммарный убыток = N * sum(w_i * dist_i / p_entry_i) = total_risk_usd
+            # Отсюда N = total_risk_usd / sum(w_i * dist_i / p_entry_i)
+            loss_per_notional = 0.0
+            if p_entry1 > 0 and dist1 > 0:
+                loss_per_notional += w1 * (dist1 / p_entry1)
+            if p_entry2 > 0 and dist2 > 0:
+                loss_per_notional += w2 * (dist2 / p_entry2)
+            if p_entry3 > 0 and dist3 > 0:
+                loss_per_notional += w3 * (dist3 / p_entry3)
+
+            if loss_per_notional > 0:
+                total_notional = total_risk_usd / loss_per_notional
+                raw_q1 = (total_notional * w1) / p_entry1 if p_entry1 > 0 else 0.0
+                raw_q2 = (total_notional * w2) / p_entry2 if p_entry2 > 0 else 0.0
+                raw_q3 = (total_notional * w3) / p_entry3 if p_entry3 > 0 else 0.0
+            else:
+                raw_q1 = raw_q2 = raw_q3 = 0.0
+        else:
+            risk_per_order = total_risk_usd / 3.0
+            raw_q1 = risk_per_order / dist1 if dist1 > 0 else 0.0
+            raw_q2 = risk_per_order / dist2 if dist2 > 0 else 0.0
+            raw_q3 = risk_per_order / dist3 if dist3 > 0 else 0.0
 
         min_q1 = specs.min_qty
         min_q2 = specs.min_qty
@@ -278,6 +307,7 @@ class BybitClient:
         p_sl: float,
         symbol: str,
         total_risk_usd: float = 2.0,
+        weights: Optional[list[float]] = None,
     ) -> tuple[float, float, float, float, float]:
         """
         Рассчитывает объемы Ордеров 2 и 3 с учетом уже открытой позиции и задействованного риска.
@@ -291,30 +321,49 @@ class BybitClient:
         if remaining_risk <= 0.05 or (p_entry2 is None and p_entry3 is None):
             return 0.0, 0.0, current_risk, 0.0, 0.0
 
-        # Распределяем остаточный риск между доступными ордерами
-        num_orders = (1 if p_entry2 is not None else 0) + (1 if p_entry3 is not None else 0)
-        risk_each = remaining_risk / num_orders
+        dist2 = abs(p_entry2 - p_sl) if (p_entry2 is not None and p_entry2 > 0) else 0.0
+        dist3 = abs(p_entry3 - p_sl) if (p_entry3 is not None and p_entry3 > 0) else 0.0
+
+        # Если заданы веса (например, w2=0.30, w3=0.20):
+        if weights is not None and len(weights) == 3 and p_entry2 is not None and p_entry3 is not None:
+            w2, w3 = float(weights[1]), float(weights[2])
+            tot_w = w2 + w3
+            if tot_w > 0:
+                w2, w3 = w2 / tot_w, w3 / tot_w
+            loss_per_notional = 0.0
+            if p_entry2 > 0 and dist2 > 0:
+                loss_per_notional += w2 * (dist2 / p_entry2)
+            if p_entry3 > 0 and dist3 > 0:
+                loss_per_notional += w3 * (dist3 / p_entry3)
+
+            if loss_per_notional > 0:
+                tot_n = remaining_risk / loss_per_notional
+                raw_q2 = (tot_n * w2) / p_entry2
+                raw_q3 = (tot_n * w3) / p_entry3
+            else:
+                raw_q2 = raw_q3 = 0.0
+        else:
+            num_orders = (1 if p_entry2 is not None else 0) + (1 if p_entry3 is not None else 0)
+            risk_each = remaining_risk / num_orders
+            raw_q2 = (risk_each / dist2) if dist2 > 0 else 0.0
+            raw_q3 = (risk_each / dist3) if dist3 > 0 else 0.0
 
         q2 = loss2 = 0.0
-        if p_entry2 is not None and p_entry2 > 0:
-            dist2 = abs(p_entry2 - p_sl)
-            raw_q2 = risk_each / dist2 if dist2 > 0 else 0.0
+        if p_entry2 is not None and p_entry2 > 0 and raw_q2 > 0:
             min_q2 = specs.min_qty
             if specs.min_notional > 0:
                 req2 = round(math.ceil((specs.min_notional / p_entry2) / specs.qty_step - 1e-9) * specs.qty_step, specs.qty_decimals)
                 min_q2 = max(min_q2, req2)
-            q2 = max(min_q2, self.round_qty(raw_q2, symbol)) if raw_q2 > 0 else 0.0
+            q2 = max(min_q2, self.round_qty(raw_q2, symbol))
             loss2 = q2 * dist2
 
         q3 = loss3 = 0.0
-        if p_entry3 is not None and p_entry3 > 0:
-            dist3 = abs(p_entry3 - p_sl)
-            raw_q3 = risk_each / dist3 if dist3 > 0 else 0.0
+        if p_entry3 is not None and p_entry3 > 0 and raw_q3 > 0:
             min_q3 = specs.min_qty
             if specs.min_notional > 0:
                 req3 = round(math.ceil((specs.min_notional / p_entry3) / specs.qty_step - 1e-9) * specs.qty_step, specs.qty_decimals)
                 min_q3 = max(min_q3, req3)
-            q3 = max(min_q3, self.round_qty(raw_q3, symbol)) if raw_q3 > 0 else 0.0
+            q3 = max(min_q3, self.round_qty(raw_q3, symbol))
             loss3 = q3 * dist3
 
         return q2, q3, current_risk, loss2, loss3

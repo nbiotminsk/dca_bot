@@ -46,6 +46,7 @@ class TradeConfig:
     minor_risk_usd: float = 2.0
     major_risk_usd: float = 2.0
     manipulation_risk_usd: float = 2.0
+    grid_weights: list[float] = field(default_factory=lambda: [0.50, 0.30, 0.20])
     entry_buffer_pct: float = 0.10
     tp_buffer_pct: float = 0.10
     reclaim_tp_buffer_pct: float = 2.0
@@ -94,6 +95,10 @@ def load_trade_config(config_path: Optional[str | Path] = None) -> TradeConfig:
             cfg.major_risk_usd = float(risk_data["major_risk_usd"])
         if "manipulation_risk_usd" in risk_data:
             cfg.manipulation_risk_usd = float(risk_data["manipulation_risk_usd"])
+        if "grid_weights" in risk_data:
+            raw_w = risk_data["grid_weights"]
+            if isinstance(raw_w, list) and len(raw_w) == 3:
+                cfg.grid_weights = [float(x) for x in raw_w]
 
         buffer_data = data.get("buffers", {})
         if "entry_buffer_pct" in buffer_data:
@@ -920,7 +925,9 @@ def process_monitor_step(
             setup_risk = cfg.major_risk_usd
 
             if m.cur_e3 and m.cur_e2:
-                q1, q2, q3, _, _, _ = client.calc_triple_grid_order_sizes(m.cur_e1, m.cur_e2, m.cur_e3, m.sl, total_risk_usd=setup_risk, symbol=m.symbol, equal_weight=True)
+                q1, q2, q3, _, _, _ = client.calc_triple_grid_order_sizes(
+                    m.cur_e1, m.cur_e2, m.cur_e3, m.sl, total_risk_usd=setup_risk, symbol=m.symbol, equal_weight=False, weights=cfg.grid_weights
+                )
             elif m.cur_e2:
                 q1, q2, _, _ = client.calc_dual_grid_order_sizes(m.cur_e1, m.cur_e2, m.sl, total_risk_usd=setup_risk, symbol=m.symbol, equal_weight=True)
                 q3 = 0.0
@@ -1389,7 +1396,9 @@ def process_monitor_step(
                 setup_risk = cfg.major_risk_usd if is_major else cfg.minor_risk_usd
 
             if e3 is not None and e2 is not None:
-                q1, q2, q3, _, _, _ = client.calc_triple_grid_order_sizes(e1, e2, e3, sl, total_risk_usd=setup_risk, symbol=m.symbol)
+                q1, q2, q3, _, _, _ = client.calc_triple_grid_order_sizes(
+                    e1, e2, e3, sl, total_risk_usd=setup_risk, symbol=m.symbol, equal_weight=False, weights=cfg.grid_weights
+                )
             elif e2 is not None:
                 q1, q2, _, _ = client.calc_dual_grid_order_sizes(e1, e2, sl, total_risk_usd=setup_risk, symbol=m.symbol, equal_weight=True)
                 q3 = 0.0
@@ -1632,7 +1641,9 @@ def main():
                 setup_risk = layer_risk
 
             if e3 is not None and e2 is not None:
-                q1, q2, q3, loss1, loss2, loss3 = client.calc_triple_grid_order_sizes(e1, e2, e3, sl, total_risk_usd=setup_risk, symbol=symbol, equal_weight=True)
+                q1, q2, q3, loss1, loss2, loss3 = client.calc_triple_grid_order_sizes(
+                    e1, e2, e3, sl, total_risk_usd=setup_risk, symbol=symbol, equal_weight=False, weights=cfg.grid_weights
+                )
                 tot_loss = loss1 + loss2 + loss3
             elif e2 is not None:
                 q1, q2, loss1, loss2 = client.calc_dual_grid_order_sizes(e1, e2, sl, total_risk_usd=setup_risk, symbol=symbol, equal_weight=True)
@@ -1677,6 +1688,8 @@ def main():
                 t.add_row("ATR волатильность", f"Множитель {cfg.atr_multiplier:.1f}x ATR(14)")
             if setup_timeout > 0:
                 t.add_row("Тайм-аут свежести", f"{setup_timeout} часов")
+            if e3 is not None and e2 is not None and cfg.grid_weights:
+                t.add_row("Пропорция входа", f"{int(cfg.grid_weights[0]*100)}% / {int(cfg.grid_weights[1]*100)}% / {int(cfg.grid_weights[2]*100)}% (0.500/0.618/0.786)")
             t.add_row("Буфер входа", f"+{cfg.entry_buffer_pct:.2f}% перед уровнем")
             t.add_row("Буфер тейка", f"-{cfg.tp_buffer_pct:.2f}% от уровня")
             t.add_row("─" * 20, "─" * 30)
@@ -1811,7 +1824,7 @@ def main():
                 else:
                     console.print(f"ℹ️ [{sym}] [{layer_tag}] Остаточный бюджет риска на добор: ${remaining_risk:.2f}.")
                     q2_res, q3_res, _, _, _ = client.calc_residual_order_sizes(
-                        pos_sz, avg_p, e2, e3, sl, total_risk_usd=setup_risk, symbol=sym
+                        pos_sz, avg_p, e2, e3, sl, total_risk_usd=setup_risk, symbol=sym, weights=cfg.grid_weights
                     )
                     # Проверяем, есть ли уже лимитные ордера добора в стакане
                     if len(existing_orders) >= 2:
