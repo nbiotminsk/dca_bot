@@ -43,7 +43,7 @@ console = Console()
 @dataclass
 class TradeConfig:
     total_risk_usd: float = 2.0
-    entry_buffer_pct: float = 0.07
+    entry_buffer_pct: float = 0.10
     tp_buffer_pct: float = 0.10
     reclaim_tp_buffer_pct: float = 2.0
     reclaim_be_trigger_fib: float = 0.786
@@ -177,7 +177,7 @@ def find_active_setup(
     scale: Literal["log", "linear"] = "log",
     max_sweep_pct: float = 0.5,
     allow_close_below: bool = False,
-    entry_buffer_pct: float = 0.07,
+    entry_buffer_pct: float = 0.10,
     tp_buffer_pct: float = 0.1,
     reclaim_tp_buffer_pct: float = 2.0,
     reclaim_be_trigger_fib: float = 0.786,
@@ -187,9 +187,9 @@ def find_active_setup(
 ) -> Optional[SetupSignal]:
     """
     Анализирует свечи на наличие активного не отработанного торгового сетапа (ТОЛЬКО В LONG):
-    1. Трейлинг / Активная тройная сетка (0.500, 0.618, 0.786) с буфером +0.07% перед входом и -0.1% перед тейком.
+    1. Трейлинг / Активная тройная сетка (0.500, 0.618, 0.786) с буфером +0.10% перед входом и -0.1% перед тейком.
     2. Свип ликвидности + MACD Reclaim.
-    3. Манипуляция (1.618 / 2.000) с отступом +0.07% и тейками -0.1%.
+    3. Манипуляция (1.618 / 2.000) с отступом +0.10% и тейками -0.1%.
     """
     if len(df) < 15:
         return None
@@ -242,7 +242,7 @@ def find_active_setup(
             p_2000 = calc_fib(imp.high, imp.low, 2.000, is_long=is_long, scale=scale)
             p_2414 = calc_fib(imp.high, imp.low, 2.414, is_long=is_long, scale=scale)
 
-            # Буфер перед входом (+0.07% для Лонга)
+            # Буфер перед входом (+0.10% для Лонга)
             buf_mult = 1.0 + (entry_buffer_pct / 100.0) if is_long else 1.0 - (entry_buffer_pct / 100.0)
             e_0500 = p_0500 * buf_mult
             e_0618 = p_0618 * buf_mult

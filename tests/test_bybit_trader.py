@@ -200,17 +200,17 @@ def test_active_setup_prioritizes_unbroken_over_broken_sub_impulse():
     assert setup.imp_peak_price == pytest.approx(130.0, rel=1e-2)
 
 
-def test_entry_buffer_007():
-    """Проверка, что буфер 0.07% сдвигает входы ровно на +0.07% выше уровня Фибоначчи."""
+def test_entry_buffer_010():
+    """Проверка, что буфер 0.10% сдвигает входы ровно на +0.10% выше уровня Фибоначчи."""
     # Импульс 812.25 -> 1054.94 (как на ZEC)
     p_0500 = calc_fib(1054.94, 812.25, 0.500, is_long=True, scale="log")
     assert p_0500 == pytest.approx(925.68, rel=1e-3)
 
-    # Применяем буфер 0.07%
-    buffered_e1 = p_0500 * (1.0 + 0.07 / 100.0)
-    assert buffered_e1 == pytest.approx(926.32, rel=1e-3)
+    # Применяем буфер 0.10%
+    buffered_e1 = p_0500 * (1.0 + 0.10 / 100.0)
+    assert buffered_e1 == pytest.approx(926.61, rel=1e-3)
     assert buffered_e1 > p_0500
-    assert (buffered_e1 - p_0500) / p_0500 * 100.0 == pytest.approx(0.07, abs=1e-4)
+    assert (buffered_e1 - p_0500) / p_0500 * 100.0 == pytest.approx(0.10, abs=1e-4)
 
 
 def test_tp_buffer_01():
@@ -230,7 +230,7 @@ def test_trade_config_defaults():
     from scripts.bybit_trader import load_trade_config
     cfg = load_trade_config()
     assert cfg.total_risk_usd == 2.0
-    assert cfg.entry_buffer_pct == 0.07
+    assert cfg.entry_buffer_pct == 0.10
     assert cfg.tp_buffer_pct == 0.10
     assert cfg.reclaim_tp_buffer_pct == 2.0
     assert cfg.reclaim_be_trigger_fib == 0.786
