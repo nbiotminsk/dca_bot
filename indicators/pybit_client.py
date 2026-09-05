@@ -194,8 +194,8 @@ class BybitClient:
         p_entry1: float,
         p_entry2: float,
         p_sl: float,
+        symbol: str,
         total_risk_usd: float = 2.0,
-        symbol: str = "ZECUSDT",
         is_long: bool = True,
         equal_weight: bool = True,
     ) -> tuple[float, float, float, float]:
@@ -226,8 +226,8 @@ class BybitClient:
         p_entry2: float,
         p_entry3: float,
         p_sl: float,
+        symbol: str,
         total_risk_usd: float = 2.0,
-        symbol: str = "ZECUSDT",
         equal_weight: bool = True,
     ) -> tuple[float, float, float, float, float, float]:
         """
@@ -276,8 +276,8 @@ class BybitClient:
         p_entry2: Optional[float],
         p_entry3: Optional[float],
         p_sl: float,
+        symbol: str,
         total_risk_usd: float = 2.0,
-        symbol: str = "ZECUSDT",
     ) -> tuple[float, float, float, float, float]:
         """
         Рассчитывает объемы Ордеров 2 и 3 с учетом уже открытой позиции и задействованного риска.

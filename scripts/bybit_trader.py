@@ -1226,11 +1226,14 @@ def main():
         raw_coins = cfg.symbols
         console.print(f"[bold yellow]Монеты (из конфига):[/bold yellow] [green]{', '.join(raw_coins)}[/green]")
     else:
-        user_coin_input = console.input("[bold yellow]Какую монету(ы) торгуем?[/bold yellow] (например, [green]SUI, BTC, ETH[/green]): ")
-        raw_coins = [s.strip() for s in user_coin_input.split(",") if s.strip()]
-
-    if not raw_coins:
-        console.print("[red]Символы не указаны. Завершение работы.[/red]")
+        console.print(Panel(
+            "[bold red]❌ Ошибка: В конфигурационном файле (trade_config.yaml) не указан список монет для торговли![/bold red]\n\n"
+            "Пожалуйста, добавьте монеты в раздел [cyan]strategy.symbols[/cyan] в [bold]config/trade_config.yaml[/bold], например:\n"
+            "[green]strategy:\n  symbols:\n    - \"SUIUSDT.P\"\n    - \"BNBUSDT.P\"\n    - \"ICPUSDT.P\"[/green]\n\n"
+            "Или укажите монеты через флаг командной строки: [yellow]--symbols SUI,BNB,ICP[/yellow]",
+            title="⚠️ Монеты не заданы",
+            border_style="red",
+        ))
         return
 
     # Приводим к формату Bybit Linear (с поддержкой .P, ZEC -> ZECUSDT) и удаляем дубликаты
