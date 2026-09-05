@@ -569,6 +569,32 @@ def test_process_monitor_step_o1_filled():
     assert m.position_was_open is True
 
 
+def test_process_monitor_step_o1_filled_live_sets_position_tp_sl():
+    """Проверка: при входе Ордера 1 в режиме is_live=True вызывается set_position_tp_sl (TP внутри позиции)."""
+    from scripts.bybit_trader import ActiveTradeMonitor, TradeConfig, process_monitor_step
+    cfg = TradeConfig()
+    m = ActiveTradeMonitor(
+        symbol="TESTUSDT",
+        setup_type="TRIPLE_GRID_TRAILING",
+        state="TRAILING",
+        q1=1.0,
+        q2=1.0,
+        q3=1.0,
+        cur_e1=100.0,
+        cur_tp1=105.0,
+        sl=85.0,
+        has_o2=True,
+        has_o3=True,
+    )
+    client = MockBybitClient(pos_size=1.0)
+    process_monitor_step(m, client, cfg, "60", is_live=True)
+    assert m.state == "O1_FILLED"
+    assert len(client.tp_sl_calls) == 1
+    assert client.tp_sl_calls[0]["symbol"] == "TESTUSDT"
+    assert client.tp_sl_calls[0]["take_profit"] == 105.0
+    assert client.tp_sl_calls[0]["stop_loss"] == 85.0
+
+
 def test_process_monitor_step_both_filled_moves_tp():
     from scripts.bybit_trader import ActiveTradeMonitor, TradeConfig, process_monitor_step
     cfg = TradeConfig()

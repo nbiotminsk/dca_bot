@@ -411,7 +411,7 @@ class BybitClient:
         stop_loss: Optional[float] = None,
         reduce_only: bool = False,
         order_filter: str = "Order",
-        tpsl_mode: str = "Partial",
+        tpsl_mode: str = "Full",
         order_link_id: Optional[str] = None,
     ) -> dict[str, Any]:
         """Размещает ордер на Bybit V5."""
@@ -539,6 +539,26 @@ class BybitClient:
                     pass
         return results
 
+    def cancel_all_stop_orders(self, symbol: str) -> list[dict[str, Any]]:
+        """Отменяет все условные / TP-SL ордера (StopOrder) по символу."""
+        results = []
+        try:
+            self._throttle()
+            resp = self.session.get_open_orders(category="linear", symbol=symbol.upper(), orderFilter="StopOrder")
+            orders = resp.get("result", {}).get("list", [])
+            for o in orders:
+                oid = o.get("orderId", "")
+                if oid:
+                    try:
+                        self._throttle()
+                        r = self.session.cancel_order(category="linear", symbol=symbol.upper(), orderId=oid, orderFilter="StopOrder")
+                        results.append(r)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+        return results
+
     def set_position_tp_sl(
         self,
         symbol: str,
@@ -547,6 +567,7 @@ class BybitClient:
         position_idx: Optional[int] = None,
         tp_trigger_by: str = "MarkPrice",
         sl_trigger_by: str = "MarkPrice",
+        tpsl_mode: str = "Full",
     ) -> dict[str, Any]:
         """Устанавливает или изменяет Take-Profit и/или Stop-Loss для открытой позиции на Bybit V5."""
         if position_idx is None:
@@ -556,6 +577,7 @@ class BybitClient:
             "category": "linear",
             "symbol": symbol.upper(),
             "positionIdx": position_idx,
+            "tpslMode": tpsl_mode,
         }
         if take_profit is not None:
             params["takeProfit"] = f"{self.round_price(take_profit, symbol):.{specs.price_decimals}f}"
@@ -566,10 +588,28 @@ class BybitClient:
 
         self._throttle()
         self._positions_cache.pop(symbol.upper(), None)
-        resp = self.session.set_trading_stop(**params)
+        try:
+            resp = self.session.set_trading_stop(**params)
+        except Exception as e:
+            err_msg = str(e).lower()
+            if "partial" in err_msg or "110072" in err_msg:
+                self.cancel_all_stop_orders(symbol)
+                self._throttle()
+                resp = self.session.set_trading_stop(**params)
+            else:
+                raise e
+
         ret_code = resp.get("retCode", 0)
         if ret_code != 0:
-            raise RuntimeError(f"Bybit set_trading_stop failed ({ret_code}): {resp.get('retMsg')}")
+            ret_msg = str(resp.get("retMsg", ""))
+            if "partial" in ret_msg.lower() or ret_code == 110072:
+                self.cancel_all_stop_orders(symbol)
+                self._throttle()
+                resp = self.session.set_trading_stop(**params)
+                if resp.get("retCode", 0) != 0:
+                    raise RuntimeError(f"Bybit set_trading_stop failed ({resp.get('retCode')}): {resp.get('retMsg')}")
+            else:
+                raise RuntimeError(f"Bybit set_trading_stop failed ({ret_code}): {resp.get('retMsg')}")
         return resp.get("result", {})
 
     def set_position_stop_loss(

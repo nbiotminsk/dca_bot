@@ -920,7 +920,14 @@ def process_monitor_step(
                     m.state = "O1_FILLED"
                     console.print(f"\n[bold cyan]🎉 [{m.symbol}] Ордер 1 (0.500) вошел в позицию! Объем: {pos_size}.[/bold cyan]")
                     console.print(f"  ➜ Тейк-профит на 0.236 Fib (${m.cur_tp1}). Ордер 2 (${m.cur_e2}) и Ордер 3 (${m.cur_e3}) активны в стакане.")
-                return
+                    if is_live:
+                        try:
+                            client.set_position_tp_sl(m.symbol, take_profit=m.cur_tp1, stop_loss=m.sl)
+                            m.tp_basket_applied = True
+                            console.print(f"  ✓ [{m.symbol}] Take-Profit (${m.cur_tp1}) и Stop-Loss (${m.sl}) установлены внутри сделки (Position TP/SL).")
+                        except Exception as err:
+                            console.print(f"  ⚠️ [{m.symbol}] Ошибка установки Position TP/SL: {err}")
+                    return
 
         # Если позиция еще не открыта — сдвигаем сетку за новыми максимумами
         df_now = client.fetch_klines(m.symbol, interval=interval, limit=10)
@@ -2213,6 +2220,12 @@ def main():
                 current_risk = pos_sz * abs(avg_p - sl)
                 remaining_risk = max(0.0, setup_risk - current_risk)
                 console.print(f"ℹ️ [{sym}] [{layer_tag}] Открыта позиция: {pos_sz} шт. @ {avg_p}. Задействованный риск: ${current_risk:.2f} из лимита ${setup_risk:.2f}.")
+                if is_live and tp1 is not None and sl is not None:
+                    try:
+                        client.set_position_tp_sl(sym, take_profit=tp1, stop_loss=sl)
+                        console.print(f"  ✓ [{sym}] [{layer_tag}] TP (${tp1}) и SL (${sl}) подтверждены внутри сделки (Position TP/SL).")
+                    except Exception:
+                        pass
 
                 if remaining_risk <= 0.05:
                     console.print(f"🛡️ [{sym}] [{layer_tag}] Лимит риска ${setup_risk:.2f} уже исчерпан открытой позицией (${current_risk:.2f}). Новые ордера блокируются!")
