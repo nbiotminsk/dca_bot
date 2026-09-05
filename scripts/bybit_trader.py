@@ -58,8 +58,8 @@ class TradeConfig:
     atr_multiplier: float = 2.5
     timeout_hours: int = 24
     lookback_bars: int = 120
-    max_impulse_bars: int = 24
-    minor_max_impulse_bars: int = 24
+    max_impulse_bars: int = 20
+    minor_max_impulse_bars: int = 20
     major_max_impulse_bars: int = 96
     timeframe: str = "1h"
     scale: Literal["log", "linear"] = "log"
