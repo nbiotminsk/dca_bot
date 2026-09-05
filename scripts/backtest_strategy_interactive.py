@@ -135,13 +135,15 @@ def detect_impulses(
     allow_internal: bool = False,
 ) -> list[Impulse]:
     """Поиск подтвержденных импульсов с фильтрацией по диапазону размаха [min_pct, max_pct].
-    
+
     tolerance_pct: допуск погрешности в % цены при касании уровня 0.500 (напр. 0.1 для 0.1%).
     allow_internal: если True, ищет внутренние (вложенные) импульсы внутри более крупных трендов.
     """
     highs = df["high"].values
     lows = df["low"].values
-    times = df["timestamp"].values
+    times = df["timestamp"].values if "timestamp" in df.columns else df.index.values
+    opens = df["open"].values if "open" in df.columns else None
+    closes = df["close"].values if "close" in df.columns else None
     n = len(df)
     impulses: list[Impulse] = []
     tol_mult = tolerance_pct / 100.0
@@ -170,7 +172,9 @@ def detect_impulses(
                     if l_j <= fib_05:
                         broken = True
                         break
-                    if h_j > h_s:
+                    # Подтверждение импульса: свеча обновила High и является зеленой (close >= open)
+                    # Тело не обязательно выше High первой свечи
+                    if h_j > h_s and (opens is None or closes[j] >= opens[j]):
                         is_imp = True
                         cur_h = h_j
                         end_idx = j
@@ -229,7 +233,9 @@ def detect_impulses(
                     if h_j >= fib_05:
                         broken = True
                         break
-                    if l_j < l_s:
+                    # Подтверждение дампа: свеча обновила Low и является красной (close <= open)
+                    # Тело не обязательно ниже Low первой свечи
+                    if l_j < l_s and (opens is None or closes[j] <= opens[j]):
                         is_dump = True
                         cur_l = l_j
                         end_idx = j

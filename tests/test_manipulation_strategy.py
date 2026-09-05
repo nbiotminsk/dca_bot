@@ -397,3 +397,30 @@ class TestSimulator:
         assert len(imps_tol) >= 1
         assert imps_tol[0].high == 110.0
 
+    def test_detect_impulses_green_candle_confirmation(self):
+        from scripts.backtest_strategy_interactive import detect_impulses
+        # 1. Вторая свеча зеленая, но закрылась ниже High первой (пробой фитилем):
+        # Candle 0: High 105.0, Low 100.0, Open 100.0, Close 104.0
+        # Candle 1: High 110.0, Low 103.0, Open 103.5, Close 104.5 (Зеленая! Но Close 104.5 < High_0 105.0)
+        # Candle 2: откат к 104.0 (0.500 fib ~ 104.88)
+        candles_green = [
+            {"timestamp": pd.Timestamp("2026-01-01 00:00"), "open": 100.0, "high": 105.0, "low": 100.0, "close": 104.0, "volume": 100},
+            {"timestamp": pd.Timestamp("2026-01-01 01:00"), "open": 103.5, "high": 110.0, "low": 103.0, "close": 104.5, "volume": 100},
+            {"timestamp": pd.Timestamp("2026-01-01 02:00"), "open": 104.5, "high": 105.0, "low": 104.0, "close": 104.2, "volume": 100},
+        ]
+        imps_green = detect_impulses(pd.DataFrame(candles_green), min_pct=2.0, side="long")
+        assert len(imps_green) == 1
+        assert imps_green[0].high == 110.0
+
+        # 2. Вторая свеча красная (пробой фитилем со сбросом, как ARB):
+        # Candle 1: High 110.0, Low 103.0, Open 105.5, Close 103.5 (Красная!)
+        # Candle 2: падение ниже 0.500 первой свечи (102.5) -> импульс не должен подтвердиться
+        candles_red = [
+            {"timestamp": pd.Timestamp("2026-01-01 00:00"), "open": 100.0, "high": 105.0, "low": 100.0, "close": 104.0, "volume": 100},
+            {"timestamp": pd.Timestamp("2026-01-01 01:00"), "open": 105.5, "high": 110.0, "low": 103.0, "close": 103.5, "volume": 100},
+            {"timestamp": pd.Timestamp("2026-01-01 02:00"), "open": 103.5, "high": 104.0, "low": 101.0, "close": 101.5, "volume": 100},
+        ]
+        imps_red = detect_impulses(pd.DataFrame(candles_red), min_pct=2.0, side="long")
+        assert len(imps_red) == 0
+
+

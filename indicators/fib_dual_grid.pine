@@ -305,8 +305,8 @@ find_minor_long(int lookback, float min_pct, int max_duration) =>
                     if low[k] <= (fib_05_first + tol_05)
                         broken := true
                         break
-                    // Импульс подтверждается ТОЛЬКО закрытием выше High первой свечи бычьей свечой
-                    if close[k] > h_s and close[k] > open[k]
+                    // Импульс подтверждается бычьей свечой (зеленой, close >= open), обновившей High (тело не обязательно выше)
+                    if high[k] > h_s and close[k] >= open[k]
                         is_impulse := true
                         cur_h := high[k]
                         end_idx := k
@@ -454,8 +454,8 @@ find_minor_short(int lookback, float min_pct, int max_duration) =>
                     if high[k] >= (fib_05_first - tol_05)
                         broken := true
                         break
-                    // Дамп подтверждается ТОЛЬКО закрытием ниже Low первой свечи медвежьей свечой
-                    if close[k] < l_s and close[k] < open[k]
+                    // Дамп подтверждается медвежьей свечой (красной, close <= open), обновившей Low (тело не обязательно ниже)
+                    if low[k] < l_s and close[k] <= open[k]
                         is_dump := true
                         cur_l := low[k]
                         end_idx := k
