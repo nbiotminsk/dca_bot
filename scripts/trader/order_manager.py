@@ -58,12 +58,7 @@ def cleanup_orphan_orders_for_layer(
         for o in open_orders:
             link_id = str(o.get("orderLinkId", ""))
             oid = str(o.get("orderId", ""))
-            is_layer_match = link_id.startswith(prefix) or (
-                layer_name == "minor"
-                and "-MIN-" not in link_id
-                and "-MAJ-" not in link_id
-                and link_id.startswith(f"FIB-{sym_short}-")
-            )
+            is_layer_match = link_id.startswith(prefix)
             if is_layer_match and oid and (oid not in active_set and link_id not in active_set):
                 try:
                     res = client.cancel_order(symbol, oid)
@@ -102,12 +97,7 @@ def cancel_monitor_orders(client: Any, m: ActiveTradeMonitor) -> list[dict[str, 
             for o in open_orders:
                 link_id = str(o.get("orderLinkId", ""))
                 oid = str(o.get("orderId", ""))
-                is_layer_match = link_id.startswith(prefix) or (
-                    m.layer == "minor"
-                    and "-MIN-" not in link_id
-                    and "-MAJ-" not in link_id
-                    and link_id.startswith(f"FIB-{sym_short}-")
-                )
+                is_layer_match = link_id.startswith(prefix)
                 if is_layer_match and oid and oid not in (m.o1_id, m.o2_id, m.o3_id):
                     try:
                         cancelled.append(client.cancel_order(m.symbol, oid))

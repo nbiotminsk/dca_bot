@@ -325,17 +325,32 @@ def process_monitor_step(
 
             if m.cur_e3 and m.cur_e2:
                 q1, q2, q3, _, _, _ = client.calc_triple_grid_order_sizes(
-                    m.cur_e1, m.cur_e2, m.cur_e3, m.sl, total_risk_usd=setup_risk, symbol=m.symbol, equal_weight=False, weights=cfg.grid_weights
+                    m.cur_e1, m.cur_e2, m.cur_e3, m.sl, total_risk_usd=setup_risk, symbol=m.symbol, equal_weight=False, weights=cfg.grid_weights,
+                    is_long=(m.side == "long"), fee_maker_pct=cfg.fee_maker_pct, fee_taker_pct=cfg.fee_taker_pct, slippage_buffer_pct=cfg.slippage_buffer_pct,
                 )
             elif m.cur_e2:
-                q1, q2, _, _ = client.calc_dual_grid_order_sizes(m.cur_e1, m.cur_e2, m.sl, total_risk_usd=setup_risk, symbol=m.symbol, equal_weight=True)
+                q1, q2, _, _ = client.calc_dual_grid_order_sizes(
+                    m.cur_e1, m.cur_e2, m.sl, total_risk_usd=setup_risk, symbol=m.symbol, equal_weight=True,
+                    is_long=(m.side == "long"), fee_maker_pct=cfg.fee_maker_pct, fee_taker_pct=cfg.fee_taker_pct, slippage_buffer_pct=cfg.slippage_buffer_pct,
+                )
                 q3 = 0.0
             else:
-                dist1 = abs(m.cur_e1 - m.sl)
-                specs = client.get_specs(m.symbol)
-                q1 = client.round_qty(setup_risk / dist1 if dist1 > 0 else specs.min_qty, m.symbol)
+                fee_open = cfg.fee_maker_pct / 100.0
+                fee_close = cfg.fee_taker_pct / 100.0
+                slip = cfg.slippage_buffer_pct / 100.0
+                worst_sl = m.sl * (1.0 - slip) if m.side == "long" else m.sl * (1.0 + slip)
+                unit_loss1 = abs(m.cur_e1 - worst_sl) + m.cur_e1 * fee_open + worst_sl * fee_close
+                raw_q1 = setup_risk / unit_loss1 if unit_loss1 > 0 else 0.0
+                q1 = client.round_qty(raw_q1, m.symbol) if raw_q1 > 0 else 0.0
                 q2 = 0.0
                 q3 = 0.0
+
+            specs = client.get_specs(m.symbol)
+            if q1 <= 0 or (specs.min_notional > 0 and q1 * m.cur_e1 < specs.min_notional):
+                console.print(f"  [yellow]⚠️ [{m.symbol}] [MAJOR] Расчетный объем ({q1 * m.cur_e1:.2f}) ниже minNotional (${specs.min_notional}) при лимите риска ${setup_risk:.2f}. Сделка пропущена для защиты лимита риска.[/yellow]")
+                m.state = "IDLE"
+                m.last_skipped_imp_time = m.imp_end_time or (df_now["timestamp"].iloc[-1] if len(df_now) > 0 else None)
+                return
 
             m.q1, m.q2, m.q3 = q1, q2, q3
             m.has_o2 = (m.cur_e2 is not None and q2 > 0)
@@ -355,18 +370,29 @@ def process_monitor_step(
                         console.print(f"[yellow]⏸️ [{m.symbol}] [MAJOR] Недостаточно свободной маржи (${avail_m:.2f} < ${req_m * 1.05:.2f}). Откладываем выставление сетки.[/yellow]")
                         return
 
+                placed_attempt_ids = []
                 try:
                     r1 = client.place_order(symbol=m.symbol, side="Buy", order_type="Limit", qty=q1, price=m.cur_e1, take_profit=m.cur_tp1, stop_loss=m.sl, order_link_id=make_order_link_id(sym_short, layer_tag, "Buy", "O1"))
                     o1_id = r1.get("orderId")
+                    placed_attempt_ids.append(o1_id)
                     if m.cur_e2 and q2 > 0 and m.cur_tp2:
                         r2 = client.place_order(symbol=m.symbol, side="Buy", order_type="Limit", qty=q2, price=m.cur_e2, take_profit=m.cur_tp2, stop_loss=m.sl, order_link_id=make_order_link_id(sym_short, layer_tag, "Buy", "O2"))
                         o2_id = r2.get("orderId")
+                        placed_attempt_ids.append(o2_id)
                     if m.cur_e3 and q3 > 0 and m.cur_tp3:
                         r3 = client.place_order(symbol=m.symbol, side="Buy", order_type="Limit", qty=q3, price=m.cur_e3, take_profit=m.cur_tp3, stop_loss=m.sl, order_link_id=make_order_link_id(sym_short, layer_tag, "Buy", "O3"))
                         o3_id = r3.get("orderId")
+                        placed_attempt_ids.append(o3_id)
                     console.print(f"  ✓ [{m.symbol}] [MAJOR] Размещена сетка: Вход 1 ${m.cur_e1}, Вход 2 ${m.cur_e2 or '-'}, Вход 3 ${m.cur_e3 or '-'}")
                 except Exception as err:
                     console.print(f"[red]❌ [{m.symbol}] [MAJOR] Ошибка размещения сетки: {err}[/red]")
+                    for cancel_oid in placed_attempt_ids:
+                        if cancel_oid:
+                            try:
+                                client.cancel_order(m.symbol, cancel_oid)
+                                console.print(f"[yellow][{m.symbol}] [MAJOR] Откачен ордер {cancel_oid}.[/yellow]")
+                            except Exception:
+                                pass
                     return
 
             m.o1_id = o1_id
@@ -852,8 +878,26 @@ def process_monitor_step(
 
             # На каждый ордер выделяется cfg.manipulation_risk_usd ($2.0), на корзину 2 * manipulation_risk_usd ($4.0)
             q1_m, q2_m, l1, l2 = client.calc_dual_grid_order_sizes(
-                e_1414, e_1618, sl_2414, total_risk_usd=cfg.manipulation_risk_usd * 2.0, symbol=m.symbol, equal_weight=True
+                e_1414,
+                e_1618,
+                sl_2414,
+                total_risk_usd=cfg.manipulation_risk_usd * 2.0,
+                symbol=m.symbol,
+                equal_weight=True,
+                fee_maker_pct=cfg.fee_maker_pct,
+                fee_taker_pct=cfg.fee_taker_pct,
+                slippage_buffer_pct=cfg.slippage_buffer_pct,
             )
+
+            specs = client.get_specs(m.symbol) if hasattr(client, "get_specs") else None
+            min_notional = specs.min_notional if specs else 0.0
+            min_qty = specs.min_qty if specs else 0.0
+
+            # Защита Manipulation от minNotional/minQty: обязательный ордер q1_m (1.414)
+            if q1_m < min_qty or (min_notional > 0 and (q1_m * e_1414) < min_notional):
+                console.print(f"  [yellow]⚠️ [{m.symbol}] [MANIPULATION] Объем первого ордера ({q1_m} @ ${e_1414}, notional: ${q1_m * e_1414:.2f}) не проходит minQty ({min_qty}) / minNotional (${min_notional}). Переход в безопасный IDLE.[/yellow]")
+                m.state = "IDLE"
+                return
 
             if is_live:
                 if hasattr(client, "get_available_balance") and hasattr(client, "calc_required_margin"):
@@ -864,18 +908,32 @@ def process_monitor_step(
                         m.state = "IDLE"
                         return
 
+                placed_attempt_ids = []
                 try:
                     cancel_monitor_orders(client, m)
                     layer_tag = "MAJ" if m.layer == "major" else "MIN"
                     sym_short = m.symbol.replace("USDT.P", "").replace("USDT", "")
                     r1 = client.place_order(symbol=m.symbol, side="Buy", order_type="Limit", qty=q1_m, price=e_1414, take_profit=tp_1000, stop_loss=sl_2414, order_link_id=make_order_link_id(sym_short, layer_tag, "Buy", "M1"))
-                    r2 = client.place_order(symbol=m.symbol, side="Buy", order_type="Limit", qty=q2_m, price=e_1618, take_profit=e_1414, stop_loss=sl_2414, order_link_id=make_order_link_id(sym_short, layer_tag, "Buy", "M2"))
                     m.o1_id = r1.get("orderId")
-                    m.o2_id = r2.get("orderId")
+                    placed_attempt_ids.append(m.o1_id)
                     console.print(f"  ✓ Ордер 1: Limit Buy {q1_m} @ ${e_1414}, TP: ${tp_1000}, SL: ${sl_2414}")
-                    console.print(f"  ✓ Ордер 2: Limit Buy {q2_m} @ ${e_1618}, TP: ${e_1414}, SL: ${sl_2414}")
+
+                    if q2_m >= min_qty and (min_notional <= 0 or (q2_m * e_1618) >= min_notional):
+                        r2 = client.place_order(symbol=m.symbol, side="Buy", order_type="Limit", qty=q2_m, price=e_1618, take_profit=e_1414, stop_loss=sl_2414, order_link_id=make_order_link_id(sym_short, layer_tag, "Buy", "M2"))
+                        m.o2_id = r2.get("orderId")
+                        placed_attempt_ids.append(m.o2_id)
+                        console.print(f"  ✓ Ордер 2: Limit Buy {q2_m} @ ${e_1618}, TP: ${e_1414}, SL: ${sl_2414}")
                 except Exception as err:
                     console.print(f"  ❌ Ошибка выставления сетки манипуляции: {err}")
+                    for cancel_oid in placed_attempt_ids:
+                        if cancel_oid:
+                            try:
+                                client.cancel_order(m.symbol, cancel_oid)
+                                console.print(f"[yellow][{m.symbol}] [MANIPULATION] Откачен ордер {cancel_oid}.[/yellow]")
+                            except Exception:
+                                pass
+                    m.o1_id = None
+                    m.o2_id = None
                     m.state = "IDLE"
                     return
 
@@ -1119,17 +1177,43 @@ def process_monitor_step(
 
             if e3 is not None and e2 is not None:
                 q1, q2, q3, _, _, _ = client.calc_triple_grid_order_sizes(
-                    e1, e2, e3, sl, total_risk_usd=setup_risk, symbol=m.symbol, equal_weight=False, weights=cfg.grid_weights
+                    e1, e2, e3, sl, total_risk_usd=setup_risk, symbol=m.symbol, equal_weight=False, weights=cfg.grid_weights,
+                    is_long=(setup.side == "long"), fee_maker_pct=cfg.fee_maker_pct, fee_taker_pct=cfg.fee_taker_pct, slippage_buffer_pct=cfg.slippage_buffer_pct,
                 )
             elif e2 is not None:
-                q1, q2, _, _ = client.calc_dual_grid_order_sizes(e1, e2, sl, total_risk_usd=setup_risk, symbol=m.symbol, equal_weight=True)
+                q1, q2, _, _ = client.calc_dual_grid_order_sizes(
+                    e1, e2, sl, total_risk_usd=setup_risk, symbol=m.symbol, equal_weight=True,
+                    is_long=(setup.side == "long"), fee_maker_pct=cfg.fee_maker_pct, fee_taker_pct=cfg.fee_taker_pct, slippage_buffer_pct=cfg.slippage_buffer_pct,
+                )
                 q3 = 0.0
             else:
-                dist1 = abs(e1 - sl)
-                specs = client.get_specs(m.symbol)
-                q1 = client.round_qty(setup_risk / dist1 if dist1 > 0 else specs.min_qty, m.symbol)
+                fee_open = cfg.fee_maker_pct / 100.0
+                fee_close = cfg.fee_taker_pct / 100.0
+                slip = cfg.slippage_buffer_pct / 100.0
+                worst_sl = sl * (1.0 - slip) if setup.side == "long" else sl * (1.0 + slip)
+                unit_loss1 = abs(e1 - worst_sl) + e1 * fee_open + worst_sl * fee_close
+                raw_q1 = setup_risk / unit_loss1 if unit_loss1 > 0 else 0.0
+                q1 = client.round_qty(raw_q1, m.symbol) if raw_q1 > 0 else 0.0
                 q2 = 0.0
                 q3 = 0.0
+
+            specs = client.get_specs(m.symbol)
+            if q1 <= 0 or (specs.min_notional > 0 and q1 * e1 < specs.min_notional):
+                console.print(f"  [yellow]⚠️ [{m.symbol}] [{layer_tag_log}] Расчетный объем ({q1 * e1:.2f}) ниже minNotional (${specs.min_notional}) при риске ${setup_risk:.2f}. Сделка пропущена для защиты лимита риска.[/yellow]")
+                return
+
+            # Фильтр минимального чистого R:R (если задан)
+            if cfg.min_net_rr is not None:
+                fee_open = cfg.fee_maker_pct / 100.0
+                fee_close = cfg.fee_taker_pct / 100.0
+                slip = cfg.slippage_buffer_pct / 100.0
+                worst_sl = sl * (1.0 - slip) if setup.side == "long" else sl * (1.0 + slip)
+                net_reward = abs(tp1 - e1) - (e1 * fee_open + tp1 * fee_open)
+                net_risk = abs(e1 - worst_sl) + (e1 * fee_open + worst_sl * fee_close)
+                net_rr = net_reward / net_risk if net_risk > 0 else 0.0
+                if net_rr < cfg.min_net_rr:
+                    console.print(f"  [yellow]⚠️ [{m.symbol}] [{layer_tag_log}] Чистый R:R ({net_rr:.2f}) ниже порога min_net_rr ({cfg.min_net_rr:.2f}). Сделка пропущена.[/yellow]")
+                    return
 
             layer_tag = "MAJ" if is_major else "MIN"
             sym_short = m.symbol.replace("USDT.P", "").replace("USDT", "")
@@ -1212,19 +1296,31 @@ def process_monitor_step(
                         console.print(f"[yellow]⏸️ [{m.symbol}] [{layer_tag}] Недостаточно свободной маржи (${avail_m:.2f} < ${req_m * 1.05:.2f}). Откладываем выставление новой сетки.[/yellow]")
                         return
 
+                placed_attempt_ids = []
                 try:
                     if place_o1:
                         r1 = client.place_order(symbol=m.symbol, side="Buy", order_type="Limit", qty=q1, price=e1, take_profit=tp1, stop_loss=sl, order_link_id=make_order_link_id(sym_short, layer_tag, "Buy", "O1"))
                         o1_id = r1.get("orderId")
+                        placed_attempt_ids.append(o1_id)
                     if place_o2:
                         r2 = client.place_order(symbol=m.symbol, side="Buy", order_type="Limit", qty=q2, price=e2, take_profit=tp2, stop_loss=sl, order_link_id=make_order_link_id(sym_short, layer_tag, "Buy", "O2"))
                         o2_id = r2.get("orderId")
+                        placed_attempt_ids.append(o2_id)
                     if place_o3:
                         r3 = client.place_order(symbol=m.symbol, side="Buy", order_type="Limit", qty=q3, price=e3, take_profit=tp3, stop_loss=sl, order_link_id=make_order_link_id(sym_short, layer_tag, "Buy", "O3"))
                         o3_id = r3.get("orderId")
+                        placed_attempt_ids.append(o3_id)
                     console.print(f"  ✓ [{m.symbol}] [{layer_tag}] Размещена новая сетка: Вход 1 ${e1 if place_o1 else '(пропущен)'}, Вход 2 ${e2 if place_o2 else '(пропущен)'}, Вход 3 ${e3 if place_o3 else '(пропущен)'}")
                 except Exception as err:
                     console.print(f"[red]❌ [{m.symbol}] [{layer_tag}] Ошибка выставления новой сетки: {err}[/red]")
+                    for cancel_oid in placed_attempt_ids:
+                        if cancel_oid:
+                            try:
+                                client.cancel_order(m.symbol, cancel_oid)
+                                console.print(f"[yellow][{m.symbol}] [{layer_tag}] Откачен ордер {cancel_oid}.[/yellow]")
+                            except Exception:
+                                pass
+                    m.state = "IDLE"
                     return
 
             m.setup_type = setup.setup_type

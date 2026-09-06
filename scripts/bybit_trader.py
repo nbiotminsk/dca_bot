@@ -293,25 +293,52 @@ def main():
 
             if e3 is not None and e2 is not None:
                 q1, q2, q3, loss1, loss2, loss3 = client.calc_triple_grid_order_sizes(
-                    e1, e2, e3, sl, total_risk_usd=setup_risk, symbol=symbol, equal_weight=False, weights=cfg.grid_weights
+                    e1, e2, e3, sl, total_risk_usd=setup_risk, symbol=symbol, equal_weight=False, weights=cfg.grid_weights,
+                    is_long=(setup.side == "long"), fee_maker_pct=cfg.fee_maker_pct, fee_taker_pct=cfg.fee_taker_pct, slippage_buffer_pct=cfg.slippage_buffer_pct,
                 )
                 tot_loss = loss1 + loss2 + loss3
             elif e2 is not None:
-                q1, q2, loss1, loss2 = client.calc_dual_grid_order_sizes(e1, e2, sl, total_risk_usd=setup_risk, symbol=symbol, equal_weight=True)
+                q1, q2, loss1, loss2 = client.calc_dual_grid_order_sizes(
+                    e1, e2, sl, total_risk_usd=setup_risk, symbol=symbol, equal_weight=True,
+                    is_long=(setup.side == "long"), fee_maker_pct=cfg.fee_maker_pct, fee_taker_pct=cfg.fee_taker_pct, slippage_buffer_pct=cfg.slippage_buffer_pct,
+                )
                 q3 = 0.0
                 loss3 = 0.0
                 tot_loss = loss1 + loss2
             else:
-                dist1 = abs(e1 - sl)
-                q1 = client.round_qty(setup_risk / dist1 if dist1 > 0 else specs.min_qty, symbol)
-                if q1 < specs.min_qty:
-                    q1 = specs.min_qty
-                loss1 = q1 * dist1
+                fee_open = cfg.fee_maker_pct / 100.0
+                fee_close = cfg.fee_taker_pct / 100.0
+                slip = cfg.slippage_buffer_pct / 100.0
+                worst_sl = sl * (1.0 - slip) if setup.side == "long" else sl * (1.0 + slip)
+                unit_loss1 = abs(e1 - worst_sl) + e1 * fee_open + worst_sl * fee_close
+                raw_q1 = setup_risk / unit_loss1 if unit_loss1 > 0 else 0.0
+                q1 = client.round_qty(raw_q1, symbol) if raw_q1 > 0 else 0.0
+                if specs.min_notional > 0 and (q1 * e1 < specs.min_notional or q1 < specs.min_qty):
+                    q1 = 0.0
+                loss1 = q1 * unit_loss1
                 q2 = 0.0
                 loss2 = 0.0
                 q3 = 0.0
                 loss3 = 0.0
                 tot_loss = loss1
+
+            # Если расчетный объем Ордера 1 не проходит minNotional при заданном риске — пропускаем сделку
+            if q1 <= 0 or (specs.min_notional > 0 and q1 * e1 < specs.min_notional):
+                console.print(f"  [yellow]⚠️ [{symbol}] {layer_tag_title} Расчетный объем для риска ${setup_risk:.2f} (${q1 * e1:.2f}) ниже minNotional (${specs.min_notional}). Сделка пропущена для защиты лимита риска.[/yellow]")
+                continue
+
+            # Фильтр минимального чистого R:R (если задан)
+            if cfg.min_net_rr is not None:
+                fee_open = cfg.fee_maker_pct / 100.0
+                fee_close = cfg.fee_taker_pct / 100.0
+                slip = cfg.slippage_buffer_pct / 100.0
+                worst_sl = sl * (1.0 - slip) if setup.side == "long" else sl * (1.0 + slip)
+                net_reward = abs(tp1 - e1) - (e1 * fee_open + tp1 * fee_open)
+                net_risk = abs(e1 - worst_sl) + (e1 * fee_open + worst_sl * fee_close)
+                net_rr = net_reward / net_risk if net_risk > 0 else 0.0
+                if net_rr < cfg.min_net_rr:
+                    console.print(f"  [yellow]⚠️ [{symbol}] {layer_tag_title} Чистый R:R ({net_rr:.2f}) ниже порога min_net_rr ({cfg.min_net_rr:.2f}). Сделка пропущена.[/yellow]")
+                    continue
 
             t = build_setup_table(
                 symbol=symbol,
@@ -330,9 +357,6 @@ def main():
                 setup_timeout=setup_timeout,
             )
             console.print(t)
-
-            if q1 * e1 < specs.min_notional:
-                console.print(f"[yellow]⚠️ Внимание: Notional Ордера 1 (${q1 * e1:.2f}) меньше биржевого минимума ${specs.min_notional}![/yellow]")
 
             setup_item = {
                 "symbol": symbol,
@@ -430,6 +454,7 @@ def main():
         place_o1 = True
         place_o2 = bool(e2 is not None and q2 > 0)
         place_o3 = bool(e3 is not None and q3 > 0)
+        placed_attempt_ids = []
         try:
             side_str = "Buy" if setup.side == "long" else "Sell"
 
@@ -440,17 +465,19 @@ def main():
             if pos_open:
                 pos_open_initially = True
 
+            sym_short = sym.replace("USDT.P", "").replace("USDT", "")
+            layer_prefix = f"FIB-{sym_short}-{layer_tag}-"
+
             # 2. Ищем существующие ордера ТОЛЬКО для своего слоя
             all_open = client.get_open_orders(sym)
             existing_orders = [
                 o for o in all_open
                 if o.get("side") == side_str and o.get("orderType") == "Limit" and (
-                    layer_tag in str(o.get("orderLinkId", "")) or (layer_name == "minor" and "-MAJ-" not in str(o.get("orderLinkId", "")))
+                    str(o.get("orderLinkId", "")).startswith(layer_prefix)
                 )
             ]
             existing_orders.sort(key=lambda x: float(x.get("price", 0.0)), reverse=(setup.side == "long"))
 
-            sym_short = sym.replace("USDT.P", "").replace("USDT", "")
             link_id_1 = make_order_link_id(sym_short, layer_tag, side_str, "O1")
             link_id_2 = make_order_link_id(sym_short, layer_tag, side_str, "O2")
             link_id_3 = make_order_link_id(sym_short, layer_tag, side_str, "O3")
@@ -484,7 +511,8 @@ def main():
                 else:
                     console.print(f"ℹ️ [{sym}] [{layer_tag}] Остаточный бюджет риска на добор: ${remaining_risk:.2f}.")
                     q2_res, q3_res, _, _, _ = client.calc_residual_order_sizes(
-                        pos_sz, avg_p, e2, e3, sl, total_risk_usd=setup_risk, symbol=sym, weights=cfg.grid_weights
+                        pos_sz, avg_p, e2, e3, sl, total_risk_usd=setup_risk, symbol=sym, weights=cfg.grid_weights,
+                        is_long=(setup.side == "long"), fee_maker_pct=cfg.fee_maker_pct, fee_taker_pct=cfg.fee_taker_pct, slippage_buffer_pct=cfg.slippage_buffer_pct,
                     )
 
                     # Проверяем, соответствуют ли существующие ордера добора новому расчету риска
@@ -694,6 +722,7 @@ def main():
                             symbol=sym, side=side_str, order_type="Limit", qty=q1, price=e1, take_profit=tp1, stop_loss=sl, order_link_id=link_id_1
                         )
                         o1_id = resp1.get("orderId")
+                        placed_attempt_ids.append(o1_id)
                         console.print(f"✅ [{sym}] [{layer_tag}] Ордер 1 размещен: ID {o1_id} (Limit {side_str} {q1} @ {e1}, TP {tp1}, SL {sl})")
 
                     if place_o2 and e2 is not None and tp2 is not None:
@@ -701,6 +730,7 @@ def main():
                             symbol=sym, side=side_str, order_type="Limit", qty=q2, price=e2, take_profit=tp2, stop_loss=sl, order_link_id=link_id_2
                         )
                         o2_id = resp2.get("orderId")
+                        placed_attempt_ids.append(o2_id)
                         console.print(f"✅ [{sym}] [{layer_tag}] Ордер 2 размещен: ID {o2_id} (Limit {side_str} {q2} @ {e2}, TP {tp2}, SL {sl})")
 
                     if place_o3 and e3 is not None and tp3 is not None:
@@ -708,6 +738,7 @@ def main():
                             symbol=sym, side=side_str, order_type="Limit", qty=q3, price=e3, take_profit=tp3, stop_loss=sl, order_link_id=link_id_3
                         )
                         o3_id = resp3.get("orderId")
+                        placed_attempt_ids.append(o3_id)
                         console.print(f"✅ [{sym}] [{layer_tag}] Ордер 3 размещен: ID {o3_id} (Limit {side_str} {q3} @ {e3}, TP {tp3}, SL {sl})")
 
                     if is_live:
@@ -757,12 +788,20 @@ def main():
 
         except Exception as e:
             console.print(f"[bold red]❌ [{sym}] [{layer_tag}] Ошибка выставления ордеров:[/bold red] {e}")
-            if o1_id:
-                try:
-                    client.cancel_order(sym, o1_id)
-                    console.print(f"[yellow][{sym}] [{layer_tag}] Ордер 1 {o1_id} отменен.[/yellow]")
-                except Exception:
-                    pass
+            for cancel_oid in placed_attempt_ids:
+                if cancel_oid:
+                    try:
+                        client.cancel_order(sym, cancel_oid)
+                        console.print(f"[yellow][{sym}] [{layer_tag}] Откачен ордер {cancel_oid}.[/yellow]")
+                    except Exception:
+                        pass
+            active_monitors.append(ActiveTradeMonitor(
+                symbol=sym,
+                setup_type="IDLE",
+                state="IDLE",
+                layer=layer_name,
+                last_skipped_imp_time=setup.imp_end_time,
+            ))
 
     # 2. Подключаем мониторы AWAITING_MAJOR_0382 (Большие фибы выше 0.382 — без выставления ордеров)
     for item in awaiting_major_setups:

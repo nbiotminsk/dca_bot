@@ -97,6 +97,17 @@ def build_setup_table(
 
     risk_label = f"лимит ${setup_risk:.2f} ($4.00 на корзину манипуляции)" if setup.setup_type == "MANIPULATION" else f"лимит ${setup_risk:.2f}"
     t.add_row("Стоп-Лосс (SL)", f"${sl} (расчетный суммарный убыток: ${tot_loss:.2f} / {risk_label})")
+
+    # Чистый R:R с учетом комиссий и проскальзывания
+    fee_open = getattr(cfg, "fee_maker_pct", 0.02) / 100.0
+    fee_close = getattr(cfg, "fee_taker_pct", 0.055) / 100.0
+    slip = getattr(cfg, "slippage_buffer_pct", 0.10) / 100.0
+    worst_sl = sl * (1.0 - slip) if getattr(setup, "side", "long") == "long" else sl * (1.0 + slip)
+    net_reward = abs(tp1 - e1) - (e1 * fee_open + tp1 * fee_open)
+    net_risk = abs(e1 - worst_sl) + (e1 * fee_open + worst_sl * fee_close)
+    net_rr = net_reward / net_risk if net_risk > 0 else 0.0
+    t.add_row("Чистый R:R (Ордер 1)", f"{net_rr:.2f} (Maker {fee_open*100:.2f}%, Taker {fee_close*100:.3f}%, Slip {slip*100:.2f}%)")
+
     if setup.be_trigger is not None and setup.be_price is not None:
         be_trig_str = f"${client.round_price(setup.be_trigger, symbol)}"
         be_price_str = f"${client.round_price(setup.be_price, symbol)}"

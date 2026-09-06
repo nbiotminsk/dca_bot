@@ -2325,6 +2325,223 @@ def test_mutual_exclusion_startup_priority_lock_filters_major():
     assert filtered_actionable[1]["symbol"] == "NEARUSDT" and filtered_actionable[1]["layer"] == "major"
 
 
+def test_atomic_grid_placement_failure_on_o2_cancels_o1():
+    """Проверка п. 1: Ошибка на O2 отменяет уже выставленный O1 и не оставляет монитор активным с неполной сеткой."""
+    from scripts.trader.state_machine import process_monitor_step
+    from scripts.trader.models import ActiveTradeMonitor
+    from scripts.trader.config import TradeConfig
+
+    cfg = TradeConfig()
+    m = ActiveTradeMonitor(
+        symbol="BTCUSDT",
+        setup_type="AWAITING_MAJOR_0382",
+        state="AWAITING_MAJOR_0382",
+        layer="major",
+        cur_e1=100.0,
+        cur_tp1=105.0,
+        cur_e2=95.0,
+        cur_tp2=102.0,
+        cur_e3=90.0,
+        cur_tp3=100.0,
+        sl=85.0,
+        p_0382=108.0,
+        cur_peak=120.0,
+        imp_start_price=80.0,
+        imp_start_time=pd.Timestamp.now(tz="UTC"),
+    )
+
+    class FailingClient(MockBybitClient):
+        def __init__(self, klines_df=None):
+            super().__init__(klines_df=klines_df)
+            self.call_count = 0
+
+        def place_order(self, *args, **kwargs):
+            self.call_count += 1
+            if self.call_count == 2:
+                raise RuntimeError("Simulation error on O2")
+            return super().place_order(*args, **kwargs)
+
+    # Текущая цена 107.0 <= p_0382 (108.0) -> активирует выставление сетки Major
+    df = pd.DataFrame([
+        {"timestamp": pd.Timestamp.now(tz="UTC"), "open": 109.0, "high": 109.0, "low": 107.0, "close": 107.0, "volume": 100}
+    ])
+    client = FailingClient(klines_df=df)
+
+    process_monitor_step(m, client, cfg, "60", is_live=True)
+    assert m.state == "AWAITING_MAJOR_0382"
+    assert len(client.cancelled_order_ids) == 1
+    assert client.cancelled_order_ids[0] == "order_1"
+
+
+def test_atomic_grid_placement_failure_on_o3_cancels_o1_and_o2():
+    """Проверка п. 1: Ошибка на O3 отменяет уже выставленные O1 и O2."""
+    from scripts.trader.state_machine import process_monitor_step
+    from scripts.trader.models import ActiveTradeMonitor
+    from scripts.trader.config import TradeConfig
+
+    cfg = TradeConfig()
+    m = ActiveTradeMonitor(
+        symbol="BTCUSDT",
+        setup_type="AWAITING_MAJOR_0382",
+        state="AWAITING_MAJOR_0382",
+        layer="major",
+        cur_e1=100.0,
+        cur_tp1=105.0,
+        cur_e2=95.0,
+        cur_tp2=102.0,
+        cur_e3=90.0,
+        cur_tp3=100.0,
+        sl=85.0,
+        p_0382=108.0,
+        cur_peak=120.0,
+        imp_start_price=80.0,
+        imp_start_time=pd.Timestamp.now(tz="UTC"),
+    )
+
+    class FailingClientO3(MockBybitClient):
+        def __init__(self, klines_df=None):
+            super().__init__(klines_df=klines_df)
+            self.call_count = 0
+
+        def place_order(self, *args, **kwargs):
+            self.call_count += 1
+            if self.call_count == 3:
+                raise RuntimeError("Simulation error on O3")
+            return super().place_order(*args, **kwargs)
+
+    df = pd.DataFrame([
+        {"timestamp": pd.Timestamp.now(tz="UTC"), "open": 109.0, "high": 109.0, "low": 107.0, "close": 107.0, "volume": 100}
+    ])
+    client = FailingClientO3(klines_df=df)
+
+    process_monitor_step(m, client, cfg, "60", is_live=True)
+    assert m.state == "AWAITING_MAJOR_0382"
+    assert len(client.cancelled_order_ids) == 2
+    assert "order_1" in client.cancelled_order_ids
+    assert "order_2" in client.cancelled_order_ids
+
+
+def test_cleanup_and_cancel_do_not_touch_manual_limit_orders():
+    """Проверка п. 2: Ордера без orderLinkId или с ручным orderLinkId не считаются ордерами бота и не отменяются."""
+    from scripts.trader.order_manager import cleanup_orphan_orders_for_layer, cancel_monitor_orders
+    from scripts.trader.models import ActiveTradeMonitor
+
+    client = MockBybitClient()
+    # Размещаем ручной ордер без orderLinkId
+    client.placed_orders.append({
+        "orderId": "manual-limit-1",
+        "orderLinkId": "",
+        "symbol": "BTCUSDT",
+        "side": "Buy",
+        "orderType": "Limit",
+        "price": 95.0,
+        "qty": 1.0,
+    })
+    # Размещаем сторонний ордер с произвольным link_id
+    client.placed_orders.append({
+        "orderId": "manual-limit-2",
+        "orderLinkId": "MY-CUSTOM-ORDER-123",
+        "symbol": "BTCUSDT",
+        "side": "Buy",
+        "orderType": "Limit",
+        "price": 94.0,
+        "qty": 1.0,
+    })
+    # Размещаем ордер другого слоя (MAJ)
+    client.placed_orders.append({
+        "orderId": "maj-order-1",
+        "orderLinkId": "FIB-BTC-MAJ-B-O1-abc123",
+        "symbol": "BTCUSDT",
+        "side": "Buy",
+        "orderType": "Limit",
+        "price": 92.0,
+        "qty": 1.0,
+    })
+    # Размещаем сиротский ордер своего слоя (MIN)
+    client.placed_orders.append({
+        "orderId": "orphan-min-1",
+        "orderLinkId": "FIB-BTC-MIN-B-O1-xyz789",
+        "symbol": "BTCUSDT",
+        "side": "Buy",
+        "orderType": "Limit",
+        "price": 90.0,
+        "qty": 1.0,
+    })
+
+    # 1. Проверяем cleanup_orphan_orders_for_layer для minor
+    cleanup_orphan_orders_for_layer(client, "BTCUSDT", "minor")
+    assert "orphan-min-1" in client.cancelled_order_ids
+    assert "manual-limit-1" not in client.cancelled_order_ids
+    assert "manual-limit-2" not in client.cancelled_order_ids
+    assert "maj-order-1" not in client.cancelled_order_ids
+
+    # 2. Проверяем cancel_monitor_orders
+    m = ActiveTradeMonitor(symbol="BTCUSDT", setup_type="TRAILING", state="TRAILING", layer="minor")
+    cancel_monitor_orders(client, m)
+    assert "manual-limit-1" not in client.cancelled_order_ids
+    assert "manual-limit-2" not in client.cancelled_order_ids
+    assert "maj-order-1" not in client.cancelled_order_ids
+
+
+def test_manipulation_min_notional_guard_transitions_to_safe_idle():
+    """Проверка п. 3: Если q1_m не проходит minNotional / minQty, сетка не выставляется, монитор переходит в IDLE."""
+    from scripts.trader.state_machine import process_monitor_step
+    from scripts.trader.models import ActiveTradeMonitor
+    from scripts.trader.config import TradeConfig
+    from indicators.pybit_client import InstrumentSpecs
+
+    cfg = TradeConfig(manipulation_risk_usd=0.01)
+    m = ActiveTradeMonitor(
+        symbol="TESTUSDT",
+        setup_type="DUAL_GRID_TRAILING",
+        state="AWAITING_SWEEP_CLOSE",
+        imp_start_price=100.0,
+        cur_peak=110.0,
+        stop_bar_time=pd.Timestamp("2026-09-01 12:00"),
+        stop_sweep_low=98.0,
+    )
+
+    rows = []
+    for k in range(25):
+        t = pd.Timestamp("2026-08-31 00:00") + pd.Timedelta(hours=k)
+        rows.append({"timestamp": t, "open": 100.0, "high": 100.0, "low": 100.0, "close": 100.0, "volume": 50})
+    rows.append({"timestamp": pd.Timestamp("2026-09-01 12:00"), "open": 101.0, "high": 101.0, "low": 98.0, "close": 99.0, "volume": 100})
+    rows.append({"timestamp": pd.Timestamp("2026-09-01 13:00"), "open": 99.0, "high": 99.5, "low": 98.5, "close": 99.2, "volume": 100})
+
+    df = pd.DataFrame(rows)
+
+    class MockClientWithSpecs(MockBybitClient):
+        def get_specs(self, symbol):
+            return InstrumentSpecs(symbol, 0.01, 2, 0.001, 3, 0.001, 1000.0, min_notional=100.0)
+
+        def calc_dual_grid_order_sizes(self, *args, **kwargs):
+            return 0.001, 0.001, 0.01, 0.01
+
+    client = MockClientWithSpecs(pos_size=0.0, klines_df=df)
+
+    process_monitor_step(m, client, cfg, "60", is_live=True)
+    assert m.state == "IDLE"
+    assert len(client.placed_orders) == 0
+
+
+def test_load_trade_config_explicitly_disallows_short(tmp_path):
+    """Проверка п. 5: Загрузка конфига с preferred_side: 'short' выбрасывает понятную ошибку ValueError."""
+    from scripts.trader.config import load_trade_config
+
+    bad_yaml = tmp_path / "trade_config_short.yaml"
+    bad_yaml.write_text(
+        """
+strategy:
+  preferred_side: "short"
+""",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="Стратегия short в настоящее время не поддерживается"):
+        load_trade_config(bad_yaml)
+
+
+
 
 
 

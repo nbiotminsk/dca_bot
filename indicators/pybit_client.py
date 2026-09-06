@@ -230,26 +230,40 @@ class BybitClient:
         total_risk_usd: float = 2.0,
         is_long: bool = True,
         equal_weight: bool = True,
+        fee_maker_pct: float = 0.0,
+        fee_taker_pct: float = 0.0,
+        slippage_buffer_pct: float = 0.0,
     ) -> tuple[float, float, float, float]:
         """
-        Рассчитывает объемы ордеров 1 и 2 так, чтобы суммарный риск при выбивании стопа был равен total_risk_usd.
+        Рассчитывает объемы ордеров 1 и 2 с учетом комиссий биржи и буфера проскальзывания стопа (Fee-Adjusted Risk).
         Возвращает: (qty1, qty2, loss1_est, loss2_est).
         """
         specs = self.get_specs(symbol)
+        fee_open = fee_maker_pct / 100.0
+        fee_close = fee_taker_pct / 100.0
+        slip = slippage_buffer_pct / 100.0
+
+        worst_sl = p_sl * (1.0 - slip) if is_long else p_sl * (1.0 + slip)
+        unit_loss1 = abs(p_entry1 - worst_sl) + p_entry1 * fee_open + worst_sl * fee_close if p_entry1 > 0 else 0.0
+        unit_loss2 = abs(p_entry2 - worst_sl) + p_entry2 * fee_open + worst_sl * fee_close if p_entry2 > 0 else 0.0
+
         risk1 = total_risk_usd / 2.0 if equal_weight else total_risk_usd
         risk2 = total_risk_usd / 2.0 if equal_weight else total_risk_usd
 
-        dist1 = abs(p_entry1 - p_sl)
-        dist2 = abs(p_entry2 - p_sl)
+        raw_q1 = risk1 / unit_loss1 if unit_loss1 > 0 else 0.0
+        raw_q2 = risk2 / unit_loss2 if unit_loss2 > 0 else 0.0
 
-        raw_q1 = risk1 / dist1 if dist1 > 0 else 0.0
-        raw_q2 = risk2 / dist2 if dist2 > 0 else 0.0
+        q1 = self.round_qty(raw_q1, symbol) if raw_q1 > 0 else 0.0
+        # Если расчетный объем не проходит minNotional, пропускаем сделку целиком (не раздуваем объем выше риска)
+        if specs.min_notional > 0 and (q1 * p_entry1 < specs.min_notional or q1 < specs.min_qty):
+            return 0.0, 0.0, 0.0, 0.0
 
-        q1 = max(specs.min_qty, self.round_qty(raw_q1, symbol)) if raw_q1 > 0 else 0.0
-        q2 = max(specs.min_qty, self.round_qty(raw_q2, symbol)) if raw_q2 > 0 else 0.0
+        q2 = self.round_qty(raw_q2, symbol) if raw_q2 > 0 else 0.0
+        if specs.min_notional > 0 and (q2 * p_entry2 < specs.min_notional or q2 < specs.min_qty):
+            q2 = 0.0
 
-        loss1 = q1 * dist1
-        loss2 = q2 * dist2
+        loss1 = q1 * unit_loss1
+        loss2 = q2 * unit_loss2
         return q1, q2, loss1, loss2
 
     def calc_triple_grid_order_sizes(
@@ -262,36 +276,41 @@ class BybitClient:
         total_risk_usd: float = 2.0,
         equal_weight: bool = True,
         weights: Optional[list[float]] = None,
+        is_long: bool = True,
+        fee_maker_pct: float = 0.0,
+        fee_taker_pct: float = 0.0,
+        slippage_buffer_pct: float = 0.0,
     ) -> tuple[float, float, float, float, float, float]:
         """
-        Рассчитывает объемы ордеров 1, 2 и 3 так, чтобы суммарный риск при выбивании стопа был равен total_risk_usd.
+        Рассчитывает объемы ордеров 1, 2 и 3 с учетом комиссий биржи и буфера проскальзывания стопа (Fee-Adjusted Risk).
         Если weights задан (например, [0.50, 0.30, 0.20]), объемы (notional) распределяются в данной пропорции:
         50% на Ордер 1 (0.500), 30% на Ордер 2 (0.618), 20% на Ордер 3 (0.786).
+        Если расчетный объем Ордера 1 не проходит minNotional, сделка пропускается целиком (без превышения риска).
         Возвращает: (qty1, qty2, qty3, loss1_est, loss2_est, loss3_est).
         """
         specs = self.get_specs(symbol)
-        dist1 = abs(p_entry1 - p_sl)
-        dist2 = abs(p_entry2 - p_sl)
-        dist3 = abs(p_entry3 - p_sl)
+        fee_open = fee_maker_pct / 100.0
+        fee_close = fee_taker_pct / 100.0
+        slip = slippage_buffer_pct / 100.0
+
+        worst_sl = p_sl * (1.0 - slip) if is_long else p_sl * (1.0 + slip)
+        unit_loss1 = abs(p_entry1 - worst_sl) + p_entry1 * fee_open + worst_sl * fee_close if p_entry1 > 0 else 0.0
+        unit_loss2 = abs(p_entry2 - worst_sl) + p_entry2 * fee_open + worst_sl * fee_close if p_entry2 > 0 else 0.0
+        unit_loss3 = abs(p_entry3 - worst_sl) + p_entry3 * fee_open + worst_sl * fee_close if p_entry3 > 0 else 0.0
 
         if weights is not None and len(weights) == 3 and not equal_weight:
             w1, w2, w3 = float(weights[0]), float(weights[1]), float(weights[2])
             tot_w = w1 + w2 + w3
             if tot_w > 0:
                 w1, w2, w3 = w1 / tot_w, w2 / tot_w, w3 / tot_w
-            # Суммарный номинал TotalNotional = N
-            # Номиналы: N1 = w1 * N, N2 = w2 * N, N3 = w3 * N
-            # Лоты: raw_q_i = N_i / p_entry_i = (w_i / p_entry_i) * N
-            # Убыток: Loss_i = raw_q_i * dist_i = N * (w_i * dist_i / p_entry_i)
-            # Суммарный убыток = N * sum(w_i * dist_i / p_entry_i) = total_risk_usd
-            # Отсюда N = total_risk_usd / sum(w_i * dist_i / p_entry_i)
+
             loss_per_notional = 0.0
-            if p_entry1 > 0 and dist1 > 0:
-                loss_per_notional += w1 * (dist1 / p_entry1)
-            if p_entry2 > 0 and dist2 > 0:
-                loss_per_notional += w2 * (dist2 / p_entry2)
-            if p_entry3 > 0 and dist3 > 0:
-                loss_per_notional += w3 * (dist3 / p_entry3)
+            if p_entry1 > 0 and unit_loss1 > 0:
+                loss_per_notional += w1 * (unit_loss1 / p_entry1)
+            if p_entry2 > 0 and unit_loss2 > 0:
+                loss_per_notional += w2 * (unit_loss2 / p_entry2)
+            if p_entry3 > 0 and unit_loss3 > 0:
+                loss_per_notional += w3 * (unit_loss3 / p_entry3)
 
             if loss_per_notional > 0:
                 total_notional = total_risk_usd / loss_per_notional
@@ -302,32 +321,26 @@ class BybitClient:
                 raw_q1 = raw_q2 = raw_q3 = 0.0
         else:
             risk_per_order = total_risk_usd / 3.0
-            raw_q1 = risk_per_order / dist1 if dist1 > 0 else 0.0
-            raw_q2 = risk_per_order / dist2 if dist2 > 0 else 0.0
-            raw_q3 = risk_per_order / dist3 if dist3 > 0 else 0.0
+            raw_q1 = risk_per_order / unit_loss1 if unit_loss1 > 0 else 0.0
+            raw_q2 = risk_per_order / unit_loss2 if unit_loss2 > 0 else 0.0
+            raw_q3 = risk_per_order / unit_loss3 if unit_loss3 > 0 else 0.0
 
-        min_q1 = specs.min_qty
-        min_q2 = specs.min_qty
-        min_q3 = specs.min_qty
+        q1 = self.round_qty(raw_q1, symbol) if raw_q1 > 0 else 0.0
+        # Если Ордер 1 не проходит minNotional при заданном риске, пропускаем сделку целиком
+        if specs.min_notional > 0 and (q1 * p_entry1 < specs.min_notional or q1 < specs.min_qty):
+            return 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
 
-        if specs.min_notional > 0:
-            if p_entry1 > 0:
-                req1 = round(math.ceil((specs.min_notional / p_entry1) / specs.qty_step - 1e-9) * specs.qty_step, specs.qty_decimals)
-                min_q1 = max(min_q1, req1)
-            if p_entry2 > 0:
-                req2 = round(math.ceil((specs.min_notional / p_entry2) / specs.qty_step - 1e-9) * specs.qty_step, specs.qty_decimals)
-                min_q2 = max(min_q2, req2)
-            if p_entry3 > 0:
-                req3 = round(math.ceil((specs.min_notional / p_entry3) / specs.qty_step - 1e-9) * specs.qty_step, specs.qty_decimals)
-                min_q3 = max(min_q3, req3)
+        q2 = self.round_qty(raw_q2, symbol) if raw_q2 > 0 else 0.0
+        if specs.min_notional > 0 and (q2 * p_entry2 < specs.min_notional or q2 < specs.min_qty):
+            q2 = 0.0
 
-        q1 = max(min_q1, self.round_qty(raw_q1, symbol)) if raw_q1 > 0 else 0.0
-        q2 = max(min_q2, self.round_qty(raw_q2, symbol)) if raw_q2 > 0 else 0.0
-        q3 = max(min_q3, self.round_qty(raw_q3, symbol)) if raw_q3 > 0 else 0.0
+        q3 = self.round_qty(raw_q3, symbol) if raw_q3 > 0 else 0.0
+        if specs.min_notional > 0 and (q3 * p_entry3 < specs.min_notional or q3 < specs.min_qty):
+            q3 = 0.0
 
-        loss1 = q1 * dist1
-        loss2 = q2 * dist2
-        loss3 = q3 * dist3
+        loss1 = q1 * unit_loss1
+        loss2 = q2 * unit_loss2
+        loss3 = q3 * unit_loss3
         return q1, q2, q3, loss1, loss2, loss3
 
     def calc_residual_order_sizes(
@@ -340,33 +353,42 @@ class BybitClient:
         symbol: str,
         total_risk_usd: float = 2.0,
         weights: Optional[list[float]] = None,
+        is_long: bool = True,
+        fee_maker_pct: float = 0.0,
+        fee_taker_pct: float = 0.0,
+        slippage_buffer_pct: float = 0.0,
     ) -> tuple[float, float, float, float, float]:
         """
-        Рассчитывает объемы Ордеров 2 и 3 с учетом уже открытой позиции и задействованного риска.
-        Суммарный риск: CurrentRisk + Loss2 + Loss3 <= total_risk_usd.
+        Рассчитывает объемы Ордеров 2 и 3 с учетом уже открытой позиции, комиссий и проскальзывания.
+        Суммарный чистый риск: CurrentRisk + Loss2 + Loss3 <= total_risk_usd.
         Возвращает: (q2, q3, current_risk, loss2_est, loss3_est).
         """
         specs = self.get_specs(symbol)
-        current_risk = current_pos_size * abs(current_pos_avg_price - p_sl) if current_pos_size > 0 else 0.0
+        fee_open = fee_maker_pct / 100.0
+        fee_close = fee_taker_pct / 100.0
+        slip = slippage_buffer_pct / 100.0
+
+        worst_sl = p_sl * (1.0 - slip) if is_long else p_sl * (1.0 + slip)
+        unit_loss_curr = abs(current_pos_avg_price - worst_sl) + current_pos_avg_price * fee_open + worst_sl * fee_close
+        current_risk = current_pos_size * unit_loss_curr if current_pos_size > 0 else 0.0
         remaining_risk = max(0.0, total_risk_usd - current_risk)
 
         if remaining_risk <= 0.05 or (p_entry2 is None and p_entry3 is None):
             return 0.0, 0.0, current_risk, 0.0, 0.0
 
-        dist2 = abs(p_entry2 - p_sl) if (p_entry2 is not None and p_entry2 > 0) else 0.0
-        dist3 = abs(p_entry3 - p_sl) if (p_entry3 is not None and p_entry3 > 0) else 0.0
+        unit_loss2 = abs(p_entry2 - worst_sl) + p_entry2 * fee_open + worst_sl * fee_close if (p_entry2 is not None and p_entry2 > 0) else 0.0
+        unit_loss3 = abs(p_entry3 - worst_sl) + p_entry3 * fee_open + worst_sl * fee_close if (p_entry3 is not None and p_entry3 > 0) else 0.0
 
-        # Если заданы веса (например, w2=0.30, w3=0.20):
         if weights is not None and len(weights) == 3 and p_entry2 is not None and p_entry3 is not None:
             w2, w3 = float(weights[1]), float(weights[2])
             tot_w = w2 + w3
             if tot_w > 0:
                 w2, w3 = w2 / tot_w, w3 / tot_w
             loss_per_notional = 0.0
-            if p_entry2 > 0 and dist2 > 0:
-                loss_per_notional += w2 * (dist2 / p_entry2)
-            if p_entry3 > 0 and dist3 > 0:
-                loss_per_notional += w3 * (dist3 / p_entry3)
+            if p_entry2 > 0 and unit_loss2 > 0:
+                loss_per_notional += w2 * (unit_loss2 / p_entry2)
+            if p_entry3 > 0 and unit_loss3 > 0:
+                loss_per_notional += w3 * (unit_loss3 / p_entry3)
 
             if loss_per_notional > 0:
                 tot_n = remaining_risk / loss_per_notional
@@ -377,26 +399,22 @@ class BybitClient:
         else:
             num_orders = (1 if p_entry2 is not None else 0) + (1 if p_entry3 is not None else 0)
             risk_each = remaining_risk / num_orders
-            raw_q2 = (risk_each / dist2) if dist2 > 0 else 0.0
-            raw_q3 = (risk_each / dist3) if dist3 > 0 else 0.0
+            raw_q2 = (risk_each / unit_loss2) if unit_loss2 > 0 else 0.0
+            raw_q3 = (risk_each / unit_loss3) if unit_loss3 > 0 else 0.0
 
         q2 = loss2 = 0.0
         if p_entry2 is not None and p_entry2 > 0 and raw_q2 > 0:
-            min_q2 = specs.min_qty
-            if specs.min_notional > 0:
-                req2 = round(math.ceil((specs.min_notional / p_entry2) / specs.qty_step - 1e-9) * specs.qty_step, specs.qty_decimals)
-                min_q2 = max(min_q2, req2)
-            q2 = max(min_q2, self.round_qty(raw_q2, symbol))
-            loss2 = q2 * dist2
+            candidate_q2 = self.round_qty(raw_q2, symbol)
+            if specs.min_notional <= 0 or (candidate_q2 * p_entry2 >= specs.min_notional and candidate_q2 >= specs.min_qty):
+                q2 = candidate_q2
+                loss2 = q2 * unit_loss2
 
         q3 = loss3 = 0.0
         if p_entry3 is not None and p_entry3 > 0 and raw_q3 > 0:
-            min_q3 = specs.min_qty
-            if specs.min_notional > 0:
-                req3 = round(math.ceil((specs.min_notional / p_entry3) / specs.qty_step - 1e-9) * specs.qty_step, specs.qty_decimals)
-                min_q3 = max(min_q3, req3)
-            q3 = max(min_q3, self.round_qty(raw_q3, symbol))
-            loss3 = q3 * dist3
+            candidate_q3 = self.round_qty(raw_q3, symbol)
+            if specs.min_notional <= 0 or (candidate_q3 * p_entry3 >= specs.min_notional and candidate_q3 >= specs.min_qty):
+                q3 = candidate_q3
+                loss3 = q3 * unit_loss3
 
         return q2, q3, current_risk, loss2, loss3
 

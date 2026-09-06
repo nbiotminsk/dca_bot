@@ -16,6 +16,10 @@ class TradeConfig:
     major_risk_usd: float = 2.0
     manipulation_risk_usd: float = 2.0
     grid_weights: list[float] = field(default_factory=lambda: [0.50, 0.30, 0.20])
+    fee_maker_pct: float = 0.02
+    fee_taker_pct: float = 0.055
+    slippage_buffer_pct: float = 0.10
+    min_net_rr: Optional[float] = None
     entry_buffer_pct: float = 0.10
     entry_buffer_0500_pct: float = 0.10
     entry_buffer_0618_pct: float = 0.15
@@ -75,6 +79,15 @@ def load_trade_config(config_path: Optional[str | Path] = None) -> TradeConfig:
             raw_w = risk_data["grid_weights"]
             if isinstance(raw_w, list) and len(raw_w) == 3:
                 cfg.grid_weights = [float(x) for x in raw_w]
+        if "fee_maker_pct" in risk_data:
+            cfg.fee_maker_pct = float(risk_data["fee_maker_pct"])
+        if "fee_taker_pct" in risk_data:
+            cfg.fee_taker_pct = float(risk_data["fee_taker_pct"])
+        if "slippage_buffer_pct" in risk_data:
+            cfg.slippage_buffer_pct = float(risk_data["slippage_buffer_pct"])
+        if "min_net_rr" in risk_data:
+            val_rr = risk_data["min_net_rr"]
+            cfg.min_net_rr = float(val_rr) if val_rr is not None else None
 
         buffer_data = data.get("buffers", {})
         if "entry_buffer_pct" in buffer_data:
@@ -119,8 +132,13 @@ def load_trade_config(config_path: Optional[str | Path] = None) -> TradeConfig:
         strat_data = data.get("strategy", {})
         if "preferred_side" in strat_data:
             s_side = str(strat_data["preferred_side"]).lower()
-            if s_side in ("long", "short"):
-                cfg.preferred_side = s_side  # type: ignore[assignment]
+            if s_side == "short":
+                raise ValueError(
+                    "Стратегия short в настоящее время не поддерживается торговым контуром бота. "
+                    "Бот поддерживает только long (preferred_side: 'long')."
+                )
+            elif s_side == "long":
+                cfg.preferred_side = "long"
         if "min_impulse_pct" in strat_data:
             cfg.min_impulse_pct = float(strat_data["min_impulse_pct"])
         if "atr_multiplier" in strat_data:
@@ -166,6 +184,8 @@ def load_trade_config(config_path: Optional[str | Path] = None) -> TradeConfig:
         if "mutual_exclusion" in strat_data:
             cfg.mutual_exclusion = bool(strat_data["mutual_exclusion"])
 
+    except ValueError:
+        raise
     except Exception as e:
         console.print(f"[yellow]⚠️ Ошибка при загрузке конфига {path}: {e}. Используются значения по умолчанию.[/yellow]")
 
