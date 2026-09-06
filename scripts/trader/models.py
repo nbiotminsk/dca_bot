@@ -86,3 +86,23 @@ class ActiveTradeMonitor:
     touched_0382: bool = True
     timeout_hours: Optional[int] = None
     last_skipped_imp_time: Optional[pd.Timestamp] = None
+
+    @property
+    def is_active(self) -> bool:
+        """Определяет, занят ли данный монитор активной сеткой ордеров или открытой позицией."""
+        if self.done:
+            return False
+        if self.state in (
+            "TRAILING",
+            "O1_FILLED",
+            "O2_FILLED",
+            "BOTH_FILLED",
+            "O3_FILLED",
+            "AWAITING_SWEEP_CLOSE",
+            "SWEEP_RECLAIM_ACTIVE",
+            "MANIPULATION_ACTIVE",
+        ):
+            return True
+        if any((self.o1_id, self.o2_id, self.o3_id)):
+            return True
+        return False

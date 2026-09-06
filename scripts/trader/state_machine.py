@@ -1,5 +1,7 @@
 """Конечный автомат (State Machine) мониторинга торговых позиций."""
 
+from typing import Any, Optional
+
 import pandas as pd
 from rich.console import Console
 
@@ -32,12 +34,53 @@ def save_completed_impulse(*args, **kwargs):
 
 console = Console()
 
+
+def is_peer_layer_active(
+    symbol: str,
+    my_layer: str,
+    all_monitors: Optional[list[ActiveTradeMonitor]] = None,
+    client: Optional[Any] = None,
+    is_live: bool = False,
+) -> tuple[bool, str]:
+    """
+    Проверяет, активна ли сетка или открыта ли позиция другого слоя на том же символе
+    (взаимное исключение позиций / Priority Lock).
+    Возвращает (is_active, description).
+    """
+    # 1. Проверка по мониторам в памяти
+    if all_monitors:
+        for other in all_monitors:
+            if other.symbol == symbol and other.layer != my_layer and other.is_active:
+                return True, f"слой {other.layer.upper()} в состоянии {other.state}"
+
+    # 2. Если live-режим, дополнительно проверяем ордера и позицию на бирже
+    if is_live and client is not None:
+        try:
+            peer_tag = "-MIN-" if my_layer == "major" else "-MAJ-"
+            if hasattr(client, "get_open_orders"):
+                open_ords = client.get_open_orders(symbol)
+                for o in open_ords:
+                    link_id = str(o.get("orderLinkId", ""))
+                    if peer_tag in link_id:
+                        return True, f"активные ордера {peer_tag} на бирже ({link_id})"
+            if hasattr(client, "get_position"):
+                pos = client.get_position(symbol, "Buy")
+                pos_sz = float(pos.get("size", 0.0)) if pos else 0.0
+                if pos_sz > 0:
+                    return True, f"открытая позиция {pos_sz} шт. на бирже"
+        except Exception:
+            pass
+
+    return False, ""
+
+
 def process_monitor_step(
     m: ActiveTradeMonitor,
     client: BybitClient,
     cfg: TradeConfig,
     interval: str,
     is_live: bool = True,
+    all_monitors: Optional[list[ActiveTradeMonitor]] = None,
 ) -> None:
     """Выполняет один шаг конечного автомата (State Machine) для заданной монеты."""
     # ─── 1. Состояние: ТРЕЙЛИНГ СЕТКИ ──────────────────────────────────────────
@@ -258,6 +301,12 @@ def process_monitor_step(
         # 3. Проверка пробоя уровня 0.382 (Long: low <= p_0382)
         if m.p_0382 is not None and latest_l <= m.p_0382:
             console.print(f"\n[bold green]🎯 [{m.symbol}] [MAJOR] Цена (${latest_l}) пробила/коснулась уровня 0.382 (${m.p_0382:.4f})![/bold green]")
+            if cfg.mutual_exclusion:
+                is_active, peer_desc = is_peer_layer_active(m.symbol, m.layer, all_monitors, client, is_live)
+                if is_active:
+                    console.print(f"  [yellow]🔒 [{m.symbol}] [MAJOR] Взаимное исключение (Priority Lock): на монете активен {peer_desc}. Выставление сетки Major заблокировано до завершения Minor.[/yellow]")
+                    return
+
             cur_p = client.get_ticker_price(m.symbol) if hasattr(client, "get_ticker_price") else latest_l
             if cur_p <= 0:
                 cur_p = latest_l
@@ -1048,6 +1097,12 @@ def process_monitor_step(
                 m.imp_end_time = setup.imp_end_time
                 m.timeout_hours = setup_timeout
                 return
+
+            if cfg.mutual_exclusion:
+                is_active, peer_desc = is_peer_layer_active(m.symbol, m.layer, all_monitors, client, is_live)
+                if is_active:
+                    console.print(f"  [yellow]🔒 [{m.symbol}] [{layer_tag_log}] Взаимное исключение позиций: на монете уже активен {peer_desc}. Выставление новой сетки заблокировано.[/yellow]")
+                    return
 
             e1 = client.round_price(setup.entry_1, m.symbol)
             tp1 = client.round_price(setup.tp_1, m.symbol)

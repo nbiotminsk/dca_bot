@@ -1,7 +1,7 @@
 import json
 import math
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import pandas as pd
 from rich.console import Console
@@ -70,14 +70,16 @@ def is_impulse_disqualified(
     imp_end_time: Any,
     symbol: str,
     completed_records: list[dict[str, Any]],
+    layer: Optional[str] = None,
 ) -> bool:
     """
     Проверяет, не относится ли кандидат-импульс к уже отработанному импульсу (или его части/середине).
     Правило:
     - Запрещено входить в отработанную вершину (совпадение цены вершины).
     - Запрещено входить в подволны, завершившиеся до или на свече вершины отработанного импульса.
-    - Новый вход рассматривается ТОЛЬКО от следующей свечи после отработанного импульса
-      (start_time должен быть строго позже imp_end_time отработанного импульса).
+    - Новый вход рассматривается:
+      если start_time строго позже imp_end_time отработанного импульса (imp_start_ts > rec_end_ts).
+    - Слой (Minor / Major): отработанная сделка в Minor не блокирует независимый сетап в Major, и наоборот (если указан layer).
     """
     if not completed_records:
         return False
@@ -89,6 +91,11 @@ def is_impulse_disqualified(
         if rec_sym:
             if not symbol or rec_sym != symbol:
                 continue
+
+        # Изоляция по слою: если слой передан и в записи указан слой, они должны совпадать
+        rec_layer = rec.get("layer")
+        if layer and rec_layer and layer != rec_layer:
+            continue
 
         rec_peak = float(rec.get("peak_price", 0.0))
         rec_end_time = rec.get("imp_end_time")
@@ -112,3 +119,4 @@ def is_impulse_disqualified(
                 return True
 
     return False
+

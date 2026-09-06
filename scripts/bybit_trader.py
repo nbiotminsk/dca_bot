@@ -38,7 +38,7 @@ from scripts.trader.order_manager import (
     make_order_link_id,
 )
 from scripts.trader.setup_scanner import find_active_setup
-from scripts.trader.state_machine import process_monitor_step
+from scripts.trader.state_machine import is_peer_layer_active, process_monitor_step
 from scripts.trader.trade_journal import (
     is_impulse_disqualified,
     load_completed_impulses,
@@ -54,6 +54,7 @@ __all__ = [
     "format_symbol",
     "find_active_setup",
     "process_monitor_step",
+    "is_peer_layer_active",
     "load_completed_impulses",
     "save_completed_impulse",
     "is_impulse_disqualified",
@@ -357,6 +358,32 @@ def main():
                 awaiting_major_setups.append(setup_item)
             else:
                 actionable_setups.append(setup_item)
+
+    # Применение взаимного исключения (Priority Lock): на символе может быть активна только одна сетка
+    if cfg.mutual_exclusion and actionable_setups:
+        filtered_actionable = []
+        occupied_symbols = set()
+        for item in actionable_setups:
+            s_sym = item["symbol"]
+            s_layer = item["layer"]
+            if s_layer == "minor":
+                filtered_actionable.append(item)
+                occupied_symbols.add(s_sym)
+            elif s_layer == "major":
+                if s_sym in occupied_symbols:
+                    console.print(f"  [yellow]🔒 [{s_sym}] [MAJOR] Взаимное исключение (Priority Lock): выбран сетап Minor. Сетка Major заблокирована.[/yellow]")
+                    continue
+                if is_live:
+                    try:
+                        pos = client.get_position(s_sym, "Buy")
+                        if pos and float(pos.get("size", 0.0)) > 0:
+                            console.print(f"  [yellow]🔒 [{s_sym}] [MAJOR] На бирже уже открыта позиция. Сетка Major заблокирована (Priority Lock).[/yellow]")
+                            continue
+                    except Exception:
+                        pass
+                filtered_actionable.append(item)
+                occupied_symbols.add(s_sym)
+        actionable_setups = filtered_actionable
 
     # Если режим Dry-Run — завершаем после отображения всех сетапов
     if not is_live:
@@ -869,7 +896,7 @@ def main():
                 if m.done:
                     continue
                 try:
-                    process_monitor_step(m, client, cfg, interval, is_live=is_live)
+                    process_monitor_step(m, client, cfg, interval, is_live=is_live, all_monitors=active_monitors)
                 except Exception as sym_err:
                     console.print(f"[red]⚠️ [{m.symbol}] Ошибка мониторинга: {sym_err}[/red]")
                 # Плавная пауза между мониторами во избежание пиковых всплесков запросов

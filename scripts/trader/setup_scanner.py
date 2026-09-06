@@ -103,7 +103,7 @@ def find_active_setup(
         filtered_imps = []
         for imp in imps:
             peak_val = imp.high if is_long else imp.low
-            if is_impulse_disqualified(peak_val, imp.start_time, imp.end_time, symbol or "", effective_completed):
+            if is_impulse_disqualified(peak_val, imp.start_time, imp.end_time, symbol or "", effective_completed, layer=layer):
                 continue
             filtered_imps.append(imp)
         imps = filtered_imps
@@ -118,7 +118,7 @@ def find_active_setup(
         # Перебираем от самых свежих к старым в поиске неотработанного
         for imp in reversed(imps):
             peak_val = imp.high if is_long else imp.low
-            if is_impulse_disqualified(peak_val, imp.start_time, imp.end_time, symbol or "", effective_completed):
+            if is_impulse_disqualified(peak_val, imp.start_time, imp.end_time, symbol or "", effective_completed, layer=layer):
                 continue
             p_0236 = calc_fib(imp.high, imp.low, 0.236, is_long=is_long, scale=scale)
             p_0382 = calc_fib(imp.high, imp.low, 0.382, is_long=is_long, scale=scale)

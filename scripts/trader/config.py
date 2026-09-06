@@ -41,6 +41,7 @@ class TradeConfig:
     timeframe: str = "1h"
     scale: Literal["log", "linear"] = "log"
     symbols: list[str] = field(default_factory=list)
+    mutual_exclusion: bool = True
     config_path: Optional[str] = None
 
 
@@ -162,6 +163,8 @@ def load_trade_config(config_path: Optional[str | Path] = None) -> TradeConfig:
             raw_sym = str(strat_data["symbol"]).strip()
             if raw_sym:
                 cfg.symbols = [raw_sym]
+        if "mutual_exclusion" in strat_data:
+            cfg.mutual_exclusion = bool(strat_data["mutual_exclusion"])
 
     except Exception as e:
         console.print(f"[yellow]⚠️ Ошибка при загрузке конфига {path}: {e}. Используются значения по умолчанию.[/yellow]")

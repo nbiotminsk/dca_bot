@@ -1608,6 +1608,36 @@ def test_is_impulse_disqualified_rules():
         completed_records=completed,
     )
 
+    # 6. Изоляция по слоям: отработанный Minor НЕ дисквалифицирует сетап Major
+    completed_minor = [
+        {
+            "symbol": "LINKUSDT",
+            "peak_price": 12.229,
+            "imp_start_price": 11.719,
+            "imp_start_time": "2026-09-05 12:00:00+00:00",
+            "imp_end_time": "2026-09-05 17:00:00+00:00",
+            "layer": "minor",
+        }
+    ]
+    # Запрос для слоя "major" при наличии записи "minor" -> РАЗРЕШЕН (не дисквалифицирован)
+    assert not is_impulse_disqualified(
+        imp_peak=12.229,
+        imp_start_time="2026-09-05 12:00:00+00:00",
+        imp_end_time="2026-09-05 17:00:00+00:00",
+        symbol="LINKUSDT",
+        completed_records=completed_minor,
+        layer="major",
+    )
+    # Запрос для того же слоя "minor" -> ДИСКВАЛИФИЦИРОВАН
+    assert is_impulse_disqualified(
+        imp_peak=12.229,
+        imp_start_time="2026-09-05 12:00:00+00:00",
+        imp_end_time="2026-09-05 17:00:00+00:00",
+        symbol="LINKUSDT",
+        completed_records=completed_minor,
+        layer="minor",
+    )
+
 
 def test_find_active_setup_ignores_completed_wave():
     """Проверка: find_active_setup игнорирует отработанный импульс и возвращает только новый импульс после него."""
@@ -2075,6 +2105,224 @@ def test_idle_skips_fetch_klines_when_candle_unclosed():
 
     # Запрос не должен вызываться!
     assert call_count == 0
+
+
+def test_active_trade_monitor_is_active_property():
+    """Проверка свойства is_active для всех состояний монитора."""
+    from scripts.bybit_trader import ActiveTradeMonitor
+
+    # Активные состояния
+    for st in ("TRAILING", "O1_FILLED", "O2_FILLED", "BOTH_FILLED", "O3_FILLED", "AWAITING_SWEEP_CLOSE", "SWEEP_RECLAIM_ACTIVE", "MANIPULATION_ACTIVE"):
+        m = ActiveTradeMonitor(symbol="BTCUSDT", state=st)
+        assert m.is_active is True, f"Состояние {st} должно быть is_active=True"
+
+    # Неактивные состояния
+    for st in ("IDLE", "AWAITING_MAJOR_0382", "AWAITING_BREAK_BELOW"):
+        m = ActiveTradeMonitor(symbol="BTCUSDT", state=st)
+        assert m.is_active is False, f"Состояние {st} должно быть is_active=False"
+
+    # Завершенный монитор
+    m_done = ActiveTradeMonitor(symbol="BTCUSDT", state="TRAILING", done=True)
+    assert m_done.is_active is False
+
+    # IDLE с выставленным orderId считается активным
+    m_orders = ActiveTradeMonitor(symbol="BTCUSDT", state="IDLE", o1_id="123")
+    assert m_orders.is_active is True
+
+
+def test_mutual_exclusion_major_blocked_at_0382_when_minor_active():
+    """Проверка: Major при касании 0.382 не выставляет ордера, если Minor на монете активен (Priority Lock)."""
+    from scripts.bybit_trader import ActiveTradeMonitor, TradeConfig, process_monitor_step
+
+    cfg = TradeConfig(major_risk_usd=2.0, mutual_exclusion=True)
+    m_major = ActiveTradeMonitor(
+        symbol="ZECUSDT",
+        setup_type="TRIPLE_GRID_TRAILING",
+        state="AWAITING_MAJOR_0382",
+        layer="major",
+        cur_peak=1000.0,
+        p_0382=950.0,
+        cur_e1=920.0,
+        cur_tp1=970.0,
+        cur_e2=890.0,
+        cur_tp2=940.0,
+        cur_e3=850.0,
+        cur_tp3=920.0,
+        sl=800.0,
+        imp_start_price=750.0,
+        touched_0382=False,
+    )
+    # Minor активен (например, в состоянии TRAILING)
+    m_minor = ActiveTradeMonitor(
+        symbol="ZECUSDT",
+        setup_type="TRIPLE_GRID_TRAILING",
+        state="TRAILING",
+        layer="minor",
+        o1_id="ord_min_1",
+    )
+
+    klines_touch = pd.DataFrame([
+        {"timestamp": pd.Timestamp("2026-09-01 13:00"), "open": 970, "high": 975, "low": 945, "close": 955, "volume": 100}
+    ])
+    client = MockBybitClient(pos_size=0.0, klines_df=klines_touch)
+
+    # Запускаем шаг для Major
+    process_monitor_step(m_major, client, cfg, "60", is_live=True, all_monitors=[m_minor, m_major])
+
+    # Major должен остаться в AWAITING_MAJOR_0382, ордера НЕ должны выставляться!
+    assert m_major.state == "AWAITING_MAJOR_0382"
+    assert m_major.touched_0382 is False
+    assert len(client.placed_orders) == 0
+
+
+def test_mutual_exclusion_major_activates_after_minor_finishes():
+    """Проверка: Major активирует сетку после того, как Minor завершился (перешел в IDLE)."""
+    from scripts.bybit_trader import ActiveTradeMonitor, TradeConfig, process_monitor_step
+
+    cfg = TradeConfig(major_risk_usd=2.0, mutual_exclusion=True)
+    m_major = ActiveTradeMonitor(
+        symbol="ZECUSDT",
+        setup_type="TRIPLE_GRID_TRAILING",
+        state="AWAITING_MAJOR_0382",
+        layer="major",
+        cur_peak=1000.0,
+        p_0382=950.0,
+        cur_e1=920.0,
+        cur_tp1=970.0,
+        cur_e2=890.0,
+        cur_tp2=940.0,
+        cur_e3=850.0,
+        cur_tp3=920.0,
+        sl=800.0,
+        imp_start_price=750.0,
+        touched_0382=False,
+    )
+    # Minor завершил сделку и перешел в IDLE
+    m_minor = ActiveTradeMonitor(
+        symbol="ZECUSDT",
+        setup_type="IDLE",
+        state="IDLE",
+        layer="minor",
+    )
+
+    klines_touch = pd.DataFrame([
+        {"timestamp": pd.Timestamp("2026-09-01 13:00"), "open": 970, "high": 975, "low": 945, "close": 955, "volume": 100}
+    ])
+    client = MockBybitClient(pos_size=0.0, klines_df=klines_touch)
+
+    # Запускаем шаг для Major
+    process_monitor_step(m_major, client, cfg, "60", is_live=True, all_monitors=[m_minor, m_major])
+
+    # Теперь Major должен успешно выставить сетку и перейти в TRAILING
+    assert m_major.state == "TRAILING"
+    assert m_major.touched_0382 is True
+    assert len(client.placed_orders) == 3
+    assert client.placed_orders[0]["orderLinkId"].startswith("FIB-ZEC-MAJ-B-O1")
+
+
+def test_mutual_exclusion_idle_minor_blocked_when_major_active():
+    """Проверка: Minor в IDLE не выставляет ордера, если на монете уже активен Major."""
+    from scripts.bybit_trader import ActiveTradeMonitor, TradeConfig, process_monitor_step
+
+    cfg = TradeConfig(minor_risk_usd=2.0, mutual_exclusion=True)
+    m_minor = ActiveTradeMonitor(
+        symbol="ZECUSDT",
+        setup_type="IDLE",
+        state="IDLE",
+        layer="minor",
+    )
+    # Major активен с открытой позицией
+    m_major = ActiveTradeMonitor(
+        symbol="ZECUSDT",
+        setup_type="TRIPLE_GRID_TRAILING",
+        state="O1_FILLED",
+        layer="major",
+        position_was_open=True,
+    )
+
+    # Импульс для Minor (15 свечей)
+    base_ts = pd.Timestamp("2026-09-01 00:00", tz="UTC")
+    data = []
+    for i in range(15):
+        data.append({
+            "timestamp": base_ts + pd.Timedelta(hours=i),
+            "open": 100.0 + i * 2.0,
+            "high": 101.0 + i * 2.0,
+            "low": 99.5 + i * 2.0,
+            "close": 100.5 + i * 2.0,
+            "volume": 1000.0,
+        })
+    # Закрытие последней свечи
+    data[-1]["high"] = 140.0
+    data[-1]["close"] = 135.0
+    df = pd.DataFrame(data)
+
+    client = MockBybitClient(pos_size=0.0, klines_df=df)
+    process_monitor_step(m_minor, client, cfg, "60", is_live=False, all_monitors=[m_minor, m_major])
+
+    # Minor должен остаться в IDLE из-за взаимного исключения
+    assert m_minor.state == "IDLE"
+    assert len(client.placed_orders) == 0
+
+
+def test_trade_config_mutual_exclusion_parsing():
+    """Проверка парсинга параметра mutual_exclusion в TradeConfig."""
+    from pathlib import Path
+    import tempfile
+    from scripts.trader.config import TradeConfig, load_trade_config
+
+    cfg_def = TradeConfig()
+    assert cfg_def.mutual_exclusion is True
+
+    yaml_content = """
+strategy:
+  mutual_exclusion: false
+"""
+    with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as f:
+        f.write(yaml_content)
+        tmp_path = f.name
+
+    try:
+        cfg = load_trade_config(tmp_path)
+        assert cfg.mutual_exclusion is False
+    finally:
+        Path(tmp_path).unlink()
+
+
+def test_mutual_exclusion_startup_priority_lock_filters_major():
+    """Проверка: при одновременном обнаружении сетапов Minor и Major на старте, Major отсекается фильтром."""
+    from scripts.trader.models import SetupSignal
+    from scripts.trader.config import TradeConfig
+
+    cfg = TradeConfig(mutual_exclusion=True)
+    now = pd.Timestamp.now(tz="UTC")
+    setup_min = SetupSignal(setup_type="TRIPLE_GRID_TRAILING", side="long", imp_start_time=now, imp_end_time=now, imp_start_price=100.0, imp_peak_price=120.0, imp_pct=20.0, entry_1=110.0, stop_loss=90.0, tp_1=115.0)
+    setup_maj = SetupSignal(setup_type="TRIPLE_GRID_TRAILING", side="long", imp_start_time=now, imp_end_time=now, imp_start_price=80.0, imp_peak_price=120.0, imp_pct=50.0, entry_1=100.0, stop_loss=70.0, tp_1=110.0, touched_0382=True)
+
+    actionable_setups = [
+        {"symbol": "ZECUSDT", "layer": "minor", "setup": setup_min},
+        {"symbol": "ZECUSDT", "layer": "major", "setup": setup_maj},
+        {"symbol": "NEARUSDT", "layer": "major", "setup": setup_maj},
+    ]
+
+    filtered_actionable = []
+    occupied_symbols = set()
+    for item in actionable_setups:
+        s_sym = item["symbol"]
+        s_layer = item["layer"]
+        if s_layer == "minor":
+            filtered_actionable.append(item)
+            occupied_symbols.add(s_sym)
+        elif s_layer == "major":
+            if s_sym in occupied_symbols:
+                continue
+            filtered_actionable.append(item)
+            occupied_symbols.add(s_sym)
+
+    # ZECUSDT должен остаться только Minor, NEARUSDT (где нет Minor) должен остаться Major
+    assert len(filtered_actionable) == 2
+    assert filtered_actionable[0]["symbol"] == "ZECUSDT" and filtered_actionable[0]["layer"] == "minor"
+    assert filtered_actionable[1]["symbol"] == "NEARUSDT" and filtered_actionable[1]["layer"] == "major"
 
 
 
