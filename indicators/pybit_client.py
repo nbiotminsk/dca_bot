@@ -592,22 +592,36 @@ class BybitClient:
             resp = self.session.set_trading_stop(**params)
         except Exception as e:
             err_msg = str(e).lower()
+            if "not modified" in err_msg or "34040" in err_msg:
+                return {}
             if "partial" in err_msg or "110072" in err_msg:
                 self.cancel_all_stop_orders(symbol)
                 self._throttle()
-                resp = self.session.set_trading_stop(**params)
+                try:
+                    resp = self.session.set_trading_stop(**params)
+                except Exception as retry_e:
+                    retry_msg = str(retry_e).lower()
+                    if "not modified" in retry_msg or "34040" in retry_msg:
+                        return {}
+                    raise retry_e
             else:
                 raise e
 
         ret_code = resp.get("retCode", 0)
         if ret_code != 0:
             ret_msg = str(resp.get("retMsg", ""))
+            if "not modified" in ret_msg.lower() or ret_code == 34040:
+                return resp.get("result", {})
             if "partial" in ret_msg.lower() or ret_code == 110072:
                 self.cancel_all_stop_orders(symbol)
                 self._throttle()
                 resp = self.session.set_trading_stop(**params)
-                if resp.get("retCode", 0) != 0:
-                    raise RuntimeError(f"Bybit set_trading_stop failed ({resp.get('retCode')}): {resp.get('retMsg')}")
+                ret_code_2 = resp.get("retCode", 0)
+                if ret_code_2 != 0:
+                    ret_msg_2 = str(resp.get("retMsg", ""))
+                    if "not modified" in ret_msg_2.lower() or ret_code_2 == 34040:
+                        return resp.get("result", {})
+                    raise RuntimeError(f"Bybit set_trading_stop failed ({ret_code_2}): {ret_msg_2}")
             else:
                 raise RuntimeError(f"Bybit set_trading_stop failed ({ret_code}): {resp.get('retMsg')}")
         return resp.get("result", {})

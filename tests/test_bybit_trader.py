@@ -1944,6 +1944,65 @@ def test_real_stop_loss_in_o1_filled_transitions_to_awaiting_sweep():
     assert m.stop_sweep_low == 4.90
 
 
+def test_pybit_client_set_position_tp_sl_handles_34040_not_modified():
+    """Проверка: ошибка Bybit 34040 'not modified' не выбрасывает исключение и считается успешной."""
+    from indicators.pybit_client import BybitClient, InstrumentSpecs
+
+    client = BybitClient(testnet=True)
+    client._specs_cache["ICPUSDT"] = InstrumentSpecs("ICPUSDT", 0.001, 3, 0.1, 1, 0.1, 1000.0, 1.0)
+    client._position_idx_cache[("ICPUSDT", "BUY")] = 1  # Hedge mode
+
+    class MockSession:
+        def __init__(self):
+            self.calls = 0
+
+        def set_trading_stop(self, **kwargs):
+            self.calls += 1
+            # Имитируем исключение pybit при 34040
+            raise RuntimeError("not modified (ErrCode: 34040) (ErrTime: 04:19:24). Request → POST https://api.bybit.com/v5/position/trading-stop")
+
+    client.session = MockSession()
+    # Не должно выбрасывать исключение
+    res = client.set_position_tp_sl("ICPUSDT", take_profit=2.672, stop_loss=2.588)
+    assert res == {}
+    assert client.session.calls == 1
+
+
+def test_process_monitor_step_handles_34040_not_modified_on_o2_filled():
+    """Проверка: при наливе O2 перенос TP на 0.382 при ошибке 34040 корректно выставляет tp_basket_applied=True."""
+    from scripts.bybit_trader import ActiveTradeMonitor, TradeConfig, process_monitor_step
+
+    cfg = TradeConfig()
+    m = ActiveTradeMonitor(
+        symbol="ICPUSDT",
+        setup_type="TRIPLE_GRID_TRAILING",
+        state="O1_FILLED",
+        q1=10.0,
+        q2=15.0,
+        q3=20.0,
+        cur_tp1=2.80,
+        cur_tp2=2.672,
+        cur_tp3=2.50,
+        cur_e2=2.60,
+        cur_e3=2.40,
+        sl=2.588,
+        has_o2=True,
+        has_o3=True,
+        position_was_open=True,
+    )
+
+    class MockClientWith34040(MockBybitClient):
+        def set_position_tp_sl(self, symbol, take_profit=None, stop_loss=None):
+            raise RuntimeError("not modified (ErrCode: 34040) (ErrTime: 04:19:24). Request → POST ...")
+
+    client = MockClientWith34040(pos_size=25.0)  # q1 + q2 = 25.0 -> O2_FILLED
+    process_monitor_step(m, client, cfg, "60", is_live=True)
+
+    assert m.state == "O2_FILLED"
+    assert m.tp_basket_applied is True
+
+
+
 
 
 

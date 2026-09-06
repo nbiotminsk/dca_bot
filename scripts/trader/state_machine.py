@@ -95,7 +95,10 @@ def process_monitor_step(
                             client.set_position_tp_sl(m.symbol, take_profit=m.cur_tp3, stop_loss=m.sl)
                             m.tp_basket_applied = True
                         except Exception as err:
-                            console.print(f"  ⚠️ [{m.symbol}] Ошибка переноса TP на 0.500: {err}")
+                            if "not modified" in str(err).lower() or "34040" in str(err):
+                                m.tp_basket_applied = True
+                            else:
+                                console.print(f"  ⚠️ [{m.symbol}] Ошибка переноса TP на 0.500: {err}")
                 elif m.has_o2 and m.q2 > 0 and pos_size >= (m.q1 + 0.5 * m.q2):
                     m.state = "O2_FILLED"
                     console.print(f"\n[bold green]⚡ [{m.symbol}] Налиты 2 ордера (0.500 и 0.618)! Позиция: {pos_size}.[/bold green]")
@@ -105,7 +108,10 @@ def process_monitor_step(
                             client.set_position_tp_sl(m.symbol, take_profit=m.cur_tp2, stop_loss=m.sl)
                             m.tp_basket_applied = True
                         except Exception as err:
-                            console.print(f"  ⚠️ [{m.symbol}] Ошибка переноса TP на 0.382: {err}")
+                            if "not modified" in str(err).lower() or "34040" in str(err):
+                                m.tp_basket_applied = True
+                            else:
+                                console.print(f"  ⚠️ [{m.symbol}] Ошибка переноса TP на 0.382: {err}")
                 else:
                     m.state = "O1_FILLED"
                     console.print(f"\n[bold cyan]🎉 [{m.symbol}] Ордер 1 (0.500) вошел в позицию! Объем: {pos_size}.[/bold cyan]")
@@ -116,7 +122,11 @@ def process_monitor_step(
                             m.tp_basket_applied = True
                             console.print(f"  ✓ [{m.symbol}] Take-Profit (${m.cur_tp1}) и Stop-Loss (${m.sl}) установлены внутри сделки (Position TP/SL).")
                         except Exception as err:
-                            console.print(f"  ⚠️ [{m.symbol}] Ошибка установки Position TP/SL: {err}")
+                            if "not modified" in str(err).lower() or "34040" in str(err):
+                                m.tp_basket_applied = True
+                                console.print(f"  ✓ [{m.symbol}] Take-Profit (${m.cur_tp1}) и Stop-Loss (${m.sl}) уже активны внутри сделки.")
+                            else:
+                                console.print(f"  ⚠️ [{m.symbol}] Ошибка установки Position TP/SL: {err}")
                     return
 
         # Если позиция еще не открыта — сдвигаем сетку за новыми максимумами
@@ -384,7 +394,10 @@ def process_monitor_step(
                         client.set_position_tp_sl(m.symbol, take_profit=m.cur_tp3, stop_loss=m.sl)
                         m.tp_basket_applied = True
                     except Exception as err:
-                        console.print(f"  ⚠️ [{m.symbol}] Ошибка переноса TP на 0.500: {err}")
+                        if "not modified" in str(err).lower() or "34040" in str(err):
+                            m.tp_basket_applied = True
+                        else:
+                            console.print(f"  ⚠️ [{m.symbol}] Ошибка переноса TP на 0.500: {err}")
             elif m.has_o2 and m.q2 > 0 and pos_size >= (m.q1 + 0.5 * m.q2):
                 m.state = "O2_FILLED"
                 console.print(f"\n[bold green]🎯 [{m.symbol}] Добор: Ордер 2 (0.618) исполнен! Позиция: {pos_size}.[/bold green]")
@@ -394,7 +407,10 @@ def process_monitor_step(
                         client.set_position_tp_sl(m.symbol, take_profit=m.cur_tp2, stop_loss=m.sl)
                         m.tp_basket_applied = True
                     except Exception as err:
-                        console.print(f"  ⚠️ [{m.symbol}] Ошибка переноса TP на 0.382: {err}")
+                        if "not modified" in str(err).lower() or "34040" in str(err):
+                            m.tp_basket_applied = True
+                        else:
+                            console.print(f"  ⚠️ [{m.symbol}] Ошибка переноса TP на 0.382: {err}")
             return
 
         # Если pos_size == 0 — проверяем тейк или стоп
@@ -497,7 +513,10 @@ def process_monitor_step(
                         client.set_position_tp_sl(m.symbol, take_profit=m.cur_tp3, stop_loss=m.sl)
                         m.tp_basket_applied = True
                     except Exception as err:
-                        console.print(f"  ⚠️ [{m.symbol}] Ошибка переноса TP на 0.500: {err}")
+                        if "not modified" in str(err).lower() or "34040" in str(err):
+                            m.tp_basket_applied = True
+                        else:
+                            console.print(f"  ⚠️ [{m.symbol}] Ошибка переноса TP на 0.500: {err}")
             return
 
         # Если pos_size == 0 — проверяем тейк или стоп
@@ -594,7 +613,10 @@ def process_monitor_step(
                     client.set_position_tp_sl(m.symbol, take_profit=m.cur_tp3, stop_loss=m.sl)
                     m.tp_basket_applied = True
                 except Exception as err:
-                    console.print(f"  ⚠️ [{m.symbol}] Ошибка установки TP на 0.500: {err}")
+                    if "not modified" in str(err).lower() or "34040" in str(err):
+                        m.tp_basket_applied = True
+                    else:
+                        console.print(f"  ⚠️ [{m.symbol}] Ошибка установки TP на 0.500: {err}")
             return
 
         # Если pos_size == 0 — проверяем тейк или стоп
@@ -869,7 +891,10 @@ def process_monitor_step(
                             client.set_position_tp_sl(m.symbol, take_profit=m.cur_e1, stop_loss=m.sl)
                             m.tp_basket_applied = True
                         except Exception as err:
-                            console.print(f"  ⚠️ [{m.symbol}] Ошибка переноса TP корзины на 1.414: {err}")
+                            if "not modified" in str(err).lower() or "34040" in str(err):
+                                m.tp_basket_applied = True
+                            else:
+                                console.print(f"  ⚠️ [{m.symbol}] Ошибка переноса TP корзины на 1.414: {err}")
                     else:
                         m.tp_basket_applied = True
             return
