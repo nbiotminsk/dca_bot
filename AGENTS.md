@@ -8,7 +8,11 @@
 | --- | --- | --- |
 | изменить CLI, первичный запуск, список монет или цикл | `scripts/bybit_trader.py` | `config/trade_config.yaml`, `tests/test_bybit_trader.py` |
 | изменить поиск импульса, Fib, ATR, MACD или тип сетапа | `scripts/trader/setup_scanner.py` | `scripts/backtest_strategy_interactive.py`, `tests/test_bybit_trader.py`, `tests/test_manipulation_strategy.py` |
-| изменить жизненный цикл позиции, трейлинг, TP/SL | `scripts/trader/state_machine.py` | `scripts/trader/models.py`, `scripts/trader/order_manager.py`, `tests/test_bybit_trader.py` |
+| изменить сетку, трейлинг, исполнение O1/O2/O3 | `scripts/trader/grid_states.py` | `scripts/trader/state_machine.py`, `tests/test_bybit_trader.py` |
+| изменить логику свипа, ложного пробоя (Sweep Reclaim) | `scripts/trader/reclaim_states.py` | `scripts/trader/state_machine.py`, `tests/test_bybit_trader.py` |
+| изменить сценарий Manipulation (1.414/1.618 Fib) | `scripts/trader/manipulation_states.py` | `scripts/trader/state_machine.py`, `tests/test_bybit_trader.py` |
+| изменить IDLE, ожидание или перезапуск сетапов | `scripts/trader/idle_scanner.py` | `scripts/trader/setup_scanner.py`, `tests/test_bybit_trader.py` |
+| изменить диспетчер жизненного цикла сделки | `scripts/trader/state_machine.py` | `scripts/trader/models.py`, `scripts/trader/order_manager.py`, `tests/test_bybit_trader.py` |
 | изменить создание, поиск или отмену ордеров | `scripts/trader/order_manager.py` | `indicators/pybit_client.py`, `tests/test_bybit_trader.py` |
 | изменить API Bybit, округление, лоты, риск или маржу | `indicators/pybit_client.py` | `scripts/trader/state_machine.py`, `tests/test_risk_guard.py` |
 | изменить параметры стратегии | `config/trade_config.yaml` | `scripts/trader/config.py`, `tests/test_bybit_trader.py` |

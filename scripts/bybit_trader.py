@@ -15,6 +15,7 @@
 """
 
 import argparse
+import logging
 import sys
 import time
 from pathlib import Path
@@ -67,6 +68,35 @@ __all__ = [
 ]
 
 console = Console()
+
+logger = logging.getLogger("dca_bot")
+
+
+def setup_session_logger() -> Path:
+    """Настраивает сессионный лог-файл для WARNING/ERROR/CRITICAL.
+
+    Не затрагивает вывод в терминал (Rich). Возвращает путь к созданному файлу.
+    """
+    log_dir = root_dir / "logs"
+    log_dir.mkdir(exist_ok=True)
+
+    import datetime
+    ts = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    log_path = log_dir / f"errors_session_{ts}.log"
+
+    handler = logging.FileHandler(log_path, encoding="utf-8")
+    handler.setLevel(logging.WARNING)
+    formatter = logging.Formatter(
+        fmt="%(asctime)s  %(levelname)-8s  %(name)s:%(module)s:%(lineno)d\n%(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+    handler.setFormatter(formatter)
+
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.WARNING)
+    root_logger.addHandler(handler)
+
+    return log_path
 
 
 def main():
@@ -951,4 +981,16 @@ def main():
 
 
 if __name__ == "__main__":
+    _log_path = setup_session_logger()
+    console.print(f"[dim]📋 Лог ошибок сессии: {_log_path}[/dim]")
+
+    def _excepthook(exc_type, exc_value, exc_tb):
+        logging.getLogger("dca_bot").critical(
+            "Необработанное исключение — аварийное завершение",
+            exc_info=(exc_type, exc_value, exc_tb),
+        )
+        sys.__excepthook__(exc_type, exc_value, exc_tb)
+
+    sys.excepthook = _excepthook
+
     main()

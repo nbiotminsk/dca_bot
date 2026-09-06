@@ -170,13 +170,16 @@ def find_active_setup(
                 touched_0382 = True
 
             # Проверка тайм-аута свежести:
-            # Для Minor: если за timeout_hours не коснулась 0.500 — остыл
-            # Для Major: если за timeout_hours не коснулась 0.382 — остыл
+            # Для Minor: если в последние timeout_hours баров цена не касалась 0.500 — остыл
+            # Для Major: если в последние timeout_hours баров цена не касалась 0.382 — остыл
+            # Проверяем ПОСЛЕДНИЕ N баров (а не первые): сетап актуален если цена
+            # вблизи зоны коррекции СЕЙЧАС, даже если импульс сформировался давно
+            # (например, пока была открыта главная позиция).
             if timeout_hours is not None and timeout_hours > 0 and len(post_df) > timeout_hours:
-                post_slice = post_df.iloc[:timeout_hours]
+                post_slice = post_df.iloc[-timeout_hours:]
                 check_level = p_0382 if layer == "major" else p_0500
-                touched_early = (post_slice["low"] <= check_level).any() if is_long else (post_slice["high"] >= check_level).any()
-                if not touched_early:
+                touched_recent = (post_slice["low"] <= check_level).any() if is_long else (post_slice["high"] >= check_level).any()
+                if not touched_recent:
                     continue  # Пропускаем остывший в боковике импульс
 
             if len(post_df) == 0:
