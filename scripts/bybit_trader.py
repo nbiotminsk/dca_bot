@@ -873,7 +873,7 @@ def main():
                 except Exception as sym_err:
                     console.print(f"[red]⚠️ [{m.symbol}] Ошибка мониторинга: {sym_err}[/red]")
                 # Плавная пауза между мониторами во избежание пиковых всплесков запросов
-                time.sleep(0.08)
+                time.sleep(0.12)
 
             if args.once and all(m.done or m.state == "IDLE" for m in active_monitors):
                 break

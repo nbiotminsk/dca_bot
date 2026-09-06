@@ -2048,6 +2048,36 @@ def test_process_monitor_step_handles_34040_not_modified_on_o3_filled_no_spam():
     assert call_count == 1  # Спам предотвращен!
 
 
+def test_idle_skips_fetch_klines_when_candle_unclosed():
+    """Проверка: в состоянии IDLE бот не делает повторных сетевых запросов fetch_klines, пока не завершился период свечи."""
+    from scripts.bybit_trader import ActiveTradeMonitor, TradeConfig, process_monitor_step
+
+    cfg = TradeConfig()
+    now_utc = pd.Timestamp.now(tz="UTC")
+    # Свеча открыта 10 минут назад на часовом таймфрейме (до закрытия еще 50 минут)
+    m = ActiveTradeMonitor(
+        symbol="ZECUSDT",
+        setup_type="IDLE",
+        state="IDLE",
+        last_candle_time=now_utc - pd.Timedelta(minutes=10),
+    )
+
+    call_count = 0
+
+    class MockClient(MockBybitClient):
+        def fetch_klines(self, symbol, interval="60", limit=100):
+            nonlocal call_count
+            call_count += 1
+            return super().fetch_klines(symbol, interval, limit)
+
+    client = MockClient()
+    process_monitor_step(m, client, cfg, "60", is_live=True)
+
+    # Запрос не должен вызываться!
+    assert call_count == 0
+
+
+
 
 
 

@@ -86,9 +86,9 @@ class BybitClient:
         self._specs_cache: dict[str, InstrumentSpecs] = {}
         self._position_idx_cache: dict[str, int] = {}
         self._last_request_time: float = 0.0
-        self._min_request_interval: float = 0.08  # ~12.5 req/sec max to avoid Bybit 10006
+        self._min_request_interval: float = 0.15  # ~6.6 req/sec max (safely below Bybit 10 req/sec limit on kline)
         self._klines_cache: dict[tuple[str, str], tuple[float, pd.DataFrame]] = {}
-        self._klines_cache_ttl: float = 8.0  # 8.0s TTL
+        self._klines_cache_ttl: float = 12.0  # 12.0s TTL to cover minor + major layer iterations
         self._positions_cache: dict[str, tuple[float, list[dict[str, Any]]]] = {}
         self._positions_cache_ttl: float = 3.0  # 3.0s TTL
         self._ticker_cache: dict[str, tuple[float, float]] = {}

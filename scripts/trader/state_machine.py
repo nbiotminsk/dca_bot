@@ -944,6 +944,18 @@ def process_monitor_step(
             m.state = "FINISHED"
             m.done = True
             return
+
+        # Защита от спама запросов: если текущая свеча еще не завершилась, новая свеча точно не появилась
+        if m.last_candle_time is not None:
+            now_ts = pd.Timestamp.now(tz="UTC")
+            last_ts = pd.to_datetime(m.last_candle_time, utc=True)
+            tf_seconds = {
+                "1": 60, "3": 180, "5": 300, "15": 900, "30": 1800,
+                "60": 3600, "120": 7200, "240": 14400, "D": 86400, "W": 604800,
+            }.get(str(interval), 3600)
+            if (now_ts - last_ts).total_seconds() < tf_seconds:
+                return  # Текущая свеча еще не закрылась
+
         df_now = client.fetch_klines(m.symbol, interval=interval, limit=max(140, cfg.lookback_bars + 20))
         if len(df_now) < 15:
             return
