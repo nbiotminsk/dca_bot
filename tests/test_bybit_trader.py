@@ -2002,6 +2002,53 @@ def test_process_monitor_step_handles_34040_not_modified_on_o2_filled():
     assert m.tp_basket_applied is True
 
 
+def test_process_monitor_step_handles_34040_not_modified_on_o3_filled_no_spam():
+    """Проверка: при наливе O3 ошибка 34040 не приводит к бесконечному спаму вызовов set_position_tp_sl."""
+    from scripts.bybit_trader import ActiveTradeMonitor, TradeConfig, process_monitor_step
+
+    cfg = TradeConfig()
+    m = ActiveTradeMonitor(
+        symbol="ICPUSDT",
+        setup_type="TRIPLE_GRID_TRAILING",
+        state="O2_FILLED",
+        q1=10.0,
+        q2=15.0,
+        q3=14.9,
+        cur_tp1=2.80,
+        cur_tp2=2.672,
+        cur_tp3=2.655,
+        cur_e2=2.60,
+        cur_e3=2.40,
+        sl=2.588,
+        has_o2=True,
+        has_o3=True,
+        position_was_open=True,
+        tp_basket_applied=True,
+    )
+
+    call_count = 0
+
+    class MockClientWith34040(MockBybitClient):
+        def set_position_tp_sl(self, symbol, take_profit=None, stop_loss=None):
+            nonlocal call_count
+            call_count += 1
+            raise RuntimeError("not modified (ErrCode: 34040) (ErrTime: 06:14:36). Request → POST ...")
+
+    client = MockClientWith34040(pos_size=39.9)  # q1 + q2 + q3 = 39.9 -> O3_FILLED
+
+    # 1. Первый шаг: обнаружение налития O3
+    process_monitor_step(m, client, cfg, "60", is_live=True)
+    assert m.state == "O3_FILLED"
+    assert m.tp_basket_applied is True
+    assert call_count == 1
+
+    # 2. Последующие шаги в O3_FILLED: повторных вызовов быть НЕ ДОЛЖНО
+    process_monitor_step(m, client, cfg, "60", is_live=True)
+    process_monitor_step(m, client, cfg, "60", is_live=True)
+    assert call_count == 1  # Спам предотвращен!
+
+
+
 
 
 

@@ -88,6 +88,7 @@ def process_monitor_step(
                 # Проверяем, налило ли сразу 3 ордера, 2 ордера или 1 ордер
                 if m.has_o3 and m.q3 > 0 and pos_size >= (m.q1 + m.q2 + 0.5 * m.q3):
                     m.state = "O3_FILLED"
+                    m.tp_basket_applied = False
                     console.print(f"\n[bold green]⚡ [{m.symbol}] Налиты все 3 ордера (0.500, 0.618, 0.786)! Позиция: {pos_size}.[/bold green]")
                     console.print(f"  ➜ Переносим Take-Profit всей позиции на общий уровень 0.500 Fib (${m.cur_tp3})...")
                     if is_live:
@@ -101,6 +102,7 @@ def process_monitor_step(
                                 console.print(f"  ⚠️ [{m.symbol}] Ошибка переноса TP на 0.500: {err}")
                 elif m.has_o2 and m.q2 > 0 and pos_size >= (m.q1 + 0.5 * m.q2):
                     m.state = "O2_FILLED"
+                    m.tp_basket_applied = False
                     console.print(f"\n[bold green]⚡ [{m.symbol}] Налиты 2 ордера (0.500 и 0.618)! Позиция: {pos_size}.[/bold green]")
                     console.print(f"  ➜ Переносим Take-Profit всей позиции на общий уровень 0.382 Fib (${m.cur_tp2}). Ордер 3 в стакане (${m.cur_e3})...")
                     if is_live:
@@ -387,6 +389,7 @@ def process_monitor_step(
             # Проверяем, налился ли Ордер 3 или Ордер 2 при проливе
             if m.has_o3 and m.q3 > 0 and pos_size >= (m.q1 + m.q2 + 0.5 * m.q3):
                 m.state = "O3_FILLED"
+                m.tp_basket_applied = False
                 console.print(f"\n[bold green]🎯 [{m.symbol}] Глубокий пролив: исполнены Ордера 2 и 3! Позиция: {pos_size}.[/bold green]")
                 console.print(f"  ➜ Переносим Take-Profit всей позиции на общий уровень 0.500 Fib (${m.cur_tp3})...")
                 if is_live:
@@ -400,6 +403,7 @@ def process_monitor_step(
                             console.print(f"  ⚠️ [{m.symbol}] Ошибка переноса TP на 0.500: {err}")
             elif m.has_o2 and m.q2 > 0 and pos_size >= (m.q1 + 0.5 * m.q2):
                 m.state = "O2_FILLED"
+                m.tp_basket_applied = False
                 console.print(f"\n[bold green]🎯 [{m.symbol}] Добор: Ордер 2 (0.618) исполнен! Позиция: {pos_size}.[/bold green]")
                 console.print(f"  ➜ Переносим Take-Profit всей позиции на общий уровень 0.382 Fib (${m.cur_tp2}). Ордер 3 (${m.cur_e3}) активен в стакане...")
                 if is_live:
@@ -506,6 +510,7 @@ def process_monitor_step(
             # Проверяем, налился ли Ордер 3 (0.786)
             if m.has_o3 and m.q3 > 0 and pos_size >= (m.q1 + m.q2 + 0.5 * m.q3):
                 m.state = "O3_FILLED"
+                m.tp_basket_applied = False
                 console.print(f"\n[bold green]🎯 [{m.symbol}] Добор: Ордер 3 (0.786) исполнен! Позиция: {pos_size}.[/bold green]")
                 console.print(f"  ➜ Переносим Take-Profit всей позиции на общий уровень 0.500 Fib (${m.cur_tp3})...")
                 if is_live:
@@ -517,6 +522,15 @@ def process_monitor_step(
                             m.tp_basket_applied = True
                         else:
                             console.print(f"  ⚠️ [{m.symbol}] Ошибка переноса TP на 0.500: {err}")
+            elif not m.tp_basket_applied and is_live:
+                try:
+                    client.set_position_tp_sl(m.symbol, take_profit=m.cur_tp2, stop_loss=m.sl)
+                    m.tp_basket_applied = True
+                except Exception as err:
+                    if "not modified" in str(err).lower() or "34040" in str(err):
+                        m.tp_basket_applied = True
+                    else:
+                        console.print(f"  ⚠️ [{m.symbol}] Ошибка установки TP на 0.382: {err}")
             return
 
         # Если pos_size == 0 — проверяем тейк или стоп
